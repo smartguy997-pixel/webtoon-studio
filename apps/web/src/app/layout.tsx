@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { NavSidebar } from "@/components/NavSidebar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,7 +11,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body style={{ display: "flex", minHeight: "100vh" }}>
+        <NavSidebar />
+        <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+      </body>
     </html>
   );
 }
