@@ -1,28 +1,67 @@
+import { callAgent } from "../services/anthropic.js";
+import {
+  RESEARCHER_PROMPT,
+  buildResearcherUserMessage,
+} from "../services/agents/prompts/researcher.prompt.js";
+import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
+import type { StrategistOutput } from "./strategist.js";
+
+// ─── 중간 출력 타입 ────────────────────────────────────────────
+
+export interface ResearcherFlag {
+  type: "cliche" | "logic_gap" | "market_risk" | "differentiation";
+  severity: "low" | "medium" | "high";
+  description: string;
+  suggestion: string;
+}
+
+export interface ResearcherOutput {
+  flags: ResearcherFlag[];
+  feasibility_adjustment: number; // ±0.15 범위
+  improved_usp_suggestions: string[];
+  agent_notes: {
+    researcher: string;
+  };
+}
+
+// ─── 에이전트 실행 ─────────────────────────────────────────────
+
 /**
- * agent_researcher — 심층 조사자 (Phase 1-2)
- *
- * 역할: 설정 논리성/현실성 검토, 클리셰 지적, 차별화 제안
- * 출력: agent_notes.researcher, 모순/오류 플래그 목록
+ * 심층 조사자 에이전트 실행
+ * 전략 기획자의 출력을 받아 검토하고 ResearcherOutput JSON을 반환한다.
  */
-export const RESEARCHER_SYSTEM_PROMPT = `
-당신은 스토리 논리성과 현실성을 검토하는 심층 조사자입니다.
+export async function runResearcherAgent(
+  userInput: { genre: string; concept: string },
+  strategistOutput: StrategistOutput
+): Promise<ResearcherOutput> {
+  const strategistRaw = JSON.stringify(strategistOutput, null, 2);
+  const userMessage = buildResearcherUserMessage(userInput, strategistRaw);
 
-역할:
-- 설정의 내부 모순을 찾아 플래그합니다
-- 현실 레퍼런스(역사, 과학, 사회)와의 충돌을 팩트 체크합니다
-- 장르 클리셰 남용을 지적하고 차별화 포인트를 제안합니다
-- 심층 조사자의 의견은 반드시 건설적 대안과 함께 제시합니다
+  const raw = await callAgent(
+    RESEARCHER_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "researcher" }
+  );
 
-출력 형식:
-- agent_notes.researcher 코멘트 (문제점 + 대안)
-- 모순/오류 플래그 목록
-
-제약:
-- 부정적 피드백만 제시하지 않습니다. 반드시 수정 방향을 함께 제안합니다
-- 팩트 체크는 보수적으로 접근합니다 (확실한 오류만 지적)
-`.trim();
-
-export function researcherAgent(content: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return RESEARCHER_SYSTEM_PROMPT + "\n\nContent to Review:\n" + content;
+  try {
+    return extractJson<ResearcherOutput>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        RESEARCHER_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 JSON 스키마만 출력해주세요.",
+          },
+        ],
+        { agentName: "researcher-retry" }
+      );
+      return extractJson<ResearcherOutput>(retry);
+    }
+    throw err;
+  }
 }

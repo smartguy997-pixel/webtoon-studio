@@ -1,35 +1,93 @@
+import { callAgent } from "../services/anthropic.js";
+import {
+  PRODUCER_PHASE1_PROMPT,
+  buildProducerPhase1UserMessage,
+} from "../services/agents/prompts/producer-phase1.prompt.js";
+import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
+import type { StrategistOutput } from "./strategist.js";
+import type { ResearcherOutput } from "./researcher.js";
+
+// ─── Phase 1 최종 출력 타입 ────────────────────────────────────
+
+export interface Phase1FinalOutput {
+  phase: "기획 분석";
+  summary: string;
+  market_analysis: {
+    genre: string;
+    positioning: string;
+    trend_keywords: string[];
+    competitors: Array<{
+      title: string;
+      strength: string;
+      weakness: string;
+      our_edge: string;
+    }>;
+  };
+  usp: string[];
+  feasibility_score: number;
+  agent_notes: {
+    strategist: string;
+    researcher: string;
+    producer: string;
+  };
+  asset_list: {
+    characters: never[];
+    locations: never[];
+    props: never[];
+  };
+  revision_history: never[];
+}
+
+export type FeasibilityVerdict = "go" | "conditional" | "reject";
+
+export function getFeasibilityVerdict(score: number): FeasibilityVerdict {
+  if (score >= 0.8) return "go";
+  if (score >= 0.5) return "conditional";
+  return "reject";
+}
+
+// ─── 에이전트 실행 ─────────────────────────────────────────────
+
 /**
- * agent_producer — 총괄 프로듀서
- *
- * 역할:
- * - 6인 에이전트 의견 종합 및 갈등 중재
- * - 10회 대화마다 슬라이딩 윈도우 요약 생성 (300자 이내)
- * - GATING 조건 충족 여부 판단 및 사용자 안내
- * - 항상 마지막으로 발언
+ * 총괄 프로듀서 에이전트 실행 (Phase 1)
+ * 전략 기획자 + 심층 조사자 결과를 종합해 Phase 1 최종 출력을 생성한다.
  */
-export const PRODUCER_SYSTEM_PROMPT = `
-당신은 AI Webtoon Studio의 총괄 프로듀서입니다.
+export async function runProducerPhase1(
+  userInput: { title?: string; genre: string; concept: string; target_audience?: string },
+  strategistOutput: StrategistOutput,
+  researcherOutput: ResearcherOutput
+): Promise<Phase1FinalOutput> {
+  const userMessage = buildProducerPhase1UserMessage(
+    userInput,
+    JSON.stringify(strategistOutput, null, 2),
+    JSON.stringify(researcherOutput, null, 2)
+  );
 
-역할:
-- 6인 에이전트의 의견을 종합하고 갈등을 중재합니다
-- 10회 대화마다 [프로젝트 요약 vN]을 생성하고 맥락을 초기화합니다 (슬라이딩 윈도우)
-- GATING 조건 충족 여부를 판단하고 사용자에게 진행 여부를 안내합니다
-- 사용자(작가)의 의도를 정확히 파악하고 에이전트에게 전달합니다
+  const raw = await callAgent(
+    PRODUCER_PHASE1_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "producer-phase1" }
+  );
 
-슬라이딩 윈도우 프로토콜:
-- 대화 10회 도달 시: 자동으로 [프로젝트 요약 vN] 생성
-- 요약 포함 항목: phase, 주요 결정 사항, 승인된 에셋 ID 목록, 다음 단계
-- 요약 완료 후 이전 맥락 초기화
-
-제약:
-- 총괄 프로듀서는 항상 마지막으로 발언합니다
-- 에이전트 간 의견 충돌 시 3가지 옵션을 사용자에게 제시합니다
-- 슬라이딩 윈도우 요약은 300자 이내로 압축합니다
-
-출력 형식: 공통 JSON 스키마 준수 + agent_notes.producer 필드 포함
-`.trim();
-
-export function producerAgent(context: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return PRODUCER_SYSTEM_PROMPT + "\n\nContext:\n" + context;
+  try {
+    return extractJson<Phase1FinalOutput>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        PRODUCER_PHASE1_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 Phase1 출력 JSON 스키마만 출력해주세요.",
+          },
+        ],
+        { agentName: "producer-phase1-retry" }
+      );
+      return extractJson<Phase1FinalOutput>(retry);
+    }
+    throw err;
+  }
 }

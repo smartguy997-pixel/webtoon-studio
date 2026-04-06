@@ -9,14 +9,27 @@ export interface AgentMessage {
   content: string;
 }
 
+export interface CallAgentOptions {
+  maxTokens?: number;
+  /** 로깅용 에이전트 이름 */
+  agentName?: string;
+}
+
 /**
  * 단일 에이전트 호출
+ * 응답 텍스트와 토큰 사용량을 로깅한다.
  */
 export async function callAgent(
   systemPrompt: string,
   messages: AgentMessage[],
-  maxTokens = 4096
+  options: CallAgentOptions | number = {}
 ): Promise<string> {
+  // 이전 시그니처(maxTokens 숫자)와의 호환성 유지
+  const opts: CallAgentOptions =
+    typeof options === "number" ? { maxTokens: options } : options;
+
+  const maxTokens = opts.maxTokens ?? 4096;
+
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: maxTokens,
@@ -24,21 +37,15 @@ export async function callAgent(
     messages,
   });
 
-  const block = response.content[0];
-  if (block.type !== "text") throw new Error("Unexpected response type");
-  return block.text;
-}
+  // 토큰 사용량 로깅
+  const usage = response.usage;
+  console.log(
+    `[${opts.agentName ?? "agent"}] tokens — input: ${usage.input_tokens}, output: ${usage.output_tokens}`
+  );
 
-/**
- * 멀티 에이전트 순차 호출 (총괄 프로듀서 → 담당 에이전트들 → 총괄 프로듀서)
- */
-export async function runAgentPipeline(
-  agents: Array<{ systemPrompt: string; messages: AgentMessage[] }>
-): Promise<string[]> {
-  const results: string[] = [];
-  for (const agent of agents) {
-    const result = await callAgent(agent.systemPrompt, agent.messages);
-    results.push(result);
+  const block = response.content[0];
+  if (block.type !== "text") {
+    throw new Error(`예상치 못한 응답 타입: ${block.type}`);
   }
-  return results;
+  return block.text;
 }

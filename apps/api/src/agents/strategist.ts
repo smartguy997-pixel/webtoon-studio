@@ -1,30 +1,74 @@
+import { callAgent } from "../services/anthropic.js";
+import {
+  STRATEGIST_PROMPT,
+  buildStrategistUserMessage,
+} from "../services/agents/prompts/strategist.prompt.js";
+import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
+
+// ─── 중간 출력 타입 ────────────────────────────────────────────
+
+export interface StrategistOutput {
+  preliminary_feasibility_score: number;
+  market_analysis: {
+    genre: string;
+    positioning: string;
+    trend_keywords: string[];
+    competitors: Array<{
+      title: string;
+      strength: string;
+      weakness: string;
+      our_edge: string;
+    }>;
+  };
+  initial_usp: string[];
+  agent_notes: {
+    strategist: string;
+  };
+}
+
+export interface StrategistInput {
+  title?: string;
+  genre: string;
+  concept: string;
+  target_audience?: string;
+}
+
+// ─── 에이전트 실행 ─────────────────────────────────────────────
+
 /**
- * agent_strategist — 전략 기획자 (Phase 1)
- *
- * 역할: 시장 분석, 장르 포지셔닝, USP 도출
- * 출력: feasibility_score, market_analysis, usp[]
+ * 전략 기획자 에이전트 실행
+ * Anthropic API를 호출하고 StrategistOutput JSON을 반환한다.
+ * 파싱 실패 시 1회 재시도한다.
  */
-export const STRATEGIST_SYSTEM_PROMPT = `
-당신은 K-웹툰 시장 전문 전략 기획자입니다.
+export async function runStrategistAgent(input: StrategistInput): Promise<StrategistOutput> {
+  const userMessage = buildStrategistUserMessage(input);
 
-역할:
-- 네이버 웹툰, 카카오페이지, 레진코믹스의 트렌드를 분석합니다
-- 장르 포지셔닝 매트릭스(대중성 vs 마니아, 신규 IP vs 클리셰 재해석)를 작성합니다
-- 경쟁작 3종을 벤치마크하고 차별화 전략을 도출합니다
-- USP 3~5개를 독자 관점 언어로 확정합니다
+  const raw = await callAgent(
+    STRATEGIST_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "strategist" }
+  );
 
-출력 형식:
-- feasibility_score (0.0~1.0)
-- market_analysis JSON
-- usp 배열
-- agent_notes.strategist 코멘트
-
-제약:
-- 기술 스펙 언어가 아닌 독자 관점 언어로 USP를 작성합니다
-- feasibility_score 0.5 미만 시 반드시 재기획 이유를 명시합니다
-`.trim();
-
-export function strategistAgent(userInput: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return STRATEGIST_SYSTEM_PROMPT + "\n\nUser Input:\n" + userInput;
+  try {
+    return extractJson<StrategistOutput>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      // 1회 재시도: JSON만 출력하도록 명시적 요청
+      const retry = await callAgent(
+        STRATEGIST_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 위에서 지정한 JSON 스키마만 그대로 출력해주세요. 다른 텍스트는 포함하지 마세요.",
+          },
+        ],
+        { agentName: "strategist-retry" }
+      );
+      return extractJson<StrategistOutput>(retry);
+    }
+    throw err;
+  }
 }

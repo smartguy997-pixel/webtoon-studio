@@ -6,6 +6,50 @@ const charIdPattern = /^char_\d{3}$/;
 const locIdPattern = /^loc_\d{3}$/;
 const propIdPattern = /^prop_\d{3}$/;
 
+// ─── Phase 1 스키마 ───────────────────────────────────────────
+
+export const Phase1OutputSchema = z.object({
+  phase: z.literal("기획 분석"),
+  summary: z.string().max(300, "summary는 300자 이내여야 합니다"),
+  market_analysis: z.object({
+    genre: z.string().min(1),
+    positioning: z.string().min(1),
+    trend_keywords: z.array(z.string()).min(1),
+    competitors: z
+      .array(
+        z.object({
+          title: z.string().min(1),
+          strength: z.string().min(1),
+          weakness: z.string().min(1),
+          our_edge: z.string().min(1),
+        })
+      )
+      .length(3, "경쟁작은 정확히 3개여야 합니다"),
+  }),
+  usp: z
+    .array(z.string().min(1))
+    .min(3, "USP는 최소 3개")
+    .max(5, "USP는 최대 5개"),
+  feasibility_score: z.number().min(0).max(1),
+  agent_notes: z.object({
+    strategist: z.string().min(1),
+    researcher: z.string().min(1),
+    producer: z.string().min(1),
+  }),
+  asset_list: z.object({
+    characters: z.array(z.never()).default([]),
+    locations: z.array(z.never()).default([]),
+    props: z.array(z.never()).default([]),
+  }),
+  revision_history: z.array(z.unknown()).default([]),
+});
+
+export type Phase1OutputValidated = z.infer<typeof Phase1OutputSchema>;
+
+export function validatePhase1Output(data: unknown) {
+  return Phase1OutputSchema.safeParse(data);
+}
+
 // ─── 공통 스키마 ──────────────────────────────────────────────
 
 export const AssetListSchema = z.object({
