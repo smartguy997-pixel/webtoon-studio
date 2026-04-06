@@ -10,6 +10,8 @@ import {
 } from "../utils/json-validator.js";
 import { saveSlidingWindowSummary } from "../utils/sliding-window.js";
 import { collections } from "../services/firestore.js";
+import { initChapterOverlays } from "../services/mst.js";
+import { initializeAllAssetSheets } from "../services/asset-sheet.js";
 
 // ─── 입력 타입 ─────────────────────────────────────────────────
 
@@ -254,6 +256,24 @@ export async function approvePhase2Assets(
   });
 
   await batch.commit();
+
+  // Phase 5 초기화 — 장 오버레이 저장 + 에셋 시트 생성 (백그라운드)
+  initChapterOverlays(projectId).catch((err) =>
+    console.error("[Phase2] 장 오버레이 초기화 실패:", err)
+  );
+
+  // 에셋 시트 생성은 시간이 오래 걸리므로 fire-and-forget
+  initializeAllAssetSheets(projectId)
+    .then((result) => {
+      const charCount = result.characters.length;
+      const locCount = result.locations.length;
+      const errCount = result.errors.length;
+      console.log(
+        `[Phase5] 에셋 시트 초기화 완료 — 캐릭터 ${charCount}개, 배경 ${locCount}개` +
+          (errCount > 0 ? `, 오류 ${errCount}건: ${result.errors.join(" | ")}` : "")
+      );
+    })
+    .catch((err) => console.error("[Phase5] 에셋 시트 초기화 실패:", err));
 }
 
 // ─── Firestore 초안 저장 ──────────────────────────────────────

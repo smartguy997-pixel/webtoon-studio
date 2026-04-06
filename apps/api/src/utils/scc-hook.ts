@@ -1,12 +1,8 @@
-import { generateImage } from "../services/whisk.js";
-import { runSCC, saveSCCLog, type SCCResult } from "../services/scc.js";
-import { collections, db } from "../services/firestore.js";
 import { FieldValue } from "firebase-admin/firestore";
+import { runSCC, type SCCResult } from "../services/scc.js";
+import { collections, db } from "../services/firestore.js";
 import type { ScriptCut } from "../agents/script.js";
-
-// ─── 상수 ─────────────────────────────────────────────────────
-
-const MAX_ATTEMPTS = 3;
+import type { ChapterStyle } from "../services/mst.js";
 
 // ─── 타입 ─────────────────────────────────────────────────────
 
@@ -32,126 +28,6 @@ export interface SccBatchResult {
   flagged: number;
   results: SccCutResult[];
   all_passed: boolean;
-}
-
-// ─── 참조 이미지 URL 조회 ──────────────────────────────────────
-
-async function getCharRefUrl(projectId: string, charId: string): Promise<string> {
-  const doc = await collections
-    .approvedAssets(projectId)
-    .collection("characters")
-    .doc(charId)
-    .get();
-  return (doc.data()?.ref_image_id as string | null) ?? "";
-}
-
-async function getBgRefUrl(projectId: string, locId: string): Promise<string> {
-  const doc = await collections
-    .approvedAssets(projectId)
-    .collection("locations")
-    .doc(locId)
-    .get();
-  return (doc.data()?.ref_image_id as string | null) ?? "";
-}
-
-async function getMstText(projectId: string): Promise<string> {
-  const doc = await collections.styleRegistry(projectId).collection("mst").get();
-  if (doc.empty) {
-    return "Korean webtoon line art, clean bold outlines, flat color, cel-shading";
-  }
-  const mst = doc.docs[0].data();
-  return [mst.art_style, mst.line_weight, mst.color_palette, mst.rendering, mst.perspective]
-    .filter(Boolean)
-    .join(", ");
-}
-
-// Whisk가 반환한 imageId → 공개 URL 변환 (실제 구현 시 Whisk API 참조)
-function imageIdToUrl(imageId: string): string {
-  return `https://cdn.whisk.com/images/${imageId}`;
-}
-
-// ─── 단일 컷 SCC 실행 (최대 3회 재시도) ──────────────────────
-
-async function runSccForCut(
-  projectId: string,
-  epNum: number,
-  cut: ScriptCut,
-  mstText: string,
-  charRefUrl: string,
-  bgRefUrl: string
-): Promise<SccCutResult> {
-  let lastResult: SCCResult | null = null;
-  let imageId: string | null = null;
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      // 이미지 생성 (MST 자동 주입은 whisk.ts 내부에서 처리)
-      imageId = await generateImage(
-        projectId,
-        cut.image_prompt.cut_specific_tags,
-        cut.image_prompt.negative_prompt
-      );
-      const imageUrl = imageIdToUrl(imageId);
-
-      // SCC 검증
-      lastResult = await runSCC(
-        projectId,
-        epNum,
-        cut.cut,
-        imageUrl,
-        mstText,
-        charRefUrl,
-        bgRefUrl
-      );
-      lastResult = { ...lastResult, attempt };
-
-      // 검증 로그 저장
-      await saveSCCLog(projectId, epNum, cut.cut, lastResult);
-
-      if (lastResult.overall === "pass") {
-        return {
-          cutNum: cut.cut,
-          imageId,
-          status: "pass",
-          attempts: attempt,
-          scores: {
-            mstClip: lastResult.mstClipScore,
-            charClip: lastResult.charClipScore,
-            bgOrb: lastResult.bgOrbMatch,
-          },
-        };
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "알 수 없는 오류";
-      console.error(`[SCC] ep${epNum} cut${cut.cut} attempt${attempt} 실패:`, errorMsg);
-      // 마지막 시도가 아니면 계속 재시도
-      if (attempt < MAX_ATTEMPTS) continue;
-      // 마지막 시도도 에러면 flagged로 처리
-      return {
-        cutNum: cut.cut,
-        imageId,
-        status: "flagged",
-        attempts: attempt,
-        scores: null,
-        error: errorMsg,
-      };
-    }
-  }
-
-  // MAX_ATTEMPTS 모두 fail → flagged
-  return {
-    cutNum: cut.cut,
-    imageId,
-    status: "flagged",
-    attempts: MAX_ATTEMPTS,
-    scores: lastResult
-      ? {
-          mstClip: lastResult.mstClipScore,
-          charClip: lastResult.charClipScore,
-          bgOrb: lastResult.bgOrbMatch,
-        }
-      : null,
-  };
 }
 
 // ─── 컷 SCC 결과를 Firestore에 반영 ───────────────────────────
@@ -184,31 +60,70 @@ async function updateCutSccStatus(
 /**
  * 한 에피소드의 30컷에 대해 순차적으로 SCC를 실행한다.
  *
- * 실행 전략:
- * - 컷별로 MAX_ATTEMPTS=3회까지 재시도
- * - 실패 컷은 "flagged" 상태로 Firestore에 기록
- * - 전체 결과 요약을 에피소드 메타 문서에 반영
+ * 내부적으로 services/scc.ts의 `runSCC()`를 호출하며,
+ * 3단계 검증(MST 화풍 → 캐릭터 유사도 → 배경 구조) +
+ * 실패 유형별 프롬프트 강화 재생성이 자동으로 처리된다.
  */
 export async function triggerSccBatch(
   projectId: string,
   epNum: number,
-  cuts: ScriptCut[]
+  cuts: ScriptCut[],
+  chapterStyle: ChapterStyle = "default"
 ): Promise<SccBatchResult> {
-  const mstText = await getMstText(projectId);
-
   const results: SccCutResult[] = [];
 
   for (const cut of cuts) {
-    // 이 컷의 첫 번째 캐릭터 참조 이미지 사용 (없으면 빈 문자열)
-    const primaryCharId = cut.characters[0]?.char_id ?? "";
-    const charRefUrl = primaryCharId ? await getCharRefUrl(projectId, primaryCharId) : "";
-    const bgRefUrl = cut.location_id ? await getBgRefUrl(projectId, cut.location_id) : "";
+    const primaryCharId = cut.characters[0]?.char_id ?? null;
 
-    const result = await runSccForCut(projectId, epNum, cut, mstText, charRefUrl, bgRefUrl);
-    results.push(result);
+    let sccResult: SCCResult;
+    try {
+      sccResult = await runSCC({
+        projectId,
+        episode: epNum,
+        cut: cut.cut,
+        cutSpecificTags: cut.image_prompt.cut_specific_tags,
+        cutNegativePrompt: cut.image_prompt.negative_prompt,
+        chapterStyle,
+        primaryCharId,
+        locationId: cut.location_id || null,
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "알 수 없는 오류";
+      console.error(`[SCC] ep${epNum} cut${cut.cut} 실행 오류:`, errorMsg);
+      const errResult: SccCutResult = {
+        cutNum: cut.cut,
+        imageId: null,
+        status: "flagged",
+        attempts: 0,
+        scores: null,
+        error: errorMsg,
+      };
+      results.push(errResult);
+      await updateCutSccStatus(projectId, epNum, errResult).catch(() => {});
+      continue;
+    }
 
-    // 개별 컷 Firestore 업데이트
-    await updateCutSccStatus(projectId, epNum, result);
+    const status: SccCutStatus =
+      sccResult.overall === "pass"
+        ? "pass"
+        : sccResult.attempt >= 3
+        ? "flagged"
+        : "fail";
+
+    const cutResult: SccCutResult = {
+      cutNum: cut.cut,
+      imageId: sccResult.imageId || null,
+      status,
+      attempts: sccResult.attempt,
+      scores: {
+        mstClip: sccResult.mstClipScore,
+        charClip: sccResult.charClipScore,
+        bgOrb: sccResult.bgOrbMatch,
+      },
+    };
+
+    results.push(cutResult);
+    await updateCutSccStatus(projectId, epNum, cutResult).catch(() => {});
   }
 
   const passed = results.filter((r) => r.status === "pass").length;
@@ -226,7 +141,8 @@ export async function triggerSccBatch(
       scc_passed_cuts: passed,
       scc_flagged_cuts: flagged,
       scc_completed_at: FieldValue.serverTimestamp(),
-    });
+    })
+    .catch(() => {});
 
   return {
     episodeNum: epNum,
@@ -253,7 +169,9 @@ export async function getSccStatus(
     .collection("cuts")
     .get();
 
-  let passed = 0, flagged = 0, pending = 0;
+  let passed = 0,
+    flagged = 0,
+    pending = 0;
   for (const doc of cutsSnap.docs) {
     const status = doc.data().scc_status as SccCutStatus | undefined;
     if (status === "pass") passed++;

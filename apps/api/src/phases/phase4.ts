@@ -229,7 +229,12 @@ export async function runPhase4Pipeline(
   let sccResult: SccBatchResult | null = null;
   if (triggerScc) {
     try {
-      sccResult = await triggerSccBatch(projectId, episodeNum, validated.script_data);
+      sccResult = await triggerSccBatch(
+        projectId,
+        episodeNum,
+        validated.script_data,
+        validated.chapter_style
+      );
     } catch (err) {
       // SCC 실패는 치명적 오류가 아님 — 로그 후 계속
       console.error(`[Phase4] ep${episodeNum} SCC 배치 실행 중 오류:`, err);
