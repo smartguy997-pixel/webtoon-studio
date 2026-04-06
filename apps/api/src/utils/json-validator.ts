@@ -232,6 +232,70 @@ export function validatePhase3Output(data: unknown) {
   return Phase3OutputSchema.safeParse(data);
 }
 
+// ─── Phase 4 스키마 ───────────────────────────────────────────
+
+const CameraAngleSchema = z.enum([
+  "ELS", "LS", "MS", "MCU", "CU", "ECU", "OTS", "POV", "BIRD", "WORM", "DUTCH",
+]);
+
+const ScriptCutCharacterSchema = z.object({
+  char_id: z.string().min(1),
+  position: z.enum(["left", "center", "right", "background"]),
+  expression: z.enum(["기쁨", "분노", "슬픔", "놀람", "무표정", "긴장"]),
+  pose: z.string().min(1),
+});
+
+const ScriptCutDialogueSchema = z.object({
+  char_id: z.string().min(1),
+  text: z.string().min(1),
+  balloon_type: z.enum(["normal", "shout", "whisper", "thought", "narration"]),
+});
+
+const ScriptCutSchema = z.object({
+  cut: z.number().int().min(1).max(30),
+  angle: CameraAngleSchema,
+  aspect_ratio: z.enum(["1:1", "1:1.5", "1:2", "1:3"]),
+  scene_description: z.string().min(1),
+  characters: z.array(ScriptCutCharacterSchema),
+  location_id: z.string().min(1),
+  background_variant: z.enum(["day_clear", "day_cloudy", "evening", "night", "rain", "snow"]),
+  dialogue: z.array(ScriptCutDialogueSchema),
+  sfx: z.array(z.string()),
+  effect: z.enum(["none", "speed_lines", "impact_lines", "glow", "blur"]),
+  image_prompt: z.object({
+    cut_specific_tags: z.string(),
+    negative_prompt: z.string(),
+  }),
+  director_note: z.string(),
+});
+
+export const Phase4OutputSchema = z.object({
+  phase: z.literal("30컷_대본"),
+  episode: z.number().int().min(1).max(100),
+  episode_title: z.string().min(1),
+  chapter_style: z.enum(["default", "flashback", "dream", "climax", "epilogue"]),
+  script_data: z
+    .array(ScriptCutSchema)
+    .length(30, "script_data는 정확히 30개 컷이어야 합니다"),
+  episode_summary_for_next: z.string().min(1),
+  assets_used: z.object({
+    characters: z.array(z.string()),
+    locations: z.array(z.string()),
+    props: z.array(z.string()),
+  }),
+  agent_notes: z.object({
+    script_writer: z.string().min(1),
+    producer: z.string().min(1),
+  }),
+  revision_history: z.array(z.unknown()).default([]),
+});
+
+export type Phase4OutputValidated = z.infer<typeof Phase4OutputSchema>;
+
+export function validatePhase4Output(data: unknown) {
+  return Phase4OutputSchema.safeParse(data);
+}
+
 // ─── 공통 스키마 ──────────────────────────────────────────────
 
 export const AssetListSchema = z.object({

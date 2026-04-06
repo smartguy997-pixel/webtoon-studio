@@ -11,12 +11,17 @@ import {
   PRODUCER_PHASE3_PROMPT,
   buildProducerPhase3UserMessage,
 } from "../services/agents/prompts/producer-phase3.prompt.js";
+import {
+  PRODUCER_PHASE4_PROMPT,
+  buildProducerPhase4UserMessage,
+} from "../services/agents/prompts/producer-phase4.prompt.js";
 import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
 import type { StrategistOutput } from "./strategist.js";
 import type { ResearcherOutput, ResearcherPhase2Output } from "./researcher.js";
 import type { WorldbuilderOutput } from "./worldbuilder.js";
 import type { CharacterOutput, AssetList, DesignOption } from "./character.js";
 import type { ScenarioMergedOutput, ArcStructure, Arc, Episode, PacingPlan } from "./scenario.js";
+import type { ScriptDraft, Phase4FinalOutput } from "./script.js";
 
 // ─── Phase 1 최종 출력 타입 ────────────────────────────────────
 
@@ -228,6 +233,52 @@ export async function runProducerPhase3(
         { agentName: "producer-phase3-retry", maxTokens: 8192 }
       );
       return extractJson<Phase3FinalOutput>(retry);
+    }
+    throw err;
+  }
+}
+
+// ─── Phase 4 에이전트 실행 ─────────────────────────────────────
+
+/**
+ * 총괄 프로듀서 에이전트 실행 (Phase 4)
+ * 대본/연출 작가의 30컷 초안을 검토하여 최종 대본을 출력한다.
+ */
+export async function runProducerPhase4(
+  scriptDraft: ScriptDraft,
+  episodeType: string,
+  cliffhanger: string | null
+): Promise<Phase4FinalOutput> {
+  const userMessage = buildProducerPhase4UserMessage(
+    JSON.stringify(scriptDraft, null, 2),
+    episodeType,
+    cliffhanger
+  );
+
+  const raw = await callAgent(
+    PRODUCER_PHASE4_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "producer-phase4", maxTokens: 8192 }
+  );
+
+  try {
+    return extractJson<Phase4FinalOutput>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        PRODUCER_PHASE4_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 Phase 4 출력 JSON 스키마만 출력해주세요. script_data 배열은 반드시 30개여야 합니다.",
+          },
+        ],
+        { agentName: "producer-phase4-retry", maxTokens: 8192 }
+      );
+      return extractJson<Phase4FinalOutput>(retry);
     }
     throw err;
   }

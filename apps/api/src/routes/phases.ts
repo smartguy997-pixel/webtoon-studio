@@ -15,6 +15,12 @@ import {
   approvePhase3Roadmap,
   Phase3PipelineError,
 } from "../phases/phase3.js";
+import {
+  runPhase4Pipeline,
+  approveEpisodeScript,
+  Phase4PipelineError,
+} from "../phases/phase4.js";
+import { getSccStatus } from "../utils/scc-hook.js";
 import { validatePhase2Output, checkPhase2GatingConditions } from "../utils/json-validator.js";
 import { collections } from "../services/firestore.js";
 
@@ -440,11 +446,175 @@ phasesRouter.post("/:projectId/gate/3", authMiddleware, validate(Gate3Schema), a
 });
 
 // ═══════════════════════════════════════════════════════════════
-// PHASE 4 (추후 구현)
+// PHASE 4
 // ═══════════════════════════════════════════════════════════════
 
-phasesRouter.post("/:projectId/phase-4/:episode", authMiddleware, async (req, res) => {
-  res.status(501).json({ message: `Phase 4 — ${req.params.episode}화 대본 (구현 예정)` });
+const Phase4InputSchema = z.object({
+  trigger_scc: z.boolean().default(true),
+});
+
+/**
+ * POST /api/phases/:projectId/phase-4/:episode
+ *
+ * 지정한 화의 30컷 기술 대본을 생성한다.
+ * Phase 3 로드맵 + Phase 2 승인 에셋을 자동 로드.
+ * Body: { trigger_scc?: boolean }  (기본 true — SCC 이미지 생성까지 실행)
+ */
+phasesRouter.post(
+  "/:projectId/phase-4/:episode",
+  authMiddleware,
+  validate(Phase4InputSchema),
+  async (req, res) => {
+    const uid = (req as typeof req & { uid: string }).uid;
+    const project = await getProjectOrFail(req.params.projectId, uid, res);
+    if (!project) return;
+
+    const epNum = parseInt(req.params.episode, 10);
+    if (isNaN(epNum) || epNum < 1 || epNum > 100) {
+      res.status(400).json({ error: "episode는 1~100 사이의 정수여야 합니다" });
+      return;
+    }
+
+    // Phase 3 GATING 완료 확인
+    const phase3 = (project as Record<string, Record<string, unknown>>).phase_results
+      ?.phase_3 as { gating_passed?: boolean } | undefined;
+    if (!phase3?.gating_passed) {
+      res.status(400).json({
+        error: "Phase 3 GATING이 완료되지 않았습니다. /gate/3을 먼저 호출해주세요.",
+      });
+      return;
+    }
+
+    const { trigger_scc } = req.body as { trigger_scc: boolean };
+
+    try {
+      const result = await runPhase4Pipeline(req.params.projectId, {
+        episodeNum: epNum,
+        triggerScc: trigger_scc,
+      });
+
+      res.json({
+        success: true,
+        episode: epNum,
+        data: result.output,
+        scc: result.scc,
+        gating: result.gating,
+        message: buildPhase4GatingMessage(epNum, result.gating, result.scc),
+      });
+    } catch (err) {
+      if (err instanceof Phase4PipelineError) {
+        console.error(`[Phase4] ep${epNum} ${err.stage} 단계 실패:`, err.message);
+        res.status(500).json({ error: "Phase 4 대본 생성 중 오류", stage: err.stage });
+        return;
+      }
+      console.error(`[Phase4] ep${epNum} 예상치 못한 오류:`, err);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  }
+);
+
+/**
+ * GET /api/phases/:projectId/phase-4/:episode/scc-status
+ *
+ * 특정 화의 SCC 검증 진행 상태를 조회한다.
+ */
+phasesRouter.get(
+  "/:projectId/phase-4/:episode/scc-status",
+  authMiddleware,
+  async (req, res) => {
+    const uid = (req as typeof req & { uid: string }).uid;
+    const project = await getProjectOrFail(req.params.projectId, uid, res);
+    if (!project) return;
+
+    const epNum = parseInt(req.params.episode, 10);
+    if (isNaN(epNum) || epNum < 1 || epNum > 100) {
+      res.status(400).json({ error: "episode는 1~100 사이의 정수여야 합니다" });
+      return;
+    }
+
+    try {
+      const status = await getSccStatus(req.params.projectId, epNum);
+      res.json({
+        success: true,
+        episode: epNum,
+        scc: status,
+        message: status.all_passed
+          ? "모든 컷 SCC 통과. /gate/4/:episode를 호출하여 다음 화로 진행하세요."
+          : status.pending > 0
+          ? `SCC 진행 중: ${status.pending}컷 대기, ${status.passed}컷 통과, ${status.flagged}컷 플래그`
+          : `${status.flagged}컷 검증 실패 (플래그). 재생성이 필요합니다.`,
+      });
+    } catch (err) {
+      console.error(`[Phase4] scc-status ep${epNum} 오류:`, err);
+      res.status(500).json({ error: "SCC 상태 조회 중 오류가 발생했습니다" });
+    }
+  }
+);
+
+/**
+ * POST /api/phases/:projectId/gate/4/:episode
+ *
+ * Phase 4 화별 GATING 최종 확인:
+ * - 조건 1: script_data 30컷 확인 (저장 시 검증됨)
+ * - 조건 2: 모든 컷 SCC 통과 확인
+ * - 조건 3: 사용자 확인 (이 API 호출 자체가 확인 의미)
+ */
+phasesRouter.post("/:projectId/gate/4/:episode", authMiddleware, async (req, res) => {
+  const uid = (req as typeof req & { uid: string }).uid;
+  const project = await getProjectOrFail(req.params.projectId, uid, res);
+  if (!project) return;
+
+  const epNum = parseInt(req.params.episode, 10);
+  if (isNaN(epNum) || epNum < 1 || epNum > 100) {
+    res.status(400).json({ error: "episode는 1~100 사이의 정수여야 합니다" });
+    return;
+  }
+
+  // SCC 상태 확인
+  let sccStatus;
+  try {
+    sccStatus = await getSccStatus(req.params.projectId, epNum);
+  } catch (err) {
+    console.error(`[gate/4] SCC 상태 조회 실패:`, err);
+    res.status(500).json({ error: "SCC 상태 조회 실패" });
+    return;
+  }
+
+  if (sccStatus.pending > 0) {
+    res.status(400).json({
+      error: "GATING 조건 2 미충족",
+      detail: `아직 SCC가 완료되지 않은 컷이 ${sccStatus.pending}개 있습니다.`,
+      scc: sccStatus,
+    });
+    return;
+  }
+
+  if (sccStatus.flagged > 0) {
+    res.status(400).json({
+      error: "GATING 조건 2 미충족",
+      detail: `SCC 실패(플래그) 컷이 ${sccStatus.flagged}개 있습니다. 재생성 후 다시 시도해주세요.`,
+      scc: sccStatus,
+    });
+    return;
+  }
+
+  try {
+    await approveEpisodeScript(req.params.projectId, epNum);
+
+    const isComplete = epNum >= 100;
+    res.json({
+      success: true,
+      episode: epNum,
+      message: isComplete
+        ? "100화 대본이 모두 완성되었습니다! 프로젝트가 완료되었습니다."
+        : `${epNum}화 대본 승인 완료. ${epNum + 1}화 대본을 시작하려면 /phase-4/${epNum + 1}을 호출하세요.`,
+      project_complete: isComplete,
+      next_episode: isComplete ? null : epNum + 1,
+    });
+  } catch (err) {
+    console.error(`[gate/4] ep${epNum} 승인 저장 실패:`, err);
+    res.status(500).json({ error: "대본 승인 저장 중 오류가 발생했습니다" });
+  }
 });
 
 // ─── 헬퍼 함수 ────────────────────────────────────────────────
@@ -492,4 +662,21 @@ function buildPhase3GatingMessage(gating: {
       ? ` (경고 ${gating.pacing_warnings.length}건 있음)`
       : "";
   return `100화 로드맵이 완성되었습니다${warnMsg}. 로드맵을 확인하고 /gate/3을 호출하여 대본 작성을 시작하세요.`;
+}
+
+function buildPhase4GatingMessage(
+  epNum: number,
+  gating: { condition1: boolean; condition2: boolean; condition3: boolean },
+  scc: { all_passed: boolean; flagged: number; passed: number } | null
+): string {
+  if (!gating.condition1) {
+    return `${epNum}화 대본이 30컷을 충족하지 않습니다. Phase 4를 다시 실행해주세요.`;
+  }
+  if (scc === null) {
+    return `${epNum}화 30컷 대본이 생성되었습니다. SCC를 실행하려면 trigger_scc=true로 다시 호출하거나 /gate/4/${epNum}으로 진행하세요.`;
+  }
+  if (!gating.condition2) {
+    return `${epNum}화 대본 생성 완료. SCC: ${scc.passed}컷 통과, ${scc.flagged}컷 플래그. 플래그 컷 재생성 후 /gate/4/${epNum}을 호출하세요.`;
+  }
+  return `${epNum}화 30컷 대본 + SCC 모두 완료. /gate/4/${epNum}을 호출하여 다음 화로 진행하세요.`;
 }

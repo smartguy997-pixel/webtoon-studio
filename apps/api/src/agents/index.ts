@@ -48,3 +48,15 @@ export {
   type EpisodeType,
   type ArcType,
 } from "./scenario.js";
+
+// Phase 4
+export {
+  runScriptAgent,
+  detectChapterStyle,
+  type ScriptWriterInput,
+  type ScriptCut,
+  type ScriptDraft,
+  type Phase4FinalOutput,
+  type ChapterStyle,
+  type CameraAngle,
+} from "./script.js";

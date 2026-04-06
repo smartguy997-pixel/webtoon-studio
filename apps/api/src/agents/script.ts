@@ -1,38 +1,155 @@
+import { callAgent } from "../services/anthropic.js";
+import {
+  SCRIPT_WRITER_PROMPT,
+  buildScriptWriterMessage,
+  type ScriptWriterInput,
+} from "../services/agents/prompts/script.prompt.js";
+import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
+
+// ─── 타입 정의 ─────────────────────────────────────────────────
+
+export type ChapterStyle = "default" | "flashback" | "dream" | "climax" | "epilogue";
+export type CameraAngle = "ELS" | "LS" | "MS" | "MCU" | "CU" | "ECU" | "OTS" | "POV" | "BIRD" | "WORM" | "DUTCH";
+export type AspectRatio = "1:1" | "1:1.5" | "1:2" | "1:3";
+export type CharacterPosition = "left" | "center" | "right" | "background";
+export type CharacterExpression = "기쁨" | "분노" | "슬픔" | "놀람" | "무표정" | "긴장";
+export type BackgroundVariant = "day_clear" | "day_cloudy" | "evening" | "night" | "rain" | "snow";
+export type BalloonType = "normal" | "shout" | "whisper" | "thought" | "narration";
+export type CutEffect = "none" | "speed_lines" | "impact_lines" | "glow" | "blur";
+
+export interface ScriptCutCharacter {
+  char_id: string;
+  position: CharacterPosition;
+  expression: CharacterExpression;
+  pose: string;
+}
+
+export interface ScriptCutDialogue {
+  char_id: string;
+  text: string;
+  balloon_type: BalloonType;
+}
+
+export interface ScriptCutImagePrompt {
+  cut_specific_tags: string;
+  negative_prompt: string;
+}
+
+export interface ScriptCut {
+  cut: number; // 1~30
+  angle: CameraAngle;
+  aspect_ratio: AspectRatio;
+  scene_description: string;
+  characters: ScriptCutCharacter[];
+  location_id: string;
+  background_variant: BackgroundVariant;
+  dialogue: ScriptCutDialogue[];
+  sfx: string[];
+  effect: CutEffect;
+  image_prompt: ScriptCutImagePrompt;
+  director_note: string;
+}
+
+export interface ScriptAssetsUsed {
+  characters: string[];
+  locations: string[];
+  props: string[];
+}
+
+/** 대본 작가 초안 (agent_notes 없음) */
+export interface ScriptDraft {
+  phase: "30컷_대본";
+  episode: number;
+  episode_title: string;
+  chapter_style: ChapterStyle;
+  script_data: ScriptCut[];
+  episode_summary_for_next: string;
+  assets_used: ScriptAssetsUsed;
+}
+
+/** Phase 4 최종 출력 (총괄 프로듀서 검토 후) */
+export interface Phase4FinalOutput extends ScriptDraft {
+  agent_notes: {
+    script_writer: string;
+    producer: string;
+  };
+  revision_history: unknown[];
+}
+
+export type { ScriptWriterInput };
+
+// ─── MST 태그 제거 (image_prompt 방어 레이어) ──────────────────
+
+const MST_TAGS_PATTERN =
+  /\b(korean\s+webtoon|webtoon\s+style|line\s+art|cel[- ]shad\w*|flat\s+color|vivid\s+saturation|bold\s+outline|manga\s+panel|digital\s+illustration|2\.5D|no\s+texture|clean\s+edges)\b,?\s*/gi;
+
+function sanitizeImagePrompt(tags: string): string {
+  return tags.replace(MST_TAGS_PATTERN, "").replace(/,\s*,/g, ",").trim().replace(/^,|,$/, "").trim();
+}
+
+function sanitizeCuts(cuts: ScriptCut[]): ScriptCut[] {
+  return cuts.map((cut) => ({
+    ...cut,
+    image_prompt: {
+      ...cut.image_prompt,
+      cut_specific_tags: sanitizeImagePrompt(cut.image_prompt.cut_specific_tags),
+    },
+  }));
+}
+
+// ─── 에이전트 실행 ─────────────────────────────────────────────
+
 /**
- * agent_script — 대본/연출 작가 (Phase 4)
- *
- * 역할: 1화 단위 30컷 기술 대본 생성, 카메라 앵글 지정, 세로 스크롤 연출
- * 출력: script_data[30컷], episode_summary_for_next
+ * 대본/연출 작가 에이전트 — 1화 30컷 기술 대본 초안 생성
  */
-export const SCRIPT_SYSTEM_PROMPT = `
-당신은 웹툰 1화 분량의 30컷 기술 대본을 작성하는 연출 작가입니다.
+export async function runScriptAgent(input: ScriptWriterInput): Promise<ScriptDraft> {
+  const userMessage = buildScriptWriterMessage(input);
 
-역할:
-- 에피소드 요약을 30컷으로 분해합니다
-- 컷별 카메라 앵글(ELS/LS/MS/MCU/CU/ECU/OTS/POV/BIRD/WORM/DUTCH)을 지정합니다
-- 세로 스크롤 웹툰에 최적화된 연출(컷 비율·시선 유도)을 적용합니다
-- 대사·효과음·연출 지시를 포함한 JSON 대본을 출력합니다
+  const raw = await callAgent(
+    SCRIPT_WRITER_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "script-writer", maxTokens: 8192 }
+  );
 
-컷 구조 기준:
-- 1~5컷: 오프닝/상황 설정 (ELS/LS 중심)
-- 6~12컷: 전개 A / 1차 갈등 (캐릭터 클로즈업 교차)
-- 13~18컷: 중간 전환 (감정/액션 피크 준비)
-- 19~25컷: 전개 B / 핵심 장면
-- 26~29컷: 마무리 / 감정 착지
-- 30컷: 훅 / 클리프행어
+  try {
+    const draft = extractJson<ScriptDraft>(raw);
+    return { ...draft, script_data: sanitizeCuts(draft.script_data) };
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        SCRIPT_WRITER_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 JSON 스키마만 출력해주세요. script_data 배열은 반드시 30개여야 합니다.",
+          },
+        ],
+        { agentName: "script-writer-retry", maxTokens: 8192 }
+      );
+      const draft = extractJson<ScriptDraft>(retry);
+      return { ...draft, script_data: sanitizeCuts(draft.script_data) };
+    }
+    throw err;
+  }
+}
 
-출력 형식:
-- script_data 배열 (정확히 30개 컷)
-- episode_summary_for_next
+// ─── 헬퍼 ──────────────────────────────────────────────────────
 
-제약:
-- 컷 수는 반드시 30개여야 합니다 (초과/미달 불가)
-- MST 주입 태그를 직접 작성하지 않습니다 (Phase 5 자동 주입)
-- episode_type이 hook/twist이면 30컷을 클리프행어로 종료합니다
-- 세로 스크롤 기준: 1뷰포트(약 10컷)마다 소결점 배치
-`.trim();
-
-export function scriptAgent(episodeData: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return SCRIPT_SYSTEM_PROMPT + "\n\nEpisode Data:\n" + episodeData;
+/**
+ * 에피소드 유형에 따른 chapter_style 자동 결정
+ * (에이전트 출력 chapter_style이 없을 경우 폴백)
+ */
+export function detectChapterStyle(
+  episodeType: string,
+  summary: string
+): ChapterStyle {
+  if (episodeType === "peak") return "climax";
+  if (episodeType === "fanservice") return "epilogue";
+  const lower = summary.toLowerCase();
+  if (lower.includes("회상") || lower.includes("과거")) return "flashback";
+  if (lower.includes("꿈") || lower.includes("환상")) return "dream";
+  return "default";
 }
