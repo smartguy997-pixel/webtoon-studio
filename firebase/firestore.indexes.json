@@ -1,0 +1,36 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "projects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_uid", "order": "ASCENDING" },
+        { "fieldPath": "updated_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "episodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "arc_id", "order": "ASCENDING" },
+        { "fieldPath": "ep", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "episodes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "episode_type", "order": "ASCENDING" },
+        { "fieldPath": "ep", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cuts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cut", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

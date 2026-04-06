@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 프로젝트: 소유자만 읽기/쓰기
+    match /projects/{projectId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == resource.data.owner_uid;
+      allow create: if request.auth != null;
+    }
+
+    // 프로젝트 요약 (슬라이딩 윈도우): 소유자만 접근
+    match /project_summary/{projectId}/{document=**} {
+      allow read, write: if isOwner(projectId);
+    }
+
+    // 승인된 에셋: 소유자만 읽기, locked=true이면 쓰기 불가
+    match /approved_assets/{projectId}/{document=**} {
+      allow read: if isOwner(projectId);
+      allow write: if isOwner(projectId) && !resource.data.locked;
+      allow create: if isOwner(projectId);
+    }
+
+    // 화풍 레지스트리 (Phase 5): 소유자만 읽기, locked=true이면 쓰기 불가
+    match /style_registry/{projectId}/{document=**} {
+      allow read: if isOwner(projectId);
+      allow write: if isOwner(projectId) && !resource.data.locked;
+      allow create: if isOwner(projectId);
+    }
+
+    // 100화 로드맵 (Phase 3): 소유자만 접근
+    match /series_roadmap/{projectId}/{document=**} {
+      allow read, write: if isOwner(projectId);
+    }
+
+    // 대본 (Phase 4): 소유자만 접근
+    match /scripts/{projectId}/{document=**} {
+      allow read, write: if isOwner(projectId);
+    }
+
+    function isOwner(projectId) {
+      return request.auth != null
+        && request.auth.uid
+          == get(/databases/$(database)/documents/projects/$(projectId)).data.owner_uid;
+    }
+  }
+}
