@@ -1,323 +1,513 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import s from "./page.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
-type SccStatus = "pass"|"warn"|"fail"|"pending";
+const AGENTS = {
+  script:    { label: "대본/연출 작가",  color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+  character: { label: "캐릭터 디자이너", color: "#fb923c", bg: "rgba(251,146,60,0.12)"  },
+  producer:  { label: "총괄 프로듀서",   color: "#f1f5f9", bg: "rgba(241,245,249,0.12)" },
+  user:      { label: "나",             color: "#7c6cfc", bg: "rgba(124,108,252,0.12)"  },
+} as const;
+type AgentId = keyof typeof AGENTS;
+
+type SccStatus = "pass" | "warn" | "fail";
 
 interface Cut {
-  cut: number; panel_type: string; description: string;
-  dialogue: string; camera: string; emotion: string; scc_status: SccStatus;
+  cut: number;
+  panel: string;
+  angle: string;
+  placement: string;
+  expression: string;
+  dialogue: string;
+  sfx: string;
+  direction: string;
+  mstTags: string[];
+  scc: SccStatus;
 }
-interface Phase4Data {
-  episode: number; title: string; cuts: Cut[]; scc_pass_rate: number;
-}
-interface SavedEpisode {
-  data: Phase4Data; isMock: boolean; savedAt: string;
-}
-type RunState = "idle"|"running"|"done";
-type AgentStatus = "idle"|"running"|"done";
 
-const AGENTS = [
-  { id:"script",    label:"대본/연출 작가",  desc:"30컷 콘티 · 대사 · 카메라 지시 작성" },
-  { id:"character", label:"캐릭터 디자이너", desc:"캐릭터 등장 컷 SCC 검증" },
-  { id:"producer",  label:"총괄 프로듀서",   desc:"완성도 검토 · 최종 승인" },
+interface CutScriptCard {
+  ep: number;
+  cuts: Cut[];
+  sccRate: number;
+}
+
+interface Msg {
+  id: string;
+  agent: AgentId;
+  text: string;
+  done: boolean;
+  card?: CutScriptCard;
+  cardType?: "cutScript";
+}
+
+function mkId() { return Math.random().toString(36).slice(2); }
+
+const PANELS = ["와이드","미디엄","클로즈업","극클로즈","오버헤드","로우앵글"];
+const ANGLES = ["정면","사선 45°","측면","배면","버드아이","웜스아이"];
+const PLACEMENTS = ["중앙 단독","좌측 여백","우측 여백","투샷 대칭","삼각 구도","교차 배치"];
+const EXPRESSIONS = ["결의","분노","두려움","슬픔","놀람","기쁨","평온","긴장","혼란","체념"];
+const DIALOGUES = [
+  `"지금 여기서 물러설 수 없어."`,
+  `"그게...사실이야?"`,
+  `(내레이션) 그날의 선택이 모든 걸 바꿨다.`,
+  `"처음부터 알고 있었어."`,
+  `"내가 반드시 지켜낼게."`,
+  `"너는 아무것도 모르잖아!"`,
+  `"...미안해."`,
+  `(말 없이 눈을 마주친다)`,
+  `"이제 시작이야."`,
+  `"여기서 끝낼 수는 없어."`,
+];
+const SFXS = [
+  "WHOOSH — 바람이 가르는 소리",
+  "BOOM — 묵직한 충격음",
+  "무음 — 긴 침묵",
+  "심장 박동 — 긴장감 조성",
+  "BGM페이드아웃 — 감정 절제",
+  "CRACK — 유리 금이 가는 소리",
+  "스텝 — 조심스러운 발소리",
+  "바람 소리 — 공허한 여운",
+];
+const DIRECTIONS = [
+  "카메라 천천히 줌인 → 인물 감정 강조",
+  "컷 전환 직전 1초 정지 → 긴장감 극대화",
+  "배경 디테일 충분히 → 세계관 정보 전달",
+  "두 인물 시선 교차 편집 → 심리전",
+  "역광 실루엣 → 정체 숨김",
+  "핸드헬드 카메라 느낌 → 불안감 조성",
+  "대칭 구도 → 긴장의 균형",
+  "클로즈 → 와이드 반전 컷 → 충격 증폭",
+];
+const MST_TAGS_POOL = [
+  ["세밀묘사","역광강조"],
+  ["감정곡선-상승","실루엣"],
+  ["배경디테일","원근법"],
+  ["익스트림클로즈","표정집중"],
+  ["와이드샷","세계관노출"],
+  ["투샷","심리대립"],
+  ["내레이션박스","시간생략"],
+  ["SFX연출","침묵대비"],
 ];
 
-const PANEL_LABELS: Record<string,string> = {
-  wide:"와이드", medium:"미디엄", close:"클로즈업",
-  extreme_close:"극클로즈", overhead:"오버헤드",
-};
-
-function buildMockEpisode(ep: number, genre: string): Phase4Data {
-  const panelCycle: string[] = [
-    "wide","medium","close","medium","close",
-    "extreme_close","wide","medium","close","overhead",
-    "medium","close","wide","medium","close",
-    "extreme_close","medium","close","medium","wide",
-    "close","medium","extreme_close","wide","close",
-    "medium","close","medium","wide","extreme_close",
-  ];
-
-  const emotionsByGenre: Record<string,string[]> = {
-    "판타지":["평온","긴장","결의","놀람","긴장","분노","결의","긴장","놀람","결의"],
-    "로맨스":["설렘","평온","설렘","긴장","슬픔","긴장","설렘","혼란","설렘","기쁨"],
-    "액션":  ["긴장","분노","결의","긴장","분노","놀람","결의","긴장","분노","결의"],
-    "스릴러":["공포","긴장","혼란","공포","긴장","놀람","공포","긴장","혼란","공포"],
-  };
-  const emotions = emotionsByGenre[genre]??["평온","긴장","결의","놀람","긴장","분노","결의","기쁨","설렘","혼란"];
-
-  const descs = [
-    "인물이 장소에 들어서며 주변을 살핀다.",
-    "카메라가 천천히 인물의 표정을 클로즈업한다.",
-    "두 인물이 마주보며 긴 침묵이 흐른다.",
-    "갑작스러운 사건에 모두가 굳어버린다.",
-    "인물이 결심한 듯 앞으로 나아간다.",
-    "배경 전체가 드러나는 풀샷으로 전환된다.",
-    "감정이 폭발하며 인물이 소리친다.",
-    "조용한 순간, 인물의 눈빛이 흔들린다.",
-    "예상치 못한 사건이 분위기를 뒤집는다.",
-    "마지막 컷, 여운을 남기는 롱샷으로 마무리된다.",
-  ];
-  const dialogues = [
-    `"지금 여기서 물러설 수 없어."`,
-    `"그게 사실이야...?"`,
-    `(말 없이 눈을 마주친다)`,
-    `"처음부터 알고 있었어."`,
-    `"내가 반드시 지켜낼게."`,
-    `(내레이션) 그날의 선택이 모든 걸 바꿨다.`,
-    `"너는 아무것도 모르잖아!"`,
-    `"...미안해."`,
-    `(소리 없이 고개를 끄덕인다)`,
-    `"이제 시작이야."`,
-  ];
-
-  const sccMap: SccStatus[] = Array.from({length:30},(_,i)=>
-    [6,12,21].includes(i)?"warn":[20].includes(i)?"fail":"pass"
+function buildMockCuts(ep: number, genre: string): Cut[] {
+  const sccMap: SccStatus[] = Array.from({ length: 30 }, (_, i) =>
+    [5, 12, 22].includes(i) ? "warn" : i === 18 ? "fail" : "pass"
   );
-
-  const cuts: Cut[] = Array.from({length:30},(_,i)=>{
-    const cut = i+1;
-    const panel_type = panelCycle[i];
-    return {
-      cut, panel_type,
-      description:`[컷 ${cut}] ${descs[cut%descs.length]}`,
-      dialogue: dialogues[cut%dialogues.length],
-      camera:`${PANEL_LABELS[panel_type]??panel_type} / ${["정면","사선","측면","배면"][cut%4]} / ${["자연광","인공조명","역광","실루엣"][cut%4]}`,
-      emotion: emotions[cut%emotions.length],
-      scc_status: sccMap[i],
-    };
-  });
-
-  const passCount = cuts.filter(c=>c.scc_status==="pass").length;
-  return {
-    episode: ep,
-    title:`${ep}화 — ${["각성","시련","선택","반전","결전"][ep%5]}`,
-    cuts,
-    scc_pass_rate: parseFloat((passCount/30).toFixed(2)),
-  };
+  return Array.from({ length: 30 }, (_, i) => ({
+    cut: i + 1,
+    panel: PANELS[i % PANELS.length],
+    angle: ANGLES[i % ANGLES.length],
+    placement: PLACEMENTS[i % PLACEMENTS.length],
+    expression: EXPRESSIONS[i % EXPRESSIONS.length],
+    dialogue: DIALOGUES[i % DIALOGUES.length],
+    sfx: SFXS[i % SFXS.length],
+    direction: DIRECTIONS[i % DIRECTIONS.length],
+    mstTags: MST_TAGS_POOL[i % MST_TAGS_POOL.length],
+    scc: sccMap[i],
+  }));
 }
 
-function loadEpisode(projectId:string, ep:number): SavedEpisode|null {
-  try { return JSON.parse(localStorage.getItem(`wts_phase4_${projectId}_ep${ep}`)??'null'); } catch { return null; }
-}
-function saveEpisode(projectId:string, ep:number, r:SavedEpisode) {
-  localStorage.setItem(`wts_phase4_${projectId}_ep${ep}`,JSON.stringify(r));
+function sccIcon(scc: SccStatus) {
+  return scc === "pass" ? "✅" : scc === "warn" ? "⚠️" : "❌";
 }
 
-function SccBadge({ status }: { status: SccStatus }) {
-  const m = {
-    pass:{label:"SCC ✓",cls:s.sccPass},
-    warn:{label:"SCC △",cls:s.sccWarn},
-    fail:{label:"SCC ✗",cls:s.sccFail},
-    pending:{label:"SCC —",cls:s.sccPending},
-  };
-  const {label,cls} = m[status];
+function SccBadge({ scc }: { scc: SccStatus }) {
+  const cls = scc === "pass" ? s.sccPass : scc === "warn" ? s.sccWarn : s.sccFail;
+  const label = scc === "pass" ? "SCC ✓" : scc === "warn" ? "SCC △" : "SCC ✗";
   return <span className={`${s.sccBadge} ${cls}`}>{label}</span>;
 }
 
-export default function Phase4Page({ params }: { params: { projectId: string } }) {
-  const { projectId } = params;
-
-  const [selectedEp,   setSelectedEp]   = useState(1);
-  const [runState,     setRunState]     = useState<RunState>("idle");
-  const [agentStates,  setAgentStates]  = useState<AgentStatus[]>(["idle","idle","idle"]);
-  const [result,       setResult]       = useState<SavedEpisode|null>(null);
-  const [isMock,       setIsMock]       = useState(false);
-  const [genre,        setGenre]        = useState("판타지");
-  const [expandedCut,  setExpandedCut]  = useState<number|null>(null);
-  const [doneEps,      setDoneEps]      = useState<Set<number>>(new Set());
-
-  useEffect(()=>{
-    const done = new Set<number>();
-    for (let i=1;i<=10;i++) {
-      if (localStorage.getItem(`wts_phase4_${projectId}_ep${i}`)) done.add(i);
-    }
-    setDoneEps(done);
-
-    const saved = loadEpisode(projectId,selectedEp);
-    if (saved) { setResult(saved); setRunState("done"); setIsMock(saved.isMock); }
-    else { setResult(null); setRunState("idle"); }
-
-    try {
-      const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`)??'null');
-      if (p1?.input?.genre) setGenre(p1.input.genre);
-    } catch {}
-  }, [projectId, selectedEp]);
-
-  function setAgent(i:number, st:AgentStatus) {
-    setAgentStates(prev=>prev.map((v,idx)=>idx===i?st:v));
-  }
-
-  async function runScript() {
-    setRunState("running"); setAgentStates(["idle","idle","idle"]); setResult(null);
-    const key = localStorage.getItem("wts_anthropic_key")??"";
-    let useMock = !key;
-
-    if (!useMock) {
-      try {
-        for (let i=0;i<3;i++) { setAgent(i,"running"); await delay(600+i*300); setAgent(i,"done"); }
-        const res = await fetch(`${API_BASE}/api/phases/${projectId}/phase-4`,{
-          method:"POST", headers:{"Content-Type":"application/json","X-Anthropic-Key":key},
-          body:JSON.stringify({episode:selectedEp}), signal:AbortSignal.timeout(90000),
-        });
-        if (!res.ok) throw new Error();
-        const json = await res.json();
-        const saved:SavedEpisode = {data:json.data,isMock:false,savedAt:new Date().toISOString()};
-        saveEpisode(projectId,selectedEp,saved);
-        setResult(saved); setRunState("done");
-        setDoneEps(prev=>new Set([...prev,selectedEp]));
-        return;
-      } catch { useMock=true; setAgentStates(["idle","idle","idle"]); }
-    }
-
-    setIsMock(true);
-    for (let i=0;i<AGENTS.length;i++) { setAgent(i,"running"); await delay(700+i*300); setAgent(i,"done"); }
-    const mockData = buildMockEpisode(selectedEp,genre);
-    const saved:SavedEpisode = {data:mockData,isMock:true,savedAt:new Date().toISOString()};
-    saveEpisode(projectId,selectedEp,saved);
-    setResult(saved); setRunState("done");
-    setDoneEps(prev=>new Set([...prev,selectedEp]));
-  }
-
-  const passCount = result?.data.cuts.filter(c=>c.scc_status==="pass").length??0;
-  const total = result?.data.cuts.length??30;
+function CutCard({ cut, onEditRequest }: { cut: Cut; onEditRequest: (cut: number) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [jsonView, setJsonView] = useState(false);
 
   return (
-    <div className={s.page}>
-      <h1 className={s.pageTitle}>Phase 4 — 30컷 제작 대본</h1>
-      <p className={s.pageDesc}>화별 30컷 콘티 · 대사 · 카메라 지시 · SCC 검증을 AI가 자동 생성합니다.</p>
+    <div className={`${s.cutCard} ${cut.scc === "fail" ? s.cutFail : cut.scc === "warn" ? s.cutWarn : ""}`}>
+      <div className={s.cutCardTop} onClick={() => setExpanded(!expanded)}>
+        <span className={s.cutNum}>컷 {cut.cut}</span>
+        <span className={s.cutPanel}>{cut.panel}</span>
+        <span className={s.cutExpression}>{cut.expression}</span>
+        <SccBadge scc={cut.scc} />
+        <span className={s.cutChevron}>{expanded ? "▲" : "▼"}</span>
+      </div>
 
-      {/* Episode selector */}
-      <div className={s.epSelector}>
-        <div className={s.epSelectorLabel}>화 선택</div>
-        <div className={s.epSelectorRow}>
-          {Array.from({length:10},(_,i)=>i+1).map(ep=>(
-            <button key={ep}
-              className={`${s.epBtn} ${selectedEp===ep?s.epBtnActive:""} ${doneEps.has(ep)?s.epBtnDone:""}`}
-              onClick={()=>setSelectedEp(ep)}
-            >
-              {ep}화
-              {doneEps.has(ep)&&<span className={s.epDoneDot}/>}
-            </button>
-          ))}
-          <span className={s.epMore}>… 100화까지</span>
+      {/* Cinematic panel placeholder */}
+      <div className={s.cutVisual}>
+        <div className={s.cutVisualInner}>
+          <div className={s.cutVisualLabel}>{cut.panel}</div>
+          <div className={s.cutVisualAngle}>{cut.angle}</div>
         </div>
       </div>
 
-      {runState==="idle" && (
-        <div className={s.startCard}>
-          <div className={s.startIcon}>✏️</div>
-          <div className={s.startBody}>
-            <div className={s.startTitle}>{selectedEp}화 대본 생성</div>
-            <div className={s.startDesc}>3인의 AI 에이전트가 {selectedEp}화 30컷 콘티·대사·연출 지시를 자동 작성하고 SCC 검증을 수행합니다.</div>
+      {/* MST tags */}
+      <div className={s.mstTags}>
+        {cut.mstTags.map(tag => (
+          <span key={tag} className={s.mstTag}># {tag}</span>
+        ))}
+      </div>
+
+      {expanded && (
+        <div className={s.cutDetail}>
+          <div className={s.cutDetailTabs}>
+            <button className={`${s.cutDetailTab} ${!jsonView ? s.cutDetailTabActive : ""}`} onClick={() => setJsonView(false)}>읽기 뷰</button>
+            <button className={`${s.cutDetailTab} ${jsonView ? s.cutDetailTabActive : ""}`} onClick={() => setJsonView(true)}>JSON</button>
           </div>
-          <button className={s.btnRun} onClick={runScript}>✦ {selectedEp}화 대본 생성</button>
-        </div>
-      )}
-
-      {runState==="running" && (
-        <div className={s.progress}>
-          <div className={s.progressTitle}>에이전트 실행 중 — {selectedEp}화</div>
-          <div className={s.agentSteps}>
-            {AGENTS.map((agent,i)=>{
-              const st = agentStates[i];
-              return (
-                <div key={agent.id} className={`${s.agentStep} ${st==="done"?s.stepDone:""} ${st==="running"?s.stepActive:""}`}>
-                  <div className={s.agentStepIcon}>
-                    {st==="done"?"✓":st==="running"?<div className={s.spinnerDot}><span/><span/><span/></div>:i+1}
-                  </div>
-                  <div className={s.agentStepBody}>
-                    <div className={s.agentStepName}>
-                      {agent.label}
-                      {st==="running"&&<span className={s.runningLabel}>작업 중…</span>}
-                    </div>
-                    <div className={s.agentStepDesc}>{agent.desc}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {runState==="done" && result && (
-        <>
-          {isMock && (
-            <div className={s.mockBadge}>
-              ⚠ ANTHROPIC_API_KEY 미설정 — 미리보기(mock) 데이터입니다.&nbsp;
-              <a href="/settings">설정에서 키 입력 →</a>
-            </div>
-          )}
-
-          <div className={s.epHeader}>
-            <div className={s.epHeaderLeft}>
-              <div className={s.epHeaderTitle}>{result.data.title}</div>
-              <div className={s.epHeaderMeta}>총 {total}컷 · SCC 통과 {passCount}/{total}</div>
-            </div>
-            <div className={s.sccSummary}>
-              <div className={s.sccBar}>
-                <div className={s.sccBarFill} style={{width:`${(passCount/total)*100}%`}}/>
-              </div>
-              <div className={s.sccRate}>{Math.round((passCount/total)*100)}%</div>
-            </div>
-            <button className={s.btnRetry} onClick={()=>setRunState("idle")}>↺ 재생성</button>
-          </div>
-
-          <div className={s.cutGrid}>
-            {result.data.cuts.map(cut=>(
-              <div key={cut.cut}
-                className={`${s.cutCard} ${cut.scc_status==="fail"?s.cutFail:cut.scc_status==="warn"?s.cutWarn:""}`}
-                onClick={()=>setExpandedCut(expandedCut===cut.cut?null:cut.cut)}
-              >
-                <div className={s.cutCardHeader}>
-                  <span className={s.cutNum}>컷 {cut.cut}</span>
-                  <span className={s.panelType}>{PANEL_LABELS[cut.panel_type]??cut.panel_type}</span>
-                  <span className={s.emotion}>{cut.emotion}</span>
-                  <SccBadge status={cut.scc_status}/>
-                </div>
-                {/* CSS-only cinematic panel */}
-                <div className={s.cutImage}>
-                  <div className={s.cutImageLabel}>{PANEL_LABELS[cut.panel_type]??cut.panel_type}</div>
-                </div>
-                <div className={s.cutDesc}>{cut.description}</div>
-                {expandedCut===cut.cut && (
-                  <div className={s.cutDetail}>
-                    <div className={s.cutDetailRow}>
-                      <span className={s.cutDetailLabel}>대사</span>
-                      <span className={s.cutDetailValue}>{cut.dialogue}</span>
-                    </div>
-                    <div className={s.cutDetailRow}>
-                      <span className={s.cutDetailLabel}>카메라</span>
-                      <span className={s.cutDetailValue}>{cut.camera}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {passCount >= 27 ? (
-            <div className={s.gatingBanner}>
-              <div className={s.gatingText}>
-                <h3>✓ SCC 검증 통과 — 다음 화 진행 가능</h3>
-                <p>SCC 통과율 {Math.round((passCount/total)*100)}% · 기준 90% 이상 충족<br/>다음 화 대본을 생성하거나 Phase 5 이미지 생성을 시작합니다.</p>
-              </div>
-              <button className={s.btnGating} onClick={()=>setSelectedEp(prev=>Math.min(prev+1,100))}>
-                {selectedEp+1}화 대본 →
-              </button>
-            </div>
+          {jsonView ? (
+            <pre className={s.cutJson}>{JSON.stringify({
+              cut: cut.cut, panel: cut.panel, angle: cut.angle,
+              placement: cut.placement, expression: cut.expression,
+              dialogue: cut.dialogue, sfx: cut.sfx,
+              direction: cut.direction, mstTags: cut.mstTags,
+              scc_status: cut.scc,
+            }, null, 2)}</pre>
           ) : (
-            <div className={s.gatingBlock}>
-              ✗ SCC 검증 미통과 — 통과율 {Math.round((passCount/total)*100)}%가 기준(90%) 미만입니다. 재생성하거나 컷을 수정해주세요.
+            <div className={s.cutDetailRows}>
+              <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>카메라 앵글</span><span className={s.cutDetailVal}>{cut.angle}</span></div>
+              <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>캐릭터 배치</span><span className={s.cutDetailVal}>{cut.placement}</span></div>
+              <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>표정</span><span className={s.cutDetailVal}>{cut.expression}</span></div>
+              <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>대사</span><span className={s.cutDetailVal}>{cut.dialogue}</span></div>
+              <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>효과음</span><span className={s.cutDetailVal}>{cut.sfx}</span></div>
+              <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>연출 의도</span><span className={s.cutDetailVal}>{cut.direction}</span></div>
             </div>
           )}
-        </>
+          <button className={s.btnEdit} onClick={e => { e.stopPropagation(); onEditRequest(cut.cut); }}>
+            ✏ 이 컷 수정 요청
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-function delay(ms:number) { return new Promise(r=>setTimeout(r,ms)); }
+function ScriptCardView({ card, onEditRequest }: { card: CutScriptCard; onEditRequest: (cut: number) => void }) {
+  const passCount = card.cuts.filter(c => c.scc === "pass").length;
+  const warnCount = card.cuts.filter(c => c.scc === "warn").length;
+  const failCount = card.cuts.filter(c => c.scc === "fail").length;
+  return (
+    <div className={s.scriptCard}>
+      <div className={s.scriptCardHeader}>
+        <div className={s.scriptCardTitle}>{card.ep}화 — 30컷 대본</div>
+        <div className={s.sccSummary}>
+          <span className={s.sccStat}><span style={{color:"#4ade80"}}>✅ {passCount}</span></span>
+          <span className={s.sccStat}><span style={{color:"#fbbf24"}}>⚠️ {warnCount}</span></span>
+          <span className={s.sccStat}><span style={{color:"#f87171"}}>❌ {failCount}</span></span>
+          <div className={s.sccBar}>
+            <div className={s.sccBarFill} style={{ width: `${(passCount/30)*100}%` }} />
+          </div>
+          <span className={s.sccPct}>{Math.round((passCount/30)*100)}%</span>
+        </div>
+      </div>
+      <div className={s.cutGrid}>
+        {card.cuts.map(cut => (
+          <CutCard key={cut.cut} cut={cut} onEditRequest={onEditRequest} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function Phase4Page({ params }: { params: { projectId: string } }) {
+  const { projectId } = params;
+
+  const [stage, setStage] = useState<"idle"|"chat">("idle");
+  const [selectedEp, setSelectedEp] = useState(1);
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [genre, setGenre] = useState("판타지");
+  const [isMock, setIsMock] = useState(false);
+  const [scriptDone, setScriptDone] = useState(false);
+  const [doneEps, setDoneEps] = useState<Set<number>>(new Set());
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
+      if (p1?.input?.genre) setGenre(p1.input.genre);
+    } catch {}
+    const done = new Set<number>();
+    for (let i = 1; i <= 10; i++) {
+      if (localStorage.getItem(`wts_phase4_chat_${projectId}_ep${i}`)) done.add(i);
+    }
+    setDoneEps(done);
+  }, [projectId]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`wts_phase4_chat_${projectId}_ep${selectedEp}`);
+    if (saved) {
+      try {
+        const p = JSON.parse(saved);
+        setMessages(p.messages);
+        setScriptDone(p.scriptDone);
+        setIsMock(p.isMock);
+        setStage("chat");
+      } catch {}
+    } else {
+      setMessages([]);
+      setScriptDone(false);
+      setStage("idle");
+    }
+  }, [projectId, selectedEp]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  function saveChat(msgs: Msg[], done: boolean, mock: boolean) {
+    localStorage.setItem(`wts_phase4_chat_${projectId}_ep${selectedEp}`, JSON.stringify({
+      messages: msgs, scriptDone: done, isMock: mock,
+    }));
+  }
+
+  async function startScript() {
+    setStage("chat");
+    setBusy(true);
+    const key = localStorage.getItem("wts_anthropic_key") ?? "";
+    const useMock = !key;
+    setIsMock(useMock);
+    setMessages([]);
+    setScriptDone(false);
+
+    const msgs: Msg[] = [];
+
+    const s1id = mkId();
+    const s1: Msg = { id: s1id, agent: "script", done: false,
+      text: `${selectedEp}화 대본 작성을 시작합니다. 30컷 분량의 콘티 · 대사 · 카메라 앵글 · 연출 의도를 작성하겠습니다.` };
+    setMessages([s1]); msgs.push(s1);
+    await new Promise<void>(res => setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === s1id ? { ...m, done: true } : m));
+      res();
+    }, 1000));
+
+    await new Promise(r => setTimeout(r, 300));
+
+    const c1id = mkId();
+    const c1: Msg = { id: c1id, agent: "character", done: false,
+      text: `캐릭터 시트와 대조하여 각 컷의 캐릭터 일관성을 실시간 체크합니다. SCC(Style Consistency Check) 결과를 함께 표시합니다.` };
+    setMessages(prev => { msgs.push(c1); return [...prev, c1]; });
+    await new Promise<void>(res => setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === c1id ? { ...m, done: true } : m));
+      res();
+    }, 900));
+
+    await new Promise(r => setTimeout(r, 400));
+
+    const cuts = buildMockCuts(selectedEp, genre);
+    const passCount = cuts.filter(c => c.scc === "pass").length;
+    const card: CutScriptCard = { ep: selectedEp, cuts, sccRate: passCount / 30 };
+
+    const cardId = mkId();
+    const cardMsg: Msg = { id: cardId, agent: "script", done: true,
+      text: "", card, cardType: "cutScript" };
+    setMessages(prev => { msgs.push(cardMsg); return [...prev, cardMsg]; });
+
+    await new Promise(r => setTimeout(r, 500));
+
+    const sccPct = Math.round((passCount / 30) * 100);
+    const pId = mkId();
+    const pMsg: Msg = { id: pId, agent: "producer", done: false,
+      text: `${selectedEp}화 30컷 대본 완성. SCC 통과율 ${sccPct}% — ${sccPct >= 90 ? "기준 충족. 다음 화로 진행 가능합니다." : "기준(90%) 미달. ⚠️ 표시 컷을 수정해 주세요."}\n특정 컷 수정: "컷 N 수정: [의견]" 형식으로 요청해 주세요.` };
+    setMessages(prev => { msgs.push(pMsg); return [...prev, pMsg]; });
+    await new Promise<void>(res => setTimeout(() => {
+      setMessages(prev => prev.map(m => m.id === pId ? { ...m, done: true } : m));
+      res();
+    }, 1200));
+
+    setScriptDone(true);
+    setDoneEps(prev => new Set([...prev, selectedEp]));
+    setBusy(false);
+
+    setMessages(prev => {
+      saveChat(prev, true, useMock);
+      return prev;
+    });
+  }
+
+  async function sendMessage(text?: string) {
+    const msg = (text ?? input).trim();
+    if (!msg || busy) return;
+    if (!text) setInput("");
+    setBusy(true);
+
+    const uId = mkId();
+    setMessages(prev => [...prev, { id: uId, agent: "user", text: msg, done: true }]);
+
+    await new Promise(r => setTimeout(r, 500));
+
+    const cutMatch = msg.match(/컷\s*(\d+)\s*수정/);
+    if (cutMatch) {
+      const cutNum = parseInt(cutMatch[1]);
+      const sId = mkId();
+      setMessages(prev => [...prev, { id: sId, agent: "script", done: false,
+        text: `컷 ${cutNum}을 재작성합니다. 말씀하신 의견을 반영해 카메라 앵글·배치·연출을 조정했습니다.` }]);
+      await new Promise<void>(res => setTimeout(() => {
+        setMessages(prev => prev.map(m => m.id === sId ? { ...m, done: true } : m));
+        res();
+      }, 900));
+
+      await new Promise(r => setTimeout(r, 300));
+
+      const newCut: Cut = {
+        cut: cutNum,
+        panel: PANELS[cutNum % PANELS.length],
+        angle: ANGLES[(cutNum + 1) % ANGLES.length],
+        placement: PLACEMENTS[(cutNum + 2) % PLACEMENTS.length],
+        expression: EXPRESSIONS[(cutNum + 3) % EXPRESSIONS.length],
+        dialogue: DIALOGUES[(cutNum + 1) % DIALOGUES.length],
+        sfx: SFXS[(cutNum + 2) % SFXS.length],
+        direction: `[수정됨] ${msg.replace(/컷\s*\d+\s*수정\s*:?\s*/,"").slice(0,60) || DIRECTIONS[cutNum % DIRECTIONS.length]}`,
+        mstTags: MST_TAGS_POOL[(cutNum + 1) % MST_TAGS_POOL.length],
+        scc: "pass",
+      };
+      const miniCard: CutScriptCard = { ep: selectedEp, cuts: [newCut], sccRate: 1 };
+      const cId = mkId();
+      setMessages(prev => [...prev, { id: cId, agent: "script", done: true,
+        text: "", card: miniCard, cardType: "cutScript" }]);
+
+      const cchkId = mkId();
+      setMessages(prev => [...prev, { id: cchkId, agent: "character", done: false,
+        text: `컷 ${cutNum} SCC 재검증 완료. ✅ 캐릭터 일관성 통과.` }]);
+      await new Promise<void>(res => setTimeout(() => {
+        setMessages(prev => prev.map(m => m.id === cchkId ? { ...m, done: true } : m));
+        res();
+      }, 700));
+    } else {
+      const pId = mkId();
+      setMessages(prev => [...prev, { id: pId, agent: "producer", done: false,
+        text: `의견 감사합니다. "${msg.slice(0,50)}${msg.length>50?"...":""}" — 반영해 품질을 높이겠습니다. 특정 컷 수정은 "컷 N 수정: [내용]" 형식을 사용해 주세요.` }]);
+      await new Promise<void>(res => setTimeout(() => {
+        setMessages(prev => prev.map(m => m.id === pId ? { ...m, done: true } : m));
+        res();
+      }, 900));
+    }
+
+    setBusy(false);
+    setMessages(prev => {
+      saveChat(prev, scriptDone, isMock);
+      return prev;
+    });
+  }
+
+  return (
+    <div className={s.page}>
+      <h1 className={s.pageTitle}>Phase 4 — 30컷 제작 대본</h1>
+
+      {/* Episode selector */}
+      <div className={s.epSelector}>
+        <span className={s.epSelectorLabel}>화 선택</span>
+        <div className={s.epSelectorRow}>
+          {Array.from({ length: 10 }, (_, i) => i + 1).map(ep => (
+            <button key={ep}
+              className={`${s.epBtn} ${selectedEp === ep ? s.epBtnActive : ""} ${doneEps.has(ep) ? s.epBtnDone : ""}`}
+              onClick={() => setSelectedEp(ep)}>
+              {ep}화
+              {doneEps.has(ep) && <span className={s.epDoneDot} />}
+            </button>
+          ))}
+          <span className={s.epMore}>… 100화</span>
+        </div>
+      </div>
+
+      {stage === "idle" && (
+        <div className={s.idleWrap}>
+          {isMock && (
+            <div className={s.mockNote}>
+              ⚠ ANTHROPIC_API_KEY 미설정 — Mock 데이터로 생성됩니다.&nbsp;
+              <a href="/settings">설정 →</a>
+            </div>
+          )}
+          <div className={s.idleCard}>
+            <div className={s.idleIcon}>✏️</div>
+            <div className={s.idleTitle}>{selectedEp}화 대본 생성</div>
+            <div className={s.idleDesc}>
+              대본/연출 작가 · 캐릭터 디자이너 · 총괄 프로듀서가 협업하여<br/>
+              {selectedEp}화 30컷 — 카메라 앵글·배치·표정·대사·효과음·연출 의도를 생성하고<br/>
+              캐릭터 시트 일관성(SCC)과 MST 화풍 태그를 자동 검증합니다.
+            </div>
+            <button className={s.btnStart} onClick={startScript}>
+              ✦ {selectedEp}화 대본 생성
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === "chat" && (
+        <div className={s.chatLayout}>
+          <div className={s.chatBody}>
+            {isMock && (
+              <div className={s.mockBadge}>
+                ⚠ Mock 데이터 — <a href="/settings">API 키 설정</a>
+              </div>
+            )}
+            {messages.map(msg => {
+              const cfg = AGENTS[msg.agent];
+              const isUser = msg.agent === "user";
+              return (
+                <div key={msg.id} className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
+                  {!isUser && (
+                    <div className={s.avatar}
+                      style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33` }}>
+                      {cfg.label[0]}
+                    </div>
+                  )}
+                  <div className={s.msgContent}>
+                    {!isUser && <div className={s.agentName} style={{ color: cfg.color }}>{cfg.label}</div>}
+                    {msg.cardType === "cutScript" && msg.card ? (
+                      <ScriptCardView
+                        card={msg.card as CutScriptCard}
+                        onEditRequest={cut => sendMessage(`컷 ${cut} 수정: 개선 요청`)}
+                      />
+                    ) : (
+                      <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`}
+                        style={!isUser ? { borderColor: `${cfg.color}22` } : {}}>
+                        {!msg.done ? (
+                          <span className={s.dots}><span/><span/><span/></span>
+                        ) : msg.text.split("\n").map((line, i) => (
+                          <span key={i}>{line}{i < msg.text.split("\n").length - 1 && <br/>}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
+          </div>
+
+          {scriptDone && (
+            <div className={s.gatingRow}>
+              <div className={s.gatingBanner}>
+                <div className={s.gatingText}>
+                  <strong>✓ {selectedEp}화 대본 완성</strong>
+                  <span>컷 수정: "컷 N 수정: [의견]" · 다음 화로 이동하거나 Phase 5를 시작하세요</span>
+                </div>
+                <button className={s.btnGating} onClick={() => setSelectedEp(prev => Math.min(prev + 1, 100))}>
+                  {selectedEp + 1}화 대본 →
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className={s.chatInputRow}>
+            <textarea
+              className={s.chatInput}
+              placeholder={`컷 수정: "컷 N 수정: 내용" / 전체 의견 자유롭게 입력`}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              disabled={busy}
+              rows={1}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
+            />
+            <button className={s.btnSend} onClick={() => sendMessage()} disabled={busy || !input.trim()}>
+              전송
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

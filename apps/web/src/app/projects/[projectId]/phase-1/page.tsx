@@ -1,499 +1,601 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import s from "./page.module.css";
+import styles from "./page.module.css";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const AGENTS = {
+  strategist:   { label: "전략 기획자",    color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+  researcher:   { label: "심층 조사자",    color: "#34d399", bg: "rgba(52,211,153,0.12)"  },
+  worldbuilder: { label: "세계관 설계자",  color: "#60a5fa", bg: "rgba(96,165,250,0.12)"  },
+  character:    { label: "캐릭터 디자이너",color: "#fb923c", bg: "rgba(251,146,60,0.12)"  },
+  scenario:     { label: "시나리오 작가",  color: "#fbbf24", bg: "rgba(251,191,36,0.12)"  },
+  script:       { label: "대본/연출 작가", color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+  producer:     { label: "총괄 프로듀서",  color: "#f1f5f9", bg: "rgba(241,245,249,0.12)" },
+  user:         { label: "나",             color: "#7c6cfc", bg: "rgba(124,108,252,0.12)" },
+} as const;
+type AgentId = keyof typeof AGENTS;
 
-const GENRES = [
-  "판타지", "로맨스", "액션", "SF", "스릴러", "일상/힐링",
-  "무협", "스포츠", "공포", "역사", "드라마", "개그",
-];
-
-// ── 3 agents for Phase 1 ────────────────────────────────
-const AGENTS = [
-  { id: "strategist", label: "전략 기획자",   desc: "장르 포지셔닝 · USP 도출 · 경쟁작 분석" },
-  { id: "researcher", label: "심층 조사자",   desc: "트렌드 리서치 · 독자 시장 검증" },
-  { id: "producer",   label: "총괄 프로듀서", desc: "최종 실현가능성 점수 산정 · 종합 판단" },
-];
-
-// ── Types ─────────────────────────────────────────────────
-interface Competitor {
-  title: string;
-  strength: string;
-  weakness: string;
-  our_edge: string;
-}
-
-interface Phase1Data {
-  feasibility_score: number;
-  verdict: "go" | "conditional" | "reject";
-  usp: string[];
-  summary: string;
-  market_analysis: {
-    genre: string;
-    positioning: string;
-    trend_keywords: string[];
-    competitors: Competitor[];
+interface Msg {
+  id: string;
+  agent: AgentId;
+  text: string;
+  type: "text" | "thinking" | "card";
+  card?: {
+    score: number;
+    verdict: "go" | "conditional" | "reject";
+    usp: string[];
+    summary: string;
   };
-  agent_notes: Record<string, string>;
+  done: boolean;
 }
 
-interface SavedResult {
-  data: Phase1Data;
-  gating_passed: boolean;
-  input: { genre: string; concept: string; title?: string; target_audience?: string };
-  isMock: boolean;
-  savedAt: string;
+type Stage = "form" | "chat";
+
+const GENRES = ["판타지", "로맨스", "액션", "SF", "스릴러", "일상·힐링", "무협", "스포츠", "공포", "역사"];
+
+const scoreMap: Record<string, number> = {
+  "판타지": 0.82,
+  "로맨스": 0.79,
+  "액션": 0.76,
+  "SF": 0.74,
+  "스릴러": 0.71,
+  "일상·힐링": 0.68,
+  "무협": 0.73,
+  "스포츠": 0.69,
+  "공포": 0.66,
+  "역사": 0.72,
+};
+
+const uspByGenre: Record<string, string[]> = {
+  "판타지": [
+    "매화 마지막 컷 반전이 독자의 다음화 클릭을 유도",
+    "세계관 규칙이 퍼즐처럼 작동해 독자 참여도 극대화",
+    "주조연 모두 뚜렷한 동기로 악당도 이해 가능",
+  ],
+  "로맨스": [
+    "감정선이 과장 없이 현실적으로 쌓여 몰입 극대화",
+    "대사 밀도가 높아 매 컷이 스크린샷 욕구를 자극",
+    "조력자들의 독립 서사가 2차 팬덤 형성",
+  ],
+  "액션": [
+    "전투 씬의 운동감이 정지 컷에서도 살아있음",
+    "주인공의 성장 곡선이 독자 카타르시스와 정확히 동기화",
+    "악당의 철학이 독자에게 도덕적 질문을 던짐",
+  ],
+  "SF": [
+    "과학적 개연성이 세계관 몰입도를 배가시킴",
+    "미래 사회의 비틀린 현실이 현재 독자와 공명",
+    "기술 vs 인간성 갈등이 보편적 감정을 자극",
+  ],
+  "스릴러": [
+    "정보 비대칭이 독자 긴장감을 지속적으로 유지",
+    "반전 복선이 재독 욕구를 극대화",
+    "일상적 공간의 공포화가 공감 불안을 생성",
+  ],
+  "일상·힐링": [
+    "소소한 디테일이 독자의 감정 이입을 극대화",
+    "캐릭터 성장이 느리지만 확실하게 체감됨",
+    "위로의 메시지가 직접적이지 않고 자연스럽게 스며듦",
+  ],
+  "무협": [
+    "무공 체계가 일관된 규칙으로 독자 이해를 높임",
+    "사제 관계와 의리 서사가 강한 감정 유대 형성",
+    "강호 정치 구도가 복잡하지 않고 직관적으로 이해됨",
+  ],
+  "스포츠": [
+    "경기 씬의 긴장감이 실황 중계처럼 몰입감을 선사",
+    "팀 케미스트리가 독자의 응원 감정을 자극",
+    "패배와 극복의 사이클이 감동을 증폭시킴",
+  ],
+  "공포": [
+    "공포의 근원이 명확하지 않아 독자 상상력을 자극",
+    "일상과 비일상의 경계가 불분명해 현실감을 극대화",
+    "등장인물의 반응이 현실적이어서 공감 공포를 유발",
+  ],
+  "역사": [
+    "역사적 사실과 허구가 자연스럽게 융합되어 재미와 교양을 동시에 제공",
+    "현대적 감각으로 재해석된 시대상이 젊은 독자층에 어필",
+    "역사 속 인물의 인간적 면모가 친근감을 형성",
+  ],
+};
+
+const matchByGenre: Record<string, number> = {
+  "판타지": 78, "로맨스": 82, "액션": 74, "SF": 71, "스릴러": 69,
+  "일상·힐링": 65, "무협": 76, "스포츠": 72, "공포": 67, "역사": 70,
+};
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
 }
 
-type AgentStatus = "idle" | "running" | "done";
-type RunState = "idle" | "running" | "done" | "error";
-
-// ── Mock data generator ───────────────────────────────────
-function buildMock(input: { genre: string; concept: string; title?: string }): Phase1Data {
-  const scoreMap: Record<string, number> = {
-    "판타지": 0.82, "로맨스": 0.79, "액션": 0.76, "SF": 0.74,
-    "스릴러": 0.71, "일상/힐링": 0.68, "무협": 0.73, "스포츠": 0.70,
-    "공포": 0.65, "역사": 0.67, "드라마": 0.72, "개그": 0.63,
-  };
-  const score = (scoreMap[input.genre] ?? 0.72) + (input.concept.length > 80 ? 0.04 : 0);
-  const clamped = Math.min(score, 0.97);
-  const verdict: "go" | "conditional" | "reject" =
-    clamped >= 0.7 ? "go" : clamped >= 0.5 ? "conditional" : "reject";
-
-  const uspByGenre: Record<string, string[]> = {
-    "판타지": [
-      "매화 마지막 컷에서 독자가 예상하지 못한 반전이 터진다",
-      "주인공이 항상 상황보다 한 발 앞서 생각하는 것처럼 느껴진다",
-      "세계관 규칙이 명확해서 독자가 퍼즐처럼 앞 내용을 추리할 수 있다",
-      "주조연 모두 뚜렷한 동기가 있어 악당도 이해하게 된다",
-    ],
-    "로맨스": [
-      "감정선이 과장 없이 현실적으로 쌓여 독자가 감정 이입하기 쉽다",
-      "두 주인공의 대화가 쿠션 없이 날카로워서 다음 화가 기다려진다",
-      "조력자 캐릭터들도 각자의 사랑 이야기가 있어 부캐를 좋아하는 독자를 잡는다",
-    ],
-    "액션": [
-      "전투 연출이 세로 스크롤 리듬에 최적화돼 있어 손가락이 멈추지 않는다",
-      "주인공이 약해서 이기는 것이 아니라 전략으로 이기는 장면이 통쾌하다",
-      "반복 패턴 없이 매 전투마다 새로운 해결책이 나온다",
-      "적 캐릭터의 능력이 항상 설명되어 독자가 미리 긴장할 수 있다",
-    ],
-  };
-  const usp = uspByGenre[input.genre] ?? [
-    `${input.genre} 장르에서 흔히 보지 못한 주인공 성장 방식`,
-    "매화 말미에 다음 화가 궁금해지는 강력한 훅",
-    "독자가 공감하는 현실적 감정선과 갈등 구조",
-    "기존 독자층 + 신규 유입층 모두 잡는 이중 타겟 전략",
-  ];
-
-  return {
-    feasibility_score: parseFloat(clamped.toFixed(2)),
-    verdict,
-    usp,
-    summary: `${input.genre} 장르의 "${input.title ?? "이 작품"}"은 현재 시장에서 ${verdict === "go" ? "충분한 경쟁력" : "잠재력"}을 가지고 있습니다. 독자 이탈 지점을 보완하고 플랫폼 특성에 맞춘 연출로 차별화할 경우 상위권 진입 가능성이 있습니다.`,
-    market_analysis: {
-      genre: input.genre,
-      positioning: `신규 IP / 대중 방향 — 현재 ${input.genre} 시장 주류와 차별화된 서브장르 포지셔닝 권장`,
-      trend_keywords: ["세계관 빌딩", "캐릭터 서사", "세로 스크롤 최적화", "훅 밀도", "팬덤 형성"],
-      competitors: [
-        {
-          title: "현재 ${genre} 상위작 A",
-          strength: "기존 독자층이 두터운 클래식 설정",
-          weakness: "중반부 완급 조절 실패로 이탈률 상승",
-          our_edge: "매화 긴장도 유지 + 예측 불가 반전으로 이탈 방지",
-        },
-        {
-          title: "신작 B",
-          strength: "연출 스타일이 독특해 SNS 바이럴 성공",
-          weakness: "스토리 완성도 부족으로 초반 유입 후 독자 유지 실패",
-          our_edge: "탄탄한 3막 구조 + 캐릭터 감정선으로 장기 연재 체력 확보",
-        },
-        {
-          title: "완결작 C",
-          strength: "완결까지 완성도를 유지한 검증된 스토리텔링",
-          weakness: "독자 접근성이 낮은 마니아향 설정",
-          our_edge: "대중 접근성 + 마니아 만족 레이어를 분리 설계",
-        },
-      ].map((c) => ({ ...c, title: c.title.replace("${genre}", input.genre) })),
-    },
-    agent_notes: {
-      strategist: `${input.genre} 시장은 현재 상위 20% 작품이 조회수의 78%를 가져가는 구조입니다. 초반 3화 이내에 독자를 잡는 훅 밀도가 핵심입니다.`,
-      researcher: `최근 6개월 ${input.genre} 신작 중 월간 독자 100만 달성 작품의 공통점: ①주인공 명확한 목표 ②2화 이내 첫 위기 ③조력자 캐릭터의 독립적 매력`,
-      producer: `USP와 시장 분석을 종합할 때 실현가능성 ${(clamped * 100).toFixed(0)}%로 평가합니다. ${verdict === "go" ? "Phase 2 진행을 승인합니다." : "아이디어 보완 후 재분석을 권장합니다."}`,
-    },
-  };
+function typingDelay(text: string) {
+  const base = Math.min(2400, Math.max(800, text.length * 18));
+  return base;
 }
 
-// ── Storage helpers ───────────────────────────────────────
-const getKey = (id: string) => `wts_phase1_${id}`;
-
-function loadResult(projectId: string): SavedResult | null {
-  try {
-    const raw = localStorage.getItem(getKey(projectId));
-    return raw ? (JSON.parse(raw) as SavedResult) : null;
-  } catch { return null; }
+interface ResultCardProps {
+  card: NonNullable<Msg["card"]>;
 }
 
-function saveResult(projectId: string, r: SavedResult) {
-  localStorage.setItem(getKey(projectId), JSON.stringify(r));
-  // 프로젝트 목록도 업데이트
-  try {
-    const projects = JSON.parse(localStorage.getItem("wts_projects") ?? "[]") as Array<Record<string, unknown>>;
-    const updated = projects.map((p) =>
-      p.id === projectId
-        ? { ...p, feasibilityScore: r.data.feasibility_score, currentPhase: Math.max(Number(p.currentPhase ?? 1), 1) }
-        : p
-    );
-    localStorage.setItem("wts_projects", JSON.stringify(updated));
-  } catch { /* ignore */ }
-}
+function ResultCard({ card }: ResultCardProps) {
+  const { score, verdict, usp, summary } = card;
+  const pct = Math.round(score * 100);
 
-// ── ScoreGauge ────────────────────────────────────────────
-function ScoreGauge({ score }: { score: number }) {
-  const r = 52;
-  const circ = 2 * Math.PI * r;
-  const fill = circ * score;
-  const color = score >= 0.7 ? "var(--phase-2-color)" : score >= 0.5 ? "var(--phase-3-color)" : "#f87171";
+  const circumference = 2 * Math.PI * 42;
+  const offset = circumference - (pct / 100) * circumference;
+
+  const verdictLabel =
+    verdict === "go" ? "✓ 진행 가능" : verdict === "conditional" ? "△ 조건부 진행" : "✗ 재검토 필요";
+  const verdictClass =
+    verdict === "go" ? styles.verdictGo : verdict === "conditional" ? styles.verdictConditional : styles.verdictReject;
+
+  const gaugeColor =
+    score >= 0.7 ? "#34d399" : score >= 0.5 ? "#fbbf24" : "#f87171";
 
   return (
-    <div className={s.scoreGauge}>
-      <svg width="120" height="120" viewBox="0 0 120 120">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="var(--surface-3)" strokeWidth="8" />
-        <circle
-          cx="60" cy="60" r={r} fill="none"
-          stroke={color} strokeWidth="8"
-          strokeDasharray={`${fill} ${circ - fill}`}
-          strokeLinecap="round"
-          style={{ transform: "rotate(-90deg)", transformOrigin: "60px 60px", transition: "stroke-dasharray 0.8s ease" }}
-        />
-      </svg>
-      <div className={s.scoreText}>
-        <span className={s.scoreValue} style={{ color }}>{Math.round(score * 100)}</span>
-        <span className={s.scoreUnit}>/ 100</span>
+    <div className={styles.resultCard}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#94a3b8", marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        실현가능성 평가
+      </div>
+      <div className={styles.gaugeWrap}>
+        <svg width="100" height="100" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="42" fill="none" stroke="#2a2a3d" strokeWidth="8" />
+          <circle
+            cx="50"
+            cy="50"
+            r="42"
+            fill="none"
+            stroke={gaugeColor}
+            strokeWidth="8"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            transform="rotate(-90 50 50)"
+            style={{ transition: "stroke-dashoffset 0.8s ease" }}
+          />
+          <text x="50" y="45" textAnchor="middle" fill="#f1f5f9" fontSize="18" fontWeight="700">
+            {pct}
+          </text>
+          <text x="50" y="60" textAnchor="middle" fill="#64748b" fontSize="10">
+            점
+          </text>
+        </svg>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className={`${styles.verdictBadge} ${verdictClass}`}>{verdictLabel}</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", maxWidth: 220, lineHeight: 1.6 }}>{summary}</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+          핵심 USP
+        </div>
+        <ul className={styles.uspList}>
+          {usp.map((u, i) => (
+            <li key={i}>{u}</li>
+          ))}
+        </ul>
       </div>
     </div>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────
+interface ThinkingDotsProps {}
+
+function ThinkingDots(_: ThinkingDotsProps) {
+  return (
+    <span className={styles.thinkingDots}>
+      <span className={styles.dot} style={{ animationDelay: "0ms" }} />
+      <span className={styles.dot} style={{ animationDelay: "160ms" }} />
+      <span className={styles.dot} style={{ animationDelay: "320ms" }} />
+    </span>
+  );
+}
+
+interface MsgBubbleProps {
+  msg: Msg;
+}
+
+function MsgBubble({ msg }: MsgBubbleProps) {
+  const agent = AGENTS[msg.agent];
+  const isUser = msg.agent === "user";
+
+  return (
+    <div className={`${styles.msgRow} ${isUser ? styles.msgRowUser : ""}`}>
+      {!isUser && (
+        <div
+          className={styles.avatar}
+          style={{ background: agent.bg, color: agent.color, border: `1px solid ${agent.color}30` }}
+        >
+          {agent.label[0]}
+        </div>
+      )}
+      <div className={styles.msgContent}>
+        {!isUser && (
+          <span className={styles.agentName} style={{ color: agent.color }}>
+            {agent.label}
+          </span>
+        )}
+        <div className={`${styles.bubble} ${isUser ? styles.bubbleUser : ""}`}>
+          {!msg.done ? (
+            msg.type === "thinking" ? (
+              <span style={{ color: "#64748b", fontStyle: "italic", fontSize: 14 }}>
+                {msg.text}
+                <ThinkingDots />
+              </span>
+            ) : (
+              <ThinkingDots />
+            )
+          ) : msg.type === "card" && msg.card ? (
+            <>
+              <div style={{ marginBottom: 12, whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 14 }}>{msg.text}</div>
+              <ResultCard card={msg.card} />
+            </>
+          ) : (
+            <div
+              style={{ whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 14 }}
+              dangerouslySetInnerHTML={{
+                __html: msg.text
+                  .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                  .replace(/\n/g, "<br/>"),
+              }}
+            />
+          )}
+        </div>
+      </div>
+      {isUser && (
+        <div
+          className={styles.avatar}
+          style={{ background: agent.bg, color: agent.color, border: `1px solid ${agent.color}30` }}
+        >
+          나
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Phase1Page({ params }: { params: { projectId: string } }) {
   const { projectId } = params;
   const router = useRouter();
 
-  // Form
-  const [genre, setGenre] = useState(GENRES[0]);
-  const [title, setTitle] = useState("");
+  const [stage, setStage] = useState<Stage>("form");
+  const [genre, setGenre] = useState("판타지");
   const [concept, setConcept] = useState("");
-  const [target, setTarget] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [userInput, setUserInput] = useState("");
+  const [chatRunning, setChatRunning] = useState(false);
+  const [result, setResult] = useState<Msg["card"] | null>(null);
+  const [restoredFromSave, setRestoredFromSave] = useState(false);
 
-  // Run state
-  const [runState, setRunState] = useState<RunState>("idle");
-  const [agentStates, setAgentStates] = useState<AgentStatus[]>(["idle", "idle", "idle"]);
-  const [isMock, setIsMock] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Result
-  const [result, setResult] = useState<SavedResult | null>(null);
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (bodyRef.current) {
+        bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+      }
+    });
+  }, []);
 
   useEffect(() => {
-    const saved = loadResult(projectId);
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  useEffect(() => {
+    const key = `wts_phase1_${projectId}`;
+    const saved = localStorage.getItem(key);
     if (saved) {
-      setResult(saved);
-      setGenre(saved.input.genre);
-      setTitle(saved.input.title ?? "");
-      setConcept(saved.input.concept);
-      setTarget(saved.input.target_audience ?? "");
-      setRunState("done");
-      setIsMock(saved.isMock);
+      try {
+        const parsed = JSON.parse(saved) as {
+          data: NonNullable<Msg["card"]>;
+          input: { genre: string; concept: string };
+          isMock: boolean;
+          savedAt: string;
+        };
+        if (parsed.data && parsed.input) {
+          setGenre(parsed.input.genre);
+          setConcept(parsed.input.concept);
+          setResult(parsed.data);
+          setRestoredFromSave(true);
+        }
+      } catch {
+        // ignore
+      }
     }
   }, [projectId]);
 
-  function setAgent(idx: number, st: AgentStatus) {
-    setAgentStates((prev) => prev.map((v, i) => (i === idx ? st : v)));
-  }
+  const addMsg = useCallback(
+    (
+      msg: Omit<Msg, "id" | "done">,
+      delay: number,
+      onAdded?: () => void
+    ): Promise<void> => {
+      return new Promise((resolve) => {
+        const id = uid();
+        const reveal = typingDelay(msg.text);
 
-  async function runAnalysis() {
-    if (!concept.trim() || concept.trim().length < 10) return;
+        const t1 = setTimeout(() => {
+          setMessages((prev) => [...prev, { ...msg, id, done: false }]);
+          scrollToBottom();
+          onAdded?.();
 
-    setRunState("running");
-    setAgentStates(["idle", "idle", "idle"]);
-    setErrorMsg("");
-    setResult(null);
-    setIsMock(false);
+          const t2 = setTimeout(() => {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === id ? { ...m, done: true } : m))
+            );
+            scrollToBottom();
+            resolve();
+          }, reveal);
+          timeoutsRef.current.push(t2);
+        }, delay);
+        timeoutsRef.current.push(t1);
+      });
+    },
+    [scrollToBottom]
+  );
 
-    const input = { genre, concept: concept.trim(), title: title.trim() || undefined, target_audience: target.trim() || undefined };
-    const anthropicKey = localStorage.getItem("wts_anthropic_key") ?? "";
+  const runMockScript = useCallback(
+    async (g: string, c: string) => {
+      setChatRunning(true);
+      const score = scoreMap[g] ?? 0.68;
+      const usp = uspByGenre[g] ?? uspByGenre["판타지"];
+      const match = matchByGenre[g] ?? 70;
+      const verdictVal: "go" | "conditional" | "reject" =
+        score >= 0.7 ? "go" : score >= 0.5 ? "conditional" : "reject";
+      const summaryText = `${g} 장르 기반 아이디어가 현재 시장 트렌드와 높은 적합도를 보입니다. 핵심 USP 3가지가 명확히 도출되었으며, 독자층 확보 가능성이 충분합니다. 세계관 구체화 및 캐릭터 설정 단계로 진행을 권장합니다.`;
 
-    // ── Try real API ────────────────────────────────────────
-    let useMock = !anthropicKey;
+      const cardData: NonNullable<Msg["card"]> = {
+        score,
+        verdict: verdictVal,
+        usp,
+        summary: summaryText,
+      };
 
-    if (!useMock) {
-      try {
-        setAgent(0, "running");
-        await delay(400);
+      const conceptSnippet = c.length > 40 ? c.slice(0, 40) + "…" : c;
 
-        const res = await fetch(`${API_BASE}/api/phases/${projectId}/phase-1`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Anthropic-Key": anthropicKey,
-          },
-          body: JSON.stringify(input),
-          signal: AbortSignal.timeout(60000),
-        });
+      await addMsg(
+        { agent: "strategist", type: "thinking", text: "입력하신 아이디어를 분석하고 있습니다..." },
+        300
+      );
 
-        setAgent(0, "done");
-        setAgent(1, "running");
-        await delay(300);
-        setAgent(1, "done");
-        setAgent(2, "running");
-        await delay(300);
-        setAgent(2, "done");
+      await addMsg(
+        {
+          agent: "strategist",
+          type: "text",
+          text: `장르 포지셔닝 분석을 시작합니다. ${g} 장르는 현재 웹툰 플랫폼에서 상위 독자층이 가장 높은 관심을 보이는 분야입니다. 핵심 차별점과 독자 훅을 도출하겠습니다.\n\n개념 요약: "${conceptSnippet}"`,
+        },
+        200
+      );
 
-        if (!res.ok) throw new Error(`API ${res.status}`);
+      await addMsg(
+        { agent: "researcher", type: "thinking", text: "시장 데이터를 조회하고 있습니다..." },
+        400
+      );
 
-        const json = (await res.json()) as {
-          success: boolean;
-          data: Phase1Data;
-          gating_passed: boolean;
-        };
+      await addMsg(
+        {
+          agent: "researcher",
+          type: "text",
+          text: `최근 6개월 데이터 분석 완료. ${g} 신작 중 월간 독자 100만 달성 작품의 공통 패턴:\n① 1~3화 내 주인공 목표 명확화\n② 매 5화 훅 배치\n③ 조력자 캐릭터 독립 서사 보유\n\n현재 아이디어는 이 패턴과 ${match}% 일치합니다.`,
+        },
+        300
+      );
 
-        const saved: SavedResult = {
-          data: json.data,
-          gating_passed: json.gating_passed,
-          input,
-          isMock: false,
+      await addMsg(
+        {
+          agent: "strategist",
+          type: "text",
+          text: `USP 3가지를 도출했습니다:\n\n**U1. ${usp[0]}**\n**U2. ${usp[1]}**\n**U3. ${usp[2]}**\n\n이 세 가지 요소가 기존 작품과 차별화되는 핵심입니다.`,
+        },
+        400
+      );
+
+      await addMsg(
+        {
+          agent: "producer",
+          type: "card",
+          text: "전략기획자와 조사자의 분석을 종합했습니다. 최종 실현가능성 평가입니다.",
+          card: cardData,
+        },
+        500
+      );
+
+      setResult(cardData);
+      const key = `wts_phase1_${projectId}`;
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          data: cardData,
+          input: { genre: g, concept: c },
+          isMock: true,
           savedAt: new Date().toISOString(),
-        };
-        saveResult(projectId, saved);
-        setResult(saved);
-        setRunState("done");
-        return;
-      } catch {
-        useMock = true;
+        })
+      );
+      setChatRunning(false);
+    },
+    [addMsg, projectId]
+  );
+
+  const handleFormSubmit = useCallback(() => {
+    if (concept.trim().length < 10) return;
+    setStage("chat");
+    setTimeout(() => {
+      runMockScript(genre, concept);
+    }, 100);
+  }, [concept, genre, runMockScript]);
+
+  const handleUserSend = useCallback(() => {
+    const text = userInput.trim();
+    if (!text || chatRunning) return;
+    setUserInput("");
+
+    const userId = uid();
+    setMessages((prev) => [
+      ...prev,
+      { id: userId, agent: "user", type: "text", text, done: true },
+    ]);
+
+    setChatRunning(true);
+
+    const replies = [
+      `말씀하신 부분은 매우 중요한 지점입니다. "${text.slice(0, 30)}${text.length > 30 ? "…" : ""}"에 대해 추가 분석을 진행하겠습니다. 특히 독자 감정 곡선과의 연계성을 검토해 보겠습니다.`,
+      `좋은 관점입니다. 제안하신 방향성은 현재 ${genre} 장르의 주요 독자층이 기대하는 패턴과 잘 맞아떨어집니다. 구체적인 씬 설계에서 이 요소를 반영할 것을 권장합니다.`,
+      `독자의 관점에서 접근하신 부분이 핵심을 잘 짚었습니다. 이 방향으로 세계관을 구체화하면 Phase 2에서 더욱 강력한 에셋을 구축할 수 있을 것입니다.`,
+    ];
+    const pick = replies[Math.floor(Math.random() * replies.length)];
+
+    const t1 = setTimeout(() => {
+      addMsg({ agent: "strategist", type: "text", text: pick }, 0).then(() => {
+        const producerText = `추가 의견을 반영하여 최종 분석을 업데이트합니다. 현재까지의 논의를 바탕으로 Phase 2 진행 준비가 완료되었습니다.`;
+        addMsg({ agent: "producer", type: "text", text: producerText }, 200).then(() => {
+          setChatRunning(false);
+        });
+      });
+    }, 800);
+    timeoutsRef.current.push(t1);
+  }, [userInput, chatRunning, addMsg, genre]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleUserSend();
       }
-    }
+    },
+    [handleUserSend]
+  );
 
-    // ── Mock mode ───────────────────────────────────────────
-    setIsMock(true);
-    for (let i = 0; i < AGENTS.length; i++) {
-      setAgent(i, "running");
-      await delay(900 + i * 400);
-      setAgent(i, "done");
-    }
-
-    const mockData = buildMock(input);
-    const saved: SavedResult = {
-      data: mockData,
-      gating_passed: mockData.feasibility_score >= 0.5,
-      input,
-      isMock: true,
-      savedAt: new Date().toISOString(),
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
     };
-    saveResult(projectId, saved);
-    setResult(saved);
-    setRunState("done");
-  }
+  }, []);
 
-  function handleGating() {
-    router.push(`/projects/${projectId}/phase-2`);
-  }
-
-  const canRun = concept.trim().length >= 10 && runState !== "running";
-  const verdictLabel = result?.data.verdict === "go" ? "GO — Phase 2 진행 가능" :
-    result?.data.verdict === "conditional" ? "조건부 진행" : "재기획 권고";
-  const verdictClass = result?.data.verdict === "go" ? s.verdictGo :
-    result?.data.verdict === "conditional" ? s.verdictConditional : s.verdictReject;
+  const conceptSnippet = concept.length > 60 ? concept.slice(0, 60) + "…" : concept;
 
   return (
-    <div className={s.page}>
-      <h1 className={s.pageTitle}>Phase 1 — 기획 분석</h1>
-      <p className={s.pageDesc}>
-        장르와 핵심 아이디어를 입력하면 3인의 AI 에이전트가 시장성을 분석하고 USP를 도출합니다.
-      </p>
-
-      {/* ── Input card ── */}
-      <div className={s.inputCard}>
-        <div className={s.inputCardTitle}>작품 정보 입력</div>
-        <div className={s.inputRow}>
-          <div className={s.formGroup}>
-            <label className={s.formLabel}>장르 *</label>
-            <select className={s.formSelect} value={genre} onChange={(e) => setGenre(e.target.value)}>
-              {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
-          </div>
-          <div className={s.formGroup}>
-            <label className={s.formLabel}>작품 제목 (선택)</label>
-            <input className={s.formInput} placeholder="예) 별을 삼킨 소녀" value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div className={s.formGroup}>
-            <label className={s.formLabel}>타겟 독자 (선택)</label>
-            <input className={s.formInput} placeholder="예) 20대 여성" value={target} onChange={(e) => setTarget(e.target.value)} />
-          </div>
-        </div>
-        <div className={s.formGroup}>
-          <label className={s.formLabel}>핵심 아이디어 * (10자 이상)</label>
-          <textarea
-            className={s.formTextarea}
-            placeholder="주인공의 특징, 핵심 갈등, 세계관 설정, 차별화 포인트 등 자유롭게 적어주세요"
-            value={concept}
-            onChange={(e) => setConcept(e.target.value)}
-          />
-        </div>
-        <div className={s.inputActions}>
-          <span className={`${s.charCount} ${concept.length > 0 && concept.length < 10 ? s.charCountWarn : ""}`}>
-            {concept.length}자 {concept.length < 10 ? `(최소 10자)` : ""}
-          </span>
-          <button className={s.btnRun} onClick={runAnalysis} disabled={!canRun}>
-            {runState === "running" ? "⏳ 분석 중…" : "✦ 기획 분석 실행"}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Agent progress ── */}
-      {runState === "running" && (
-        <div className={s.progress}>
-          <div className={s.progressTitle}>에이전트 실행 중</div>
-          <div className={s.agentSteps}>
-            {AGENTS.map((agent, i) => {
-              const st = agentStates[i];
-              return (
-                <div key={agent.id} className={`${s.agentStep} ${st === "done" ? s.stepDone : ""} ${st === "running" ? s.stepActive : ""}`}>
-                  <div className={s.agentStepIcon}>
-                    {st === "done" ? "✓" : st === "running" ? (
-                      <div className={s.spinnerDot}><span /><span /><span /></div>
-                    ) : i + 1}
-                  </div>
-                  <div className={s.agentStepBody}>
-                    <div className={s.agentStepName}>
-                      {agent.label}
-                      {st === "running" && <span style={{ color: "var(--primary)", fontSize: 12, fontWeight: 400 }}>분석 중…</span>}
-                    </div>
-                    <div className={s.agentStepDesc}>{agent.desc}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ── Results ── */}
-      {runState === "done" && result && (
-        <>
-          {isMock && (
-            <div className={s.mockBadge}>
-              ⚠ ANTHROPIC_API_KEY 미설정 — 미리보기(mock) 데이터입니다.&nbsp;
-              <a href="/settings" style={{ color: "inherit", textDecoration: "underline" }}>설정에서 키 입력 →</a>
+    <div className={styles.page}>
+      {stage === "form" ? (
+        <div className={styles.formWrap}>
+          {restoredFromSave && result && (
+            <div
+              style={{
+                background: "rgba(52,211,153,0.08)",
+                border: "1px solid rgba(52,211,153,0.25)",
+                borderRadius: 10,
+                padding: "10px 16px",
+                marginBottom: 16,
+                fontSize: 13,
+                color: "#34d399",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span>✓</span>
+              <span>이전 분석 결과 불러옴 — 다시 분석하거나 Phase 2로 이동할 수 있습니다.</span>
             </div>
           )}
-
-          {/* Score */}
-          <div className={s.scoreSection}>
-            <ScoreGauge score={result.data.feasibility_score} />
-            <div className={s.scoreInfo}>
-              <div className={`${s.verdictBadge} ${verdictClass}`}>
-                {result.data.verdict === "go" ? "✓" : result.data.verdict === "conditional" ? "△" : "✗"}&nbsp;{verdictLabel}
-              </div>
-              <div className={s.scoreMessage}>{result.data.summary}</div>
-              <button className={s.btnRetry} onClick={() => setRunState("idle")}>↺ 다시 분석</button>
+          <div className={styles.formCard}>
+            <div className={styles.formTitle}>Phase 1 — 기획 분석</div>
+            <div className={styles.formDesc}>
+              장르와 아이디어를 입력하면 AI 에이전트들이 실시간으로 토론하며 기획을 분석합니다.
             </div>
-          </div>
 
-          {/* USP */}
-          <div className={s.section}>
-            <div className={s.sectionTitle}><span className={s.sectionIcon}>⭐</span> 핵심 USP ({result.data.usp.length}개)</div>
-            <div className={s.uspGrid}>
-              {result.data.usp.map((u, i) => (
-                <div key={i} className={s.uspItem}>
-                  <span className={s.uspNum}>U{i + 1}</span>
-                  <span className={s.uspText}>{u}</span>
-                </div>
+            <label className={styles.formLabel}>장르</label>
+            <select
+              className={styles.formSelect}
+              value={genre}
+              onChange={(e) => setGenre(e.target.value)}
+            >
+              {GENRES.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
               ))}
-            </div>
-          </div>
+            </select>
 
-          {/* Market analysis */}
-          <div className={s.section}>
-            <div className={s.sectionTitle}><span className={s.sectionIcon}>📊</span> 시장 분석</div>
-            <div className={s.positioning}>{result.data.market_analysis.positioning}</div>
-            <div className={s.keywords} style={{ marginTop: 12 }}>
-              {result.data.market_analysis.trend_keywords.map((k) => (
-                <span key={k} className={s.keyword}># {k}</span>
-              ))}
+            <label className={styles.formLabel}>아이디어 / 개념</label>
+            <textarea
+              className={styles.formTextarea}
+              value={concept}
+              onChange={(e) => setConcept(e.target.value)}
+              placeholder="주인공, 핵심 갈등, 세계관의 특징, 목표 독자층 등을 자유롭게 서술하세요. (최소 10자)"
+              rows={5}
+            />
+            <div style={{ fontSize: 12, color: concept.length < 10 ? "#f87171" : "#34d399", marginTop: 4 }}>
+              {concept.length}자 {concept.length < 10 ? `(최소 ${10 - concept.length}자 더 필요)` : "✓"}
             </div>
-            <table className={s.table}>
-              <thead>
-                <tr>
-                  <th>경쟁작</th>
-                  <th>강점</th>
-                  <th>약점</th>
-                  <th style={{ color: "var(--phase-2-color)" }}>우리의 차별점</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.data.market_analysis.competitors.map((c, i) => (
-                  <tr key={i}>
-                    <td><span className={s.competitorTitle}>{c.title}</span></td>
-                    <td>{c.strength}</td>
-                    <td>{c.weakness}</td>
-                    <td><span className={s.edge}>{c.our_edge}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
 
-          {/* Agent notes */}
-          <div className={s.section}>
-            <div className={s.sectionTitle}><span className={s.sectionIcon}>🤖</span> 에이전트 노트</div>
-            <div className={s.notesList}>
-              {Object.entries(result.data.agent_notes).map(([agent, note]) => (
-                <div key={agent} className={s.noteItem}>
-                  <div className={s.noteAgent}>{AGENTS.find((a) => a.id === agent)?.label ?? agent}</div>
-                  <div className={s.noteText}>{note}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+            <button
+              className={styles.btnStart}
+              disabled={concept.trim().length < 10}
+              onClick={handleFormSubmit}
+            >
+              ✦ 분석 시작
+            </button>
 
-          {/* Gating */}
-          {result.gating_passed ? (
-            <div className={s.gatingBanner}>
-              <div className={s.gatingText}>
-                <h3>✓ GATING 통과 — Phase 2 진행 가능</h3>
-                <p>실현가능성 점수 {Math.round(result.data.feasibility_score * 100)}% · 기준 50% 이상 충족<br />Phase 2에서 세계관 설계와 캐릭터/배경 A/B 디자인을 진행합니다.</p>
-              </div>
-              <button className={s.btnGating} onClick={handleGating}>
+            {restoredFromSave && result && (
+              <button
+                className={styles.btnStart}
+                style={{ marginTop: 10, background: "#1e4d3a", borderColor: "#34d399", color: "#34d399" }}
+                onClick={() => router.push(`/projects/${projectId}/phase-2`)}
+              >
                 Phase 2 시작 →
               </button>
-            </div>
-          ) : (
-            <div className={s.gatingBlockBanner}>
-              ✗ GATING 미충족 — 실현가능성 점수 {Math.round(result.data.feasibility_score * 100)}%가 기준(50%) 미만입니다.
-              아이디어를 보완한 후 다시 분석해주세요.
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className={styles.chatLayout}>
+          <div className={styles.chatHeader}>
+            <span style={{ color: "#a78bfa", fontWeight: 600 }}>{genre}</span>
+            <span style={{ color: "#64748b", margin: "0 8px" }}>·</span>
+            <span style={{ color: "#94a3b8", fontSize: 13 }}>{conceptSnippet}</span>
+          </div>
+
+          <div className={styles.chatBody} ref={bodyRef}>
+            {messages.map((msg) => (
+              <MsgBubble key={msg.id} msg={msg} />
+            ))}
+            <div style={{ height: 16 }} />
+          </div>
+
+          {result && (
+            <div className={styles.gatingRow}>
+              <button
+                className={styles.btnGating}
+                onClick={() => router.push(`/projects/${projectId}/phase-2`)}
+              >
+                Phase 2 시작 — 세계관 설계 →
+              </button>
             </div>
           )}
-        </>
-      )}
 
-      {/* Error */}
-      {runState === "error" && (
-        <div className={s.errorBox}>
-          <span className={s.errorIcon}>⚠</span>
-          <div>
-            <div className={s.errorTitle}>분석 실패</div>
-            <div className={s.errorMsg}>{errorMsg || "API 서버에 연결할 수 없습니다."}</div>
+          <div className={styles.chatInputRow}>
+            <textarea
+              ref={inputRef}
+              className={styles.chatInput}
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="에이전트에게 추가 질문이나 의견을 보내세요… (Enter 전송, Shift+Enter 줄바꿈)"
+              rows={1}
+              disabled={chatRunning}
+            />
+            <button
+              className={styles.btnSend}
+              onClick={handleUserSend}
+              disabled={!userInput.trim() || chatRunning}
+            >
+              전송
+            </button>
           </div>
         </div>
       )}
     </div>
   );
-}
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
 }
