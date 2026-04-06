@@ -1,0 +1,386 @@
+/* ── Page shell ──────────────────────────────────────────── */
+.page {
+  padding: 36px 40px;
+  max-width: 1100px;
+}
+
+.pageTitle {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  margin-bottom: 4px;
+}
+
+.pageDesc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+
+/* ── Episode selector ────────────────────────────────────── */
+.epSelector {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.epSelectorLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.epSelectorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.epBtn {
+  position: relative;
+  padding: 6px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.epBtn:hover { border-color: var(--border-hover); color: var(--text); }
+
+.epBtnActive {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.epBtnDone {
+  border-color: rgba(52,211,153,0.4);
+}
+
+.epDoneDot {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--phase-2-color);
+}
+
+.epMore {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+/* ── Start card ──────────────────────────────────────────── */
+.startCard {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.startIcon { font-size: 32px; flex-shrink: 0; }
+.startBody { flex: 1; }
+
+.startTitle { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.startDesc  { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btnRun {
+  padding: 11px 22px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.btnRun:hover { background: var(--primary-hover); box-shadow: 0 0 0 3px var(--primary-glow); }
+
+.btnGating {
+  padding: 12px 24px;
+  background: var(--phase-4-color);
+  color: #1a0014;
+  border-radius: var(--radius-sm);
+  font-size: 15px; font-weight: 800;
+  white-space: nowrap;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.btnGating:hover { opacity: 0.88; box-shadow: 0 4px 20px rgba(244,114,182,0.35); }
+
+.btnRetry {
+  padding: 7px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btnRetry:hover { border-color: var(--border-hover); color: var(--text); }
+
+/* ── Progress ────────────────────────────────────────────── */
+.progress {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  margin-bottom: 24px;
+}
+
+.progressTitle {
+  font-size: 12px; font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 20px;
+}
+
+.agentSteps { display: flex; flex-direction: column; }
+
+.agentStep {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 10px 0; position: relative;
+}
+.agentStep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 15px; top: 38px; bottom: -10px;
+  width: 2px; background: var(--border);
+}
+.agentStep.stepDone::after { background: var(--primary); }
+
+.agentStepIcon {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 13px;
+  transition: all 0.3s; position: relative; z-index: 1;
+}
+.stepDone  .agentStepIcon { background: var(--primary); border-color: var(--primary); color: #fff; }
+.stepActive .agentStepIcon { border-color: var(--primary); background: var(--primary-glow); color: var(--primary); }
+
+.agentStepBody { flex: 1; padding-top: 4px; }
+.agentStepName { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.runningLabel  { font-size: 12px; font-weight: 400; color: var(--primary); }
+.agentStepDesc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.spinnerDot { display: inline-flex; gap: 3px; }
+.spinnerDot span {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--primary);
+  animation: bounce 1.2s infinite ease-in-out;
+}
+.spinnerDot span:nth-child(2) { animation-delay: 0.2s; }
+.spinnerDot span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+  40%          { transform: scale(1);   opacity: 1; }
+}
+
+/* ── Mock badge ──────────────────────────────────────────── */
+.mockBadge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px;
+  background: rgba(251,191,36,0.12);
+  color: var(--phase-3-color);
+  border: 1px solid rgba(251,191,36,0.25);
+  border-radius: 99px;
+  font-size: 11px; font-weight: 600;
+  margin-bottom: 16px;
+}
+.mockBadge a { color: inherit; text-decoration: underline; }
+
+/* ── Episode header ──────────────────────────────────────── */
+.epHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  margin-bottom: 16px;
+}
+
+.epHeaderLeft { flex: 1; }
+
+.epHeaderTitle { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+.epHeaderMeta  { font-size: 12px; color: var(--text-muted); }
+
+.sccSummary { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.sccBar {
+  width: 120px; height: 8px;
+  background: var(--surface-3);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.sccBarFill {
+  height: 100%;
+  background: var(--phase-2-color);
+  border-radius: 99px;
+  transition: width 0.5s ease;
+}
+
+.sccRate { font-size: 13px; font-weight: 700; color: var(--phase-2-color); }
+
+/* ── Cut grid ────────────────────────────────────────────── */
+.cutGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.cutCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cutCard:hover { border-color: var(--border-hover); box-shadow: var(--shadow-sm); }
+.cutFail { border-color: rgba(248,113,113,0.4); }
+.cutWarn { border-color: rgba(251,191,36,0.4); }
+
+/* ── Cut card header ─────────────────────────────────────── */
+.cutCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.cutNum {
+  font-size: 12px; font-weight: 800;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.panelType {
+  font-size: 11px; font-weight: 600;
+  color: var(--phase-1-color);
+  background: rgba(96,165,250,0.12);
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+.emotion {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── SCC badge ───────────────────────────────────────────── */
+.sccBadge {
+  font-size: 10px; font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+.sccPass    { background: rgba(52,211,153,0.15); color: var(--phase-2-color); }
+.sccWarn    { background: rgba(251,191,36,0.15); color: var(--phase-3-color); }
+.sccFail    { background: rgba(248,113,113,0.15); color: #f87171; }
+.sccPending { background: var(--surface-3); color: var(--text-dim); }
+
+/* ── Cut image placeholder ───────────────────────────────── */
+.cutImage {
+  aspect-ratio: 9/7;
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+}
+
+.cutImagePlaceholder {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px;
+}
+
+.cutImageIcon { font-size: 28px; opacity: 0.4; }
+
+.cutImageLabel {
+  font-size: 11px; font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ── Cut desc ────────────────────────────────────────────── */
+.cutDesc {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Cut detail (expanded) ───────────────────────────────── */
+.cutDetail {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-2);
+}
+
+.cutDetailRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.cutDetailLabel {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  width: 40px;
+  padding-top: 2px;
+}
+
+.cutDetailValue {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* ── Gating ──────────────────────────────────────────────── */
+.gatingBanner {
+  background: linear-gradient(135deg, rgba(244,114,182,0.08), rgba(124,108,252,0.08));
+  border: 1px solid rgba(244,114,182,0.25);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 16px;
+}
+
+.gatingText h3 { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+.gatingText p  { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+.gatingBlock {
+  background: rgba(248,113,113,0.06);
+  border: 1px solid rgba(248,113,113,0.2);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  font-size: 13px; color: #f87171; line-height: 1.6;
+}

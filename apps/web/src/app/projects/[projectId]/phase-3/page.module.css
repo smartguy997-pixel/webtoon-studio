@@ -1,0 +1,430 @@
+/* ── Page shell ──────────────────────────────────────────── */
+.page {
+  padding: 36px 40px;
+  max-width: 960px;
+}
+
+.pageTitle {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  margin-bottom: 4px;
+}
+
+.pageDesc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+
+/* ── Start card ──────────────────────────────────────────── */
+.startCard {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.startIcon { font-size: 32px; flex-shrink: 0; }
+
+.startBody { flex: 1; }
+
+.startTitle {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.startDesc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btnRun {
+  padding: 11px 22px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.btnRun:hover {
+  background: var(--primary-hover);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.btnGating {
+  padding: 12px 24px;
+  background: var(--phase-3-color);
+  color: #0a1000;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.btnGating:hover {
+  opacity: 0.88;
+  box-shadow: 0 4px 20px rgba(251,191,36,0.35);
+}
+
+.btnRetry {
+  padding: 7px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btnRetry:hover { border-color: var(--border-hover); color: var(--text); }
+
+/* ── Progress ────────────────────────────────────────────── */
+.progress {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  margin-bottom: 24px;
+}
+
+.progressTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 20px;
+}
+
+.agentSteps { display: flex; flex-direction: column; }
+
+.agentStep {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 0;
+  position: relative;
+}
+.agentStep:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 15px; top: 38px; bottom: -10px;
+  width: 2px;
+  background: var(--border);
+}
+.agentStep.stepDone::after { background: var(--primary); }
+
+.agentStepIcon {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  transition: all 0.3s;
+  position: relative; z-index: 1;
+}
+.stepDone  .agentStepIcon { background: var(--primary); border-color: var(--primary); color: #fff; }
+.stepActive .agentStepIcon { border-color: var(--primary); background: var(--primary-glow); color: var(--primary); }
+
+.agentStepBody { flex: 1; padding-top: 4px; }
+
+.agentStepName {
+  font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.runningLabel { font-size: 12px; font-weight: 400; color: var(--primary); }
+
+.agentStepDesc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.spinnerDot { display: inline-flex; gap: 3px; }
+.spinnerDot span {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: bounce 1.2s infinite ease-in-out;
+}
+.spinnerDot span:nth-child(2) { animation-delay: 0.2s; }
+.spinnerDot span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+  40%          { transform: scale(1);   opacity: 1; }
+}
+
+/* ── Mock badge ──────────────────────────────────────────── */
+.mockBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  background: rgba(251,191,36,0.12);
+  color: var(--phase-3-color);
+  border: 1px solid rgba(251,191,36,0.25);
+  border-radius: 99px;
+  font-size: 11px; font-weight: 600;
+  margin-bottom: 16px;
+}
+.mockBadge a { color: inherit; text-decoration: underline; }
+
+/* ── Structure note ──────────────────────────────────────── */
+.structureNote {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--phase-3-color);
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+}
+
+/* ── Arc grid ────────────────────────────────────────────── */
+.arcGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.arcCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+
+.arcLabel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.arcName  { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.arcEps   { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+.arcTheme { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+/* ── View toggle ─────────────────────────────────────────── */
+.viewToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.viewBtn {
+  padding: 7px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600;
+  transition: all 0.15s;
+}
+.viewBtn:hover { border-color: var(--border-hover); color: var(--text); }
+.viewBtnActive { background: var(--primary-glow); border-color: var(--primary); color: var(--primary); }
+
+/* ── Timeline ────────────────────────────────────────────── */
+.timeline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.timelineLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.timelineGrid {
+  display: grid;
+  grid-template-columns: repeat(25, 1fr);
+  grid-template-rows: repeat(4, 28px);
+  gap: 2px;
+}
+
+.cell {
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+.cell:hover { opacity: 0.8; }
+
+.cellPeak { outline: 2px solid #fff4; outline-offset: -1px; }
+
+.peakMark { color: rgba(255,255,255,0.9); font-size: 10px; }
+.revMark  { color: rgba(255,255,255,0.9); font-size: 9px; }
+
+/* ── Legend ──────────────────────────────────────────────── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  align-items: center;
+}
+
+.legPeak { color: var(--text-muted); }
+.legRev  { color: var(--text-muted); }
+
+.legDot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* ── Arc list ────────────────────────────────────────────── */
+.arcList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.arcSection {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.arcSectionHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+.arcSectionHeader:hover { background: var(--surface-2); }
+
+.arcDot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.arcSectionTitle { font-size: 14px; font-weight: 700; flex: 1; }
+
+.arcRange { font-size: 12px; color: var(--text-dim); }
+
+.chevron { font-size: 10px; color: var(--text-dim); margin-left: 4px; }
+
+/* ── Episode list ────────────────────────────────────────── */
+.epList {
+  border-top: 1px solid var(--border);
+}
+
+.epRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.epRow:last-child { border-bottom: none; }
+.epRow:hover { background: var(--surface-2); }
+
+.epPeak { background: rgba(251,191,36,0.04); }
+
+.epNum {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  width: 28px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.epTitle {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tensionBar { display: flex; gap: 3px; flex-shrink: 0; }
+
+.tensionDot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+
+.epFlags { display: flex; gap: 4px; flex-shrink: 0; }
+
+.tagPeak {
+  font-size: 9px; font-weight: 700;
+  padding: 2px 6px;
+  background: rgba(251,191,36,0.2);
+  color: var(--phase-3-color);
+  border-radius: 99px;
+}
+.tagRev {
+  font-size: 9px; font-weight: 700;
+  padding: 2px 6px;
+  background: rgba(244,114,182,0.2);
+  color: var(--phase-4-color);
+  border-radius: 99px;
+}
+.tagHook {
+  font-size: 9px; font-weight: 700;
+  padding: 2px 6px;
+  background: rgba(96,165,250,0.2);
+  color: var(--phase-1-color);
+  border-radius: 99px;
+}
+
+/* ── Gating ──────────────────────────────────────────────── */
+.gatingBanner {
+  background: linear-gradient(135deg, rgba(251,191,36,0.08), rgba(124,108,252,0.08));
+  border: 1px solid rgba(251,191,36,0.25);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.gatingText h3 {
+  font-size: 16px; font-weight: 800;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.gatingText p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
