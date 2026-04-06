@@ -1,10 +1,404 @@
 "use client";
 
-// TODO: 프로젝트 목록 + 새 프로젝트 생성 UI
-export default function ProjectsPage() {
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import s from "./page.module.css";
+
+type Phase = 1 | 2 | 3 | 4;
+
+interface Project {
+  id: string;
+  title: string;
+  genre: string;
+  targetAudience: string;
+  currentPhase: Phase;
+  status: "active" | "completed" | "draft";
+  feasibilityScore?: number;
+  episodeProgress?: number; // Phase 4: 완성된 화 수
+  createdAt: string;
+}
+
+const PHASE_LABELS = ["기획 분석", "세계관/에셋", "100화 로드맵", "30컷 대본"];
+const PHASE_ROUTES = ["phase-1", "phase-2", "phase-3", "phase-4"];
+const GENRES = [
+  "판타지", "로맨스", "액션", "SF", "스릴러", "일상/힐링",
+  "무협", "스포츠", "공포", "역사", "드라마", "개그",
+];
+
+// ── localStorage persistence ───────────────────────────────
+const STORAGE_KEY = "wts_projects";
+
+function loadProjects(): Project[] {
+  if (typeof window === "undefined") return DEMO_PROJECTS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEMO_PROJECTS;
+    return JSON.parse(raw) as Project[];
+  } catch {
+    return DEMO_PROJECTS;
+  }
+}
+
+function saveProjects(list: Project[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+// ── Demo data ──────────────────────────────────────────────
+const DEMO_PROJECTS: Project[] = [
+  {
+    id: "demo-1",
+    title: "별을 삼킨 소녀",
+    genre: "판타지",
+    targetAudience: "10~20대 여성",
+    currentPhase: 3,
+    status: "active",
+    feasibilityScore: 0.82,
+    createdAt: "2026-03-10T08:00:00Z",
+  },
+  {
+    id: "demo-2",
+    title: "직장인 슈퍼히어로",
+    genre: "액션",
+    targetAudience: "20~30대 직장인",
+    currentPhase: 4,
+    status: "active",
+    feasibilityScore: 0.75,
+    episodeProgress: 23,
+    createdAt: "2026-02-28T10:30:00Z",
+  },
+  {
+    id: "demo-3",
+    title: "달빛 편의점",
+    genre: "일상/힐링",
+    targetAudience: "전 연령",
+    currentPhase: 1,
+    status: "active",
+    createdAt: "2026-04-01T14:00:00Z",
+  },
+];
+
+// ── Helpers ────────────────────────────────────────────────
+function phaseClass(phase: Phase, current: Phase): string {
+  if (phase < current) return s.stepDone;
+  if (phase === current) return s.stepActive;
+  return "";
+}
+
+function phaseBadgeClass(phase: Phase): string {
+  return [s.phaseBadge, s[`phase${phase}`]].join(" ");
+}
+
+function feasibilityColor(score: number) {
+  if (score >= 0.7) return s.feasibilityHigh;
+  if (score >= 0.5) return s.feasibilityMid;
+  return s.feasibilityLow;
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+// ── Sub-components ─────────────────────────────────────────
+function PhaseStepper({ current }: { current: Phase }) {
   return (
-    <main>
-      <h1>내 프로젝트</h1>
-    </main>
+    <div>
+      <div className={s.stepper}>
+        {([1, 2, 3, 4] as Phase[]).map((phase, i) => (
+          <div key={phase} className={`${s.step} ${phaseClass(phase, current)}`}>
+            <div className={s.stepDot}>
+              {phase < current ? "✓" : phase}
+            </div>
+            {i < 3 && (
+              <div
+                className={s.stepLine}
+                style={phase < current ? { background: "var(--primary)" } : undefined}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className={s.stepperLabels}>
+        {PHASE_LABELS.map((label, i) => {
+          const phase = (i + 1) as Phase;
+          const cls = [
+            s.stepperLabel,
+            phase === current ? s.stepperLabelActive : "",
+            phase < current ? s.stepperLabelDone : "",
+          ].join(" ");
+          return <span key={phase} className={cls}>{label}</span>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProjectCard({ project }: { project: Project }) {
+  return (
+    <Link
+      href={`/projects/${project.id}/${PHASE_ROUTES[project.currentPhase - 1]}`}
+      className={s.card}
+    >
+      <div className={s.cardTop}>
+        <div>
+          <div className={s.cardTitle}>{project.title}</div>
+          <div className={s.cardMeta}>
+            <span className={`${s.tag} ${s.tagGenre}`}>{project.genre}</span>
+            <span className={phaseBadgeClass(project.currentPhase)}>
+              Phase {project.currentPhase} · {PHASE_LABELS[project.currentPhase - 1]}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <PhaseStepper current={project.currentPhase} />
+
+      {project.currentPhase === 4 && project.episodeProgress !== undefined && (
+        <div className={s.episodeBar}>
+          <div className={s.episodeBarLabel}>
+            <span>화별 대본 진행</span>
+            <span>{project.episodeProgress} / 100화</span>
+          </div>
+          <div className={s.episodeBarTrack}>
+            <div
+              className={s.episodeBarFill}
+              style={{ width: `${project.episodeProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={s.cardFooter}>
+        <div className={s.cardDate}>{formatDate(project.createdAt)}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {project.feasibilityScore !== undefined && (
+            <div className={s.feasibility}>
+              <div className={`${s.feasibilityDot} ${feasibilityColor(project.feasibilityScore)}`} />
+              <span className={s.feasibilityScore}>
+                실현가능성 {Math.round(project.feasibilityScore * 100)}%
+              </span>
+            </div>
+          )}
+          <span className={s.cardArrow}>→</span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// ── New project modal ──────────────────────────────────────
+interface NewProjectModalProps {
+  onClose: () => void;
+  onCreate: (p: Project) => void;
+}
+
+function NewProjectModal({ onClose, onCreate }: NewProjectModalProps) {
+  const [title, setTitle] = useState("");
+  const [genre, setGenre] = useState(GENRES[0]);
+  const [target, setTarget] = useState("");
+  const [concept, setConcept] = useState("");
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const project: Project = {
+      id: uid(),
+      title: title.trim(),
+      genre,
+      targetAudience: target.trim() || "미설정",
+      currentPhase: 1,
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+    onCreate(project);
+    onClose();
+  }
+
+  return (
+    <div className={s.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={s.modal}>
+        <div className={s.modalHeader}>
+          <span className={s.modalTitle}>새 프로젝트 만들기</span>
+          <button className={s.modalClose} onClick={onClose}>✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className={s.formGroup}>
+            <label className={s.formLabel}>웹툰 제목 *</label>
+            <input
+              className={s.formInput}
+              placeholder="예) 별을 삼킨 소녀"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel}>장르</label>
+            <select
+              className={s.formSelect}
+              value={genre}
+              onChange={(e) => setGenre(e.target.value)}
+            >
+              {GENRES.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel}>타겟 독자</label>
+            <input
+              className={s.formInput}
+              placeholder="예) 20~30대 직장인"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            />
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel}>초기 아이디어 (선택)</label>
+            <textarea
+              className={s.formTextarea}
+              placeholder="주인공, 핵심 갈등, 세계관 등 자유롭게 적어주세요"
+              value={concept}
+              onChange={(e) => setConcept(e.target.value)}
+            />
+          </div>
+
+          <div className={s.formActions}>
+            <button type="button" className={s.btnGhost} onClick={onClose}>
+              취소
+            </button>
+            <button type="submit" className={s.btnPrimary}>
+              ✦ Phase 1 시작
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ───────────────────────────────────────────────────
+export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showModal, setShowModal] = useState(false);
+
+  useEffect(() => {
+    setProjects(loadProjects());
+  }, []);
+
+  function handleCreate(project: Project) {
+    const next = [project, ...projects];
+    setProjects(next);
+    saveProjects(next);
+  }
+
+  const active = projects.filter((p) => p.status === "active");
+  const inPhase4 = projects.filter((p) => p.currentPhase === 4);
+  const avgFeasibility = projects
+    .filter((p) => p.feasibilityScore !== undefined)
+    .reduce((sum, p, _, arr) => sum + (p.feasibilityScore ?? 0) / arr.length, 0);
+
+  return (
+    <div className={s.root}>
+      {/* Header */}
+      <header className={s.header}>
+        <div className={s.logo}>
+          <div className={s.logoIcon}>✦</div>
+          <span className={s.logoText}>AI Webtoon Studio</span>
+        </div>
+        <div className={s.headerRight}>
+          <button className={s.btnPrimary} onClick={() => setShowModal(true)}>
+            + 새 프로젝트
+          </button>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className={s.content}>
+        {/* Stats */}
+        <div className={s.stats}>
+          <div className={s.statCard}>
+            <span className={s.statLabel}>전체 프로젝트</span>
+            <span className={s.statValue}>{projects.length}</span>
+            <span className={s.statSub}>총 작업 수</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statLabel}>진행 중</span>
+            <span className={s.statValue} style={{ color: "var(--primary)" }}>
+              {active.length}
+            </span>
+            <span className={s.statSub}>활성 프로젝트</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statLabel}>대본 작업</span>
+            <span className={s.statValue} style={{ color: "var(--phase-4-color)" }}>
+              {inPhase4.length}
+            </span>
+            <span className={s.statSub}>Phase 4 진행 중</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statLabel}>평균 실현가능성</span>
+            <span
+              className={s.statValue}
+              style={{
+                color: avgFeasibility >= 0.7
+                  ? "var(--phase-2-color)"
+                  : avgFeasibility >= 0.5
+                  ? "var(--phase-3-color)"
+                  : "var(--text)",
+              }}
+            >
+              {projects.some((p) => p.feasibilityScore !== undefined)
+                ? `${Math.round(avgFeasibility * 100)}%`
+                : "—"}
+            </span>
+            <span className={s.statSub}>Phase 1 기준</span>
+          </div>
+        </div>
+
+        {/* Project list */}
+        <div className={s.sectionHeader}>
+          <span className={s.sectionTitle}>내 프로젝트</span>
+          <span className={s.sectionCount}>{projects.length}개</span>
+        </div>
+
+        <div className={s.grid}>
+          {projects.length === 0 ? (
+            <div className={s.empty}>
+              <div className={s.emptyIcon}>✦</div>
+              <div className={s.emptyTitle}>아직 프로젝트가 없어요</div>
+              <div className={s.emptyDesc}>
+                새 프로젝트를 만들면 7인의 AI 에이전트가 기획부터 대본까지
+                함께 만들어 드립니다.
+              </div>
+              <button className={s.btnPrimary} onClick={() => setShowModal(true)}>
+                첫 번째 프로젝트 시작하기
+              </button>
+            </div>
+          ) : (
+            projects.map((p) => <ProjectCard key={p.id} project={p} />)
+          )}
+        </div>
+      </main>
+
+      {showModal && (
+        <NewProjectModal
+          onClose={() => setShowModal(false)}
+          onCreate={handleCreate}
+        />
+      )}
+    </div>
   );
 }
