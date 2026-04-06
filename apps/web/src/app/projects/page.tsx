@@ -315,10 +315,7 @@ export default function ProjectsPage() {
     <div className={s.root}>
       {/* Header */}
       <header className={s.header}>
-        <div className={s.logo}>
-          <div className={s.logoIcon}>✦</div>
-          <span className={s.logoText}>AI Webtoon Studio</span>
-        </div>
+        <span className={s.headerTitle}>내 프로젝트</span>
         <div className={s.headerRight}>
           <button className={s.btnPrimary} onClick={() => setShowModal(true)}>
             + 새 프로젝트

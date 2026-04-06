@@ -1,0 +1,311 @@
+.page {
+  padding: 40px;
+  max-width: 720px;
+}
+
+.pageTitle {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  margin-bottom: 4px;
+}
+
+.pageDesc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 36px;
+  line-height: 1.6;
+}
+
+/* ── Key card ────────────────────────────────────────────── */
+.keyCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 16px;
+  transition: border-color 0.15s;
+}
+
+.keyCard.hasKey {
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.keyCard.hasError {
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.keyHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.keyMeta {
+  flex: 1;
+}
+
+.keyLabel {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.keyRequired {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: rgba(124, 108, 252, 0.15);
+  color: var(--primary);
+  letter-spacing: 0.3px;
+}
+
+.keyOptional {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.keyHint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.statusSaved {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--phase-2-color);
+}
+
+.statusError {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+.statusTesting {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--phase-3-color);
+}
+
+.statusNone {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+/* ── Input row ───────────────────────────────────────────── */
+.inputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.keyInput {
+  flex: 1;
+  padding: 9px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.keyInput:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+  outline: none;
+}
+
+.keyInput::placeholder {
+  color: var(--text-dim);
+  font-family: var(--font);
+}
+
+.keyInput.masked {
+  letter-spacing: 2px;
+  color: var(--text-muted);
+}
+
+.btnIcon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.btnIcon:hover {
+  background: var(--surface-3);
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+.btnSave {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+  border: none;
+  flex-shrink: 0;
+}
+
+.btnSave:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.btnSave:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btnClear {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.btnClear:hover {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+/* ── Spinner ─────────────────────────────────────────────── */
+.spin {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(251, 191, 36, 0.3);
+  border-top-color: var(--phase-3-color);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Docs link ───────────────────────────────────────────── */
+.docsLink {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.docsLink a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Info box ────────────────────────────────────────────── */
+.infoBox {
+  background: rgba(124, 108, 252, 0.06);
+  border: 1px solid rgba(124, 108, 252, 0.2);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 28px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.infoBox strong {
+  color: var(--primary);
+}
+
+/* ── Section divider ─────────────────────────────────────── */
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  margin-top: 28px;
+}
+
+/* ── Env tip ─────────────────────────────────────────────── */
+.envTip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-top: 28px;
+}
+
+.envTipTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.envTipCode {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+  color: var(--phase-2-color);
+  background: var(--surface-2);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  line-height: 1.8;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.envTipDesc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}

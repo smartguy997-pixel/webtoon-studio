@@ -34,22 +34,6 @@ export default function ProjectLayout({ children, params }: Props) {
           overflowY: "auto",
         }}
       >
-        <Link
-          href="/projects"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "0 16px 16px",
-            borderBottom: "1px solid var(--border)",
-            marginBottom: 8,
-            color: "var(--text-muted)",
-            fontSize: 13,
-          }}
-        >
-          ← 목록으로
-        </Link>
-
         <nav style={{ padding: "8px 10px", flex: 1 }}>
           <div
             style={{
