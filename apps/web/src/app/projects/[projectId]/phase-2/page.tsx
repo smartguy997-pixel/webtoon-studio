@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import s from "./page.module.css";
@@ -227,8 +227,8 @@ function ABSelector({
 }
 
 // ── Page ──────────────────────────────────────────────────
-export default function Phase2Page({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = use(params);
+export default function Phase2Page({ params }: { params: { projectId: string } }) {
+  const { projectId } = params;
   const router = useRouter();
 
   const [result, setResult] = useState<SavedResult | null>(null);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import s from "./page.module.css";
 
@@ -179,8 +179,8 @@ function ScoreGauge({ score }: { score: number }) {
 }
 
 // ── Page ──────────────────────────────────────────────────
-export default function Phase1Page({ params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = use(params);
+export default function Phase1Page({ params }: { params: { projectId: string } }) {
+  const { projectId } = params;
   const router = useRouter();
 
   // Form
