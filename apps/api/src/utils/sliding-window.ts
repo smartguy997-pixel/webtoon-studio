@@ -32,6 +32,7 @@ export async function saveSlidingWindowSummary(
     key_decisions?: string[];
     approved_asset_ids?: { characters: string[]; locations: string[]; props: string[] };
     next_phase_ready?: boolean;
+    [key: string]: unknown; // 단계별 추가 필드 허용
   }
 ): Promise<void> {
   const version = await getNextSummaryVersion(projectId, phase);

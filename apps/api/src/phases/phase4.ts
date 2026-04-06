@@ -1,6 +1,11 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { runScriptAgent, detectChapterStyle, type ScriptWriterInput } from "../agents/script.js";
-import { runProducerPhase4, type Phase4FinalOutput } from "../agents/producer.js";
+import {
+  runScriptAgent,
+  detectChapterStyle,
+  type ScriptWriterInput,
+  type Phase4FinalOutput,
+} from "../agents/script.js";
+import { runProducerPhase4 } from "../agents/producer.js";
 import {
   validatePhase4Output,
   type Phase4OutputValidated,
@@ -46,18 +51,22 @@ async function loadEpisodeFromRoadmap(
   return doc.data() as Episode;
 }
 
-async function loadApprovedCharacters(
-  projectId: string
-): Promise<Array<{ id: string; name: string; role: string; appearance: { face: string; body: string; hair: string; outfit: string; distinguishing_features: string } }>> {
+type ApprovedChar = {
+  id: string;
+  name: string;
+  role: string;
+  appearance: { face: string; body: string; hair: string; outfit: string; distinguishing_features: string };
+};
+type ApprovedLoc = { id: string; name: string; type: string; atmosphere: string };
+
+async function loadApprovedCharacters(projectId: string): Promise<ApprovedChar[]> {
   const snap = await collections.approvedAssets(projectId).collection("characters").get();
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ReturnType<typeof loadApprovedCharacters> extends Promise<Array<infer T>> ? T : never));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ApprovedChar);
 }
 
-async function loadApprovedLocations(
-  projectId: string
-): Promise<Array<{ id: string; name: string; type: string; atmosphere: string }>> {
+async function loadApprovedLocations(projectId: string): Promise<ApprovedLoc[]> {
   const snap = await collections.approvedAssets(projectId).collection("locations").get();
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ReturnType<typeof loadApprovedLocations> extends Promise<Array<infer T>> ? T : never));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ApprovedLoc);
 }
 
 async function loadPreviousSummary(

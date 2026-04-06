@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
 import { authMiddleware } from "../middleware/auth.js";
@@ -31,8 +31,8 @@ export const phasesRouter = Router();
 async function getProjectOrFail(
   projectId: string,
   uid: string,
-  res: Parameters<Parameters<typeof phasesRouter.use>[0]>[1]
-): Promise<ReturnType<typeof collections.projects>["firestore"] extends infer _ ? Record<string, unknown> | null : never> {
+  res: Response
+): Promise<Record<string, unknown> | null> {
   const snap = await collections.projects().doc(projectId).get();
   if (!snap.exists) {
     res.status(404).json({ error: "프로젝트를 찾을 수 없습니다" });

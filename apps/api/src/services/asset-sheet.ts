@@ -42,7 +42,7 @@ export interface CharacterSheet extends CharacterSheetTags {
     긴장: string | null;
   };
   locked: boolean;
-  created_at: FirebaseFirestore.FieldValue;
+  created_at: unknown;
 }
 
 export interface BackgroundSheet {
@@ -63,7 +63,7 @@ export interface BackgroundSheet {
   };
   forbidden_elements: string[];
   locked: boolean;
-  created_at: FirebaseFirestore.FieldValue;
+  created_at: unknown;
 }
 
 // ─── 캐릭터 시트 태그 생성 (에이전트 호출) ────────────────────

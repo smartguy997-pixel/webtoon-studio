@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -20,7 +20,6 @@ import {
   getEpisodeSCCLogs,
 } from "../services/scc.js";
 import { collections } from "../services/firestore.js";
-import { authMiddleware as _auth } from "../middleware/auth.js";
 
 export const styleRouter = Router();
 
@@ -29,7 +28,7 @@ export const styleRouter = Router();
 async function getProjectOrFail(
   projectId: string,
   uid: string,
-  res: Parameters<Parameters<typeof styleRouter.use>[0]>[1]
+  res: Response
 ): Promise<boolean> {
   const snap = await collections.projects().doc(projectId).get();
   if (!snap.exists) {

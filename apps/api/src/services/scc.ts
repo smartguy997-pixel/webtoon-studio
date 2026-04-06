@@ -52,8 +52,8 @@ export interface SCCLog {
   attempts: SCCAttempt[];
   final_status: "pass" | "flagged";
   flagged_reason: string | null;
-  created_at: FirebaseFirestore.FieldValue;
-  updated_at: FirebaseFirestore.FieldValue;
+  created_at: unknown;
+  updated_at: unknown;
 }
 
 // ─── 참조 이미지 URL 변환 (imageId → CDN URL) ─────────────────
@@ -405,7 +405,6 @@ export async function getEpisodeSCCLogs(
   projectId: string,
   episode: number
 ): Promise<SCCLog[]> {
-  const prefix = `ep_${String(episode).padStart(3, "0")}_cut_`;
   const snap = await collections
     .styleRegistry(projectId)
     .collection("validation_log")

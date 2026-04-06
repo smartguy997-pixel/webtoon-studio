@@ -338,29 +338,7 @@ export const AssetListSchema = z.object({
   ),
 });
 
-export const ScriptCutSchema = z.object({
-  cut: z.number().int().min(1).max(30),
-  angle: z.enum(["ELS", "LS", "MS", "MCU", "CU", "ECU", "OTS", "POV", "BIRD", "WORM", "DUTCH"]),
-  aspect_ratio: z.enum(["1:1", "1:1.5", "1:2", "1:3"]),
-  scene_description: z.string(),
-  characters: z.array(z.object({
-    char_id: z.string(),
-    position: z.enum(["left", "center", "right", "background"]),
-    expression: z.enum(["기쁨", "분노", "슬픔", "놀람", "무표정", "긴장"]),
-    pose: z.string(),
-  })),
-  location_id: z.string(),
-  background_variant: z.enum(["day_clear", "day_cloudy", "evening", "night", "rain", "snow"]),
-  dialogue: z.array(z.object({
-    char_id: z.string(),
-    text: z.string(),
-    balloon_type: z.enum(["normal", "shout", "whisper", "thought", "narration"]),
-  })),
-  sfx: z.array(z.string()),
-  effect: z.enum(["none", "speed_lines", "impact_lines", "glow", "blur"]),
-  director_note: z.string(),
-});
-
+// ScriptCutSchema은 Phase4OutputSchema 블록에 정의됨 (위 참조)
 export const ScriptDataSchema = z.array(ScriptCutSchema).length(30);
 
 export function validateAssetList(data: unknown) {

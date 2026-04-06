@@ -47,11 +47,11 @@ export interface Phase1FinalOutput {
     producer: string;
   };
   asset_list: {
-    characters: never[];
-    locations: never[];
-    props: never[];
+    characters: unknown[];
+    locations: unknown[];
+    props: unknown[];
   };
-  revision_history: never[];
+  revision_history: unknown[];
 }
 
 export type FeasibilityVerdict = "go" | "conditional" | "reject";
