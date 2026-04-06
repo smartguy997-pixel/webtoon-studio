@@ -3,10 +3,14 @@ import {
   RESEARCHER_PROMPT,
   buildResearcherUserMessage,
 } from "../services/agents/prompts/researcher.prompt.js";
+import {
+  RESEARCHER_PHASE2_PROMPT,
+  buildResearcherPhase2UserMessage,
+} from "../services/agents/prompts/researcher-phase2.prompt.js";
 import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
 import type { StrategistOutput } from "./strategist.js";
 
-// ─── 중간 출력 타입 ────────────────────────────────────────────
+// ─── Phase 1 출력 타입 ────────────────────────────────────────
 
 export interface ResearcherFlag {
   type: "cliche" | "logic_gap" | "market_risk" | "differentiation";
@@ -19,6 +23,24 @@ export interface ResearcherOutput {
   flags: ResearcherFlag[];
   feasibility_adjustment: number; // ±0.15 범위
   improved_usp_suggestions: string[];
+  agent_notes: {
+    researcher: string;
+  };
+}
+
+// ─── Phase 2 출력 타입 ────────────────────────────────────────
+
+export interface ResearcherPhase2Flag {
+  type: "internal_contradiction" | "fact_error" | "sustainability_risk" | "usp_mismatch";
+  severity: "low" | "medium" | "high";
+  target: string;
+  description: string;
+  suggestion: string;
+}
+
+export interface ResearcherPhase2Output {
+  flags: ResearcherPhase2Flag[];
+  world_strengthening: string[];
   agent_notes: {
     researcher: string;
   };
@@ -61,6 +83,50 @@ export async function runResearcherAgent(
         { agentName: "researcher-retry" }
       );
       return extractJson<ResearcherOutput>(retry);
+    }
+    throw err;
+  }
+}
+
+// ─── Phase 2 에이전트 실행 ─────────────────────────────────────
+
+/**
+ * 심층 조사자 에이전트 실행 (Phase 2 — 세계관 일관성 검토)
+ */
+export async function runResearcherPhase2Agent(
+  genre: string,
+  usp: string[],
+  worldbuilderOutput: object
+): Promise<ResearcherPhase2Output> {
+  const userMessage = buildResearcherPhase2UserMessage(
+    genre,
+    usp,
+    JSON.stringify(worldbuilderOutput, null, 2)
+  );
+
+  const raw = await callAgent(
+    RESEARCHER_PHASE2_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "researcher-phase2" }
+  );
+
+  try {
+    return extractJson<ResearcherPhase2Output>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        RESEARCHER_PHASE2_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content: "출력이 올바른 JSON 형식이 아닙니다. 지정된 JSON 스키마만 출력해주세요.",
+          },
+        ],
+        { agentName: "researcher-phase2-retry" }
+      );
+      return extractJson<ResearcherPhase2Output>(retry);
     }
     throw err;
   }

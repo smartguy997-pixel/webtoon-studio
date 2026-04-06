@@ -3,9 +3,15 @@ import {
   PRODUCER_PHASE1_PROMPT,
   buildProducerPhase1UserMessage,
 } from "../services/agents/prompts/producer-phase1.prompt.js";
+import {
+  PRODUCER_PHASE2_PROMPT,
+  buildProducerPhase2UserMessage,
+} from "../services/agents/prompts/producer-phase2.prompt.js";
 import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
 import type { StrategistOutput } from "./strategist.js";
-import type { ResearcherOutput } from "./researcher.js";
+import type { ResearcherOutput, ResearcherPhase2Output } from "./researcher.js";
+import type { WorldbuilderOutput } from "./worldbuilder.js";
+import type { CharacterOutput, AssetList, DesignOption } from "./character.js";
 
 // ─── Phase 1 최종 출력 타입 ────────────────────────────────────
 
@@ -87,6 +93,74 @@ export async function runProducerPhase1(
         { agentName: "producer-phase1-retry" }
       );
       return extractJson<Phase1FinalOutput>(retry);
+    }
+    throw err;
+  }
+}
+
+// ─── Phase 2 최종 출력 타입 ────────────────────────────────────
+
+export interface Phase2FinalOutput {
+  phase: "세계관_에셋_설계";
+  summary: string;
+  world_design: WorldbuilderOutput["world_design"];
+  asset_list: AssetList;
+  design_options: DesignOption[];
+  approved_assets: string[];
+  agent_notes: {
+    worldbuilder: string;
+    researcher: string;
+    character_designer: string;
+    producer: string;
+  };
+  revision_history: unknown[];
+}
+
+// ─── Phase 2 에이전트 실행 ─────────────────────────────────────
+
+/**
+ * 총괄 프로듀서 에이전트 실행 (Phase 2)
+ * 세계관 설계자 + 심층 조사자 + 캐릭터 디자이너 결과를 종합해 Phase 2 최종 출력 생성.
+ */
+export async function runProducerPhase2(
+  genre: string,
+  usp: string[],
+  worldbuilderOutput: WorldbuilderOutput,
+  researcherOutput: ResearcherPhase2Output,
+  characterOutput: CharacterOutput
+): Promise<Phase2FinalOutput> {
+  const userMessage = buildProducerPhase2UserMessage(
+    genre,
+    usp,
+    JSON.stringify(worldbuilderOutput, null, 2),
+    JSON.stringify(researcherOutput, null, 2),
+    JSON.stringify(characterOutput, null, 2)
+  );
+
+  const raw = await callAgent(
+    PRODUCER_PHASE2_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "producer-phase2" }
+  );
+
+  try {
+    return extractJson<Phase2FinalOutput>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        PRODUCER_PHASE2_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 Phase 2 출력 JSON 스키마만 출력해주세요.",
+          },
+        ],
+        { agentName: "producer-phase2-retry" }
+      );
+      return extractJson<Phase2FinalOutput>(retry);
     }
     throw err;
   }

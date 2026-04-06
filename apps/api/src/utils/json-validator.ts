@@ -50,6 +50,127 @@ export function validatePhase1Output(data: unknown) {
   return Phase1OutputSchema.safeParse(data);
 }
 
+// ─── Phase 2 스키마 ───────────────────────────────────────────
+
+const WorldDesignSchema = z.object({
+  physical_env: z.object({
+    era: z.string().min(1),
+    geography: z.string().min(1),
+    climate: z.string().min(1),
+  }),
+  social_system: z.object({
+    power_structure: z.string().min(1),
+    class_system: z.string().min(1),
+    economy: z.string().min(1),
+  }),
+  unique_rules: z
+    .array(
+      z.object({
+        rule_name: z.string().min(1),
+        description: z.string().min(1),
+        limitation: z.string().min(1),
+      })
+    )
+    .min(3, "고유 규칙은 최소 3개"),
+  information_asymmetry: z.object({
+    reader_knows: z.array(z.string()).min(1),
+    character_knows: z.array(z.string()).min(1),
+  }),
+});
+
+const DesignOptionSchema = z.object({
+  target_id: z.string().min(1),
+  target_name: z.string().min(1),
+  target_type: z.enum(["character", "location"]),
+  option_a: z.string().min(1),
+  option_b: z.string().min(1),
+  selected: z.enum(["A", "B"]).nullable(),
+});
+
+export const Phase2OutputSchema = z.object({
+  phase: z.literal("세계관_에셋_설계"),
+  summary: z.string().max(500, "summary는 500자 이내여야 합니다"),
+  world_design: WorldDesignSchema,
+  asset_list: z.object({
+    characters: z
+      .array(
+        z.object({
+          id: z.string().regex(charIdPattern, "char_NNN 형식이어야 합니다"),
+          name: z.string().min(1),
+          role: z.enum(["protagonist", "antagonist", "supporting"]),
+          age: z.string().min(1),
+          personality: z.string().min(1),
+          appearance: z.object({
+            face: z.string(),
+            body: z.string(),
+            hair: z.string(),
+            outfit: z.string(),
+            distinguishing_features: z.string(),
+          }),
+          ability: z.string(),
+          arc: z.string(),
+        })
+      )
+      .min(1, "캐릭터 최소 1명"),
+    locations: z
+      .array(
+        z.object({
+          id: z.string().regex(locIdPattern, "loc_NNN 형식이어야 합니다"),
+          name: z.string().min(1),
+          type: z.enum(["interior", "exterior", "landmark"]),
+          atmosphere: z.string().min(1),
+          structure: z.string().min(1),
+          first_appearance: z.string().min(1),
+        })
+      )
+      .min(1, "배경 최소 1개"),
+    props: z.array(
+      z.object({
+        id: z.string().regex(propIdPattern, "prop_NNN 형식이어야 합니다"),
+        name: z.string(),
+        function: z.string(),
+        appearance: z.string(),
+        owner: z.string().nullable(),
+      })
+    ),
+  }),
+  design_options: z.array(DesignOptionSchema).min(1, "디자인 옵션 최소 1개"),
+  approved_assets: z.array(z.string()).default([]),
+  agent_notes: z.object({
+    worldbuilder: z.string().min(1),
+    researcher: z.string().min(1),
+    character_designer: z.string().min(1),
+    producer: z.string().min(1),
+  }),
+  revision_history: z.array(z.unknown()).default([]),
+});
+
+export type Phase2OutputValidated = z.infer<typeof Phase2OutputSchema>;
+
+export function validatePhase2Output(data: unknown) {
+  return Phase2OutputSchema.safeParse(data);
+}
+
+/**
+ * GATING 조건 1: ASSET_LIST에 캐릭터 최소 1명, 배경 최소 1개
+ * GATING 조건 2: 모든 design_options[].selected가 null이 아님
+ */
+export function checkPhase2GatingConditions(output: Phase2OutputValidated): {
+  condition1: boolean; // ASSET_LIST 충족
+  condition2: boolean; // A/B 선택 완료
+  unselected: string[]; // 아직 선택 안 된 target_id 목록
+} {
+  const condition1 =
+    output.asset_list.characters.length >= 1 && output.asset_list.locations.length >= 1;
+
+  const unselected = output.design_options
+    .filter((opt) => opt.selected === null)
+    .map((opt) => opt.target_id);
+  const condition2 = unselected.length === 0;
+
+  return { condition1, condition2, unselected };
+}
+
 // ─── 공통 스키마 ──────────────────────────────────────────────
 
 export const AssetListSchema = z.object({

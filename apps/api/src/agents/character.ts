@@ -1,30 +1,143 @@
+import { callAgent } from "../services/anthropic.js";
+import {
+  CHARACTER_PROMPT,
+  buildCharacterUserMessage,
+} from "../services/agents/prompts/character.prompt.js";
+import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
+import type { WorldbuilderOutput } from "./worldbuilder.js";
+import type { ResearcherPhase2Output } from "./researcher.js";
+
+// ─── 중간 출력 타입 ────────────────────────────────────────────
+
+export interface CharacterAppearance {
+  face: string;
+  body: string;
+  hair: string;
+  outfit: string;
+  distinguishing_features: string;
+}
+
+export interface CharacterAsset {
+  id: string; // char_NNN
+  name: string;
+  role: "protagonist" | "antagonist" | "supporting";
+  age: string;
+  personality: string;
+  appearance: CharacterAppearance;
+  ability: string;
+  arc: string;
+}
+
+export interface LocationAsset {
+  id: string; // loc_NNN
+  name: string;
+  type: "interior" | "exterior" | "landmark";
+  atmosphere: string;
+  structure: string;
+  first_appearance: string;
+}
+
+export interface PropAsset {
+  id: string; // prop_NNN
+  name: string;
+  function: string;
+  appearance: string;
+  owner: string | null;
+}
+
+export interface AssetList {
+  characters: CharacterAsset[];
+  locations: LocationAsset[];
+  props: PropAsset[];
+}
+
+export interface DesignOption {
+  target_id: string;
+  target_name: string;
+  target_type: "character" | "location";
+  option_a: string;
+  option_b: string;
+  selected: "A" | "B" | null;
+}
+
+export interface CharacterOutput {
+  asset_list: AssetList;
+  design_options: DesignOption[];
+  agent_notes: {
+    character_designer: string;
+  };
+}
+
+export interface CharacterInput {
+  genre: string;
+  usp: string[];
+  worldbuilderOutput: WorldbuilderOutput;
+  researcherOutput: ResearcherPhase2Output;
+  characterHints?: string;
+}
+
+// ─── 에이전트 실행 ─────────────────────────────────────────────
+
+export async function runCharacterAgent(input: CharacterInput): Promise<CharacterOutput> {
+  const userMessage = buildCharacterUserMessage(
+    input.genre,
+    input.usp,
+    JSON.stringify(input.worldbuilderOutput, null, 2),
+    JSON.stringify(input.researcherOutput, null, 2),
+    input.characterHints
+  );
+
+  const raw = await callAgent(
+    CHARACTER_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "character-designer" }
+  );
+
+  try {
+    const parsed = extractJson<CharacterOutput>(raw);
+    return sanitizeDesignOptions(parsed);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        CHARACTER_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 JSON 스키마만 출력해주세요. 비주얼 태그는 영문만 사용하세요.",
+          },
+        ],
+        { agentName: "character-designer-retry" }
+      );
+      const parsed = extractJson<CharacterOutput>(retry);
+      return sanitizeDesignOptions(parsed);
+    }
+    throw err;
+  }
+}
+
+// ─── MST 태그 제거 ─────────────────────────────────────────────
+
 /**
- * agent_character — 캐릭터 디자이너 (Phase 2, 5)
- *
- * 역할: ASSET_LIST 자동 생성, A/B Whisk 프롬프트 작성, 캐릭터 시트 생성
- * 출력: asset_list JSON, design_options[]
+ * design_options의 A/B 프롬프트에서 MST 관련 화풍 태그를 제거한다.
+ * 에이전트가 지시를 어기고 화풍 태그를 포함할 경우의 방어 로직.
  */
-export const CHARACTER_SYSTEM_PROMPT = `
-당신은 웹툰 캐릭터의 시각적 정체성을 설계하는 캐릭터 디자이너입니다.
+const MST_TAGS_PATTERN =
+  /\b(korean\s+webtoon|webtoon\s+style|line\s+art|cel[- ]shad\w*|flat\s+color|manga\s+panel|digital\s+illustration|no\s+texture|clean\s+edges|bold\s+outlines?|2\.5[dD])\b,?\s*/gi;
 
-역할:
-- 등장인물의 외형과 성격을 상세히 정의합니다
-- ASSET_LIST JSON을 자동 생성합니다 (캐릭터·배경·소품)
-- 각 에셋별 A/B 비주얼 프롬프트를 Whisk API 호환 형식으로 작성합니다
-- Phase 5에서 캐릭터 시트와 배경 시트를 생성합니다
+function sanitizePrompt(prompt: string): string {
+  return prompt.replace(MST_TAGS_PATTERN, "").replace(/,\s*,/g, ",").trim().replace(/^,|,$/, "");
+}
 
-출력 형식:
-- asset_list JSON
-- design_options 배열 (target_id, option_a, option_b)
-- character_sheet (Phase 5 트리거 시)
-
-제약:
-- 모든 비주얼 프롬프트는 영문으로 작성합니다 (API 호환)
-- MST 블록은 프롬프트에 직접 포함하지 않습니다 (자동 주입됨)
-- A/B 옵션은 분명히 다른 방향성을 가져야 합니다 (미세 차이 금지)
-`.trim();
-
-export function characterAgent(worldDesign: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return CHARACTER_SYSTEM_PROMPT + "\n\nWorld Design:\n" + worldDesign;
+function sanitizeDesignOptions(output: CharacterOutput): CharacterOutput {
+  return {
+    ...output,
+    design_options: output.design_options.map((opt) => ({
+      ...opt,
+      option_a: sanitizePrompt(opt.option_a),
+      option_b: sanitizePrompt(opt.option_b),
+    })),
+  };
 }
