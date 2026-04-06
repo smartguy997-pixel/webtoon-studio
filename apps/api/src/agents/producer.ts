@@ -7,11 +7,16 @@ import {
   PRODUCER_PHASE2_PROMPT,
   buildProducerPhase2UserMessage,
 } from "../services/agents/prompts/producer-phase2.prompt.js";
+import {
+  PRODUCER_PHASE3_PROMPT,
+  buildProducerPhase3UserMessage,
+} from "../services/agents/prompts/producer-phase3.prompt.js";
 import { extractJson, JsonExtractionError } from "../utils/extract-json.js";
 import type { StrategistOutput } from "./strategist.js";
 import type { ResearcherOutput, ResearcherPhase2Output } from "./researcher.js";
 import type { WorldbuilderOutput } from "./worldbuilder.js";
 import type { CharacterOutput, AssetList, DesignOption } from "./character.js";
+import type { ScenarioMergedOutput, ArcStructure, Arc, Episode, PacingPlan } from "./scenario.js";
 
 // ─── Phase 1 최종 출력 타입 ────────────────────────────────────
 
@@ -161,6 +166,68 @@ export async function runProducerPhase2(
         { agentName: "producer-phase2-retry" }
       );
       return extractJson<Phase2FinalOutput>(retry);
+    }
+    throw err;
+  }
+}
+
+// ─── Phase 3 최종 출력 타입 ────────────────────────────────────
+
+export interface Phase3FinalOutput {
+  phase: "100화_로드맵";
+  summary: string;
+  arc_structure: ArcStructure;
+  arcs: Arc[];
+  episodes: Episode[]; // 1~100화 전체
+  pacing_plan: PacingPlan;
+  agent_notes: {
+    scenario_writer: string;
+    producer: string;
+  };
+  revision_history: unknown[];
+}
+
+// ─── Phase 3 에이전트 실행 ─────────────────────────────────────
+
+/**
+ * 총괄 프로듀서 에이전트 실행 (Phase 3)
+ * 시나리오 작가의 4배치 병합 결과를 검토하여 최종 100화 로드맵을 출력한다.
+ */
+export async function runProducerPhase3(
+  mergedOutput: ScenarioMergedOutput,
+  platform: string,
+  episodesPerWeek: number
+): Promise<Phase3FinalOutput> {
+  const userMessage = buildProducerPhase3UserMessage(
+    JSON.stringify(mergedOutput, null, 2),
+    platform,
+    episodesPerWeek
+  );
+
+  const raw = await callAgent(
+    PRODUCER_PHASE3_PROMPT,
+    [{ role: "user", content: userMessage }],
+    { agentName: "producer-phase3", maxTokens: 8192 }
+  );
+
+  try {
+    return extractJson<Phase3FinalOutput>(raw);
+  } catch (err) {
+    if (err instanceof JsonExtractionError) {
+      const retry = await callAgent(
+        PRODUCER_PHASE3_PROMPT,
+        [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: raw },
+          {
+            role: "user",
+            content:
+              "출력이 올바른 JSON 형식이 아닙니다. 지정된 Phase 3 출력 JSON 스키마만 출력해주세요. episodes 배열에 1화~100화 전체(100개)가 포함되어야 합니다.",
+          },
+        ],
+        { agentName: "producer-phase3-retry", maxTokens: 8192 }
+      );
+      return extractJson<Phase3FinalOutput>(retry);
     }
     throw err;
   }

@@ -171,6 +171,67 @@ export function checkPhase2GatingConditions(output: Phase2OutputValidated): {
   return { condition1, condition2, unselected };
 }
 
+// ─── Phase 3 스키마 ───────────────────────────────────────────
+
+const EpisodeTypeSchema = z.enum(["normal", "hook", "peak", "twist", "fanservice", "info"]);
+const ArcTypeSchema = z.enum(["small", "medium", "large"]);
+
+const ArcSchema = z.object({
+  arc_id: z.string().regex(/^arc_\d{3}$/, "arc_NNN 형식이어야 합니다"),
+  arc_type: ArcTypeSchema,
+  title: z.string().min(1),
+  episode_range: z.tuple([z.number().int().min(1), z.number().int().max(100)]),
+  theme: z.string().min(1),
+  resolution: z.string().min(1),
+});
+
+const EpisodeSchema = z.object({
+  ep: z.number().int().min(1).max(100),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  arc_id: z.string().min(1),
+  episode_type: EpisodeTypeSchema,
+  featured_characters: z.array(z.string()),
+  featured_locations: z.array(z.string()),
+  cliffhanger: z.string().nullable(),
+});
+
+const ArcStructureSchema = z.object({
+  act_1: z.object({ range: z.tuple([z.number(), z.number()]), theme: z.string(), key_events: z.array(z.string()) }),
+  act_2: z.object({ range: z.tuple([z.number(), z.number()]), theme: z.string(), key_events: z.array(z.string()) }),
+  act_3: z.object({ range: z.tuple([z.number(), z.number()]), theme: z.string(), key_events: z.array(z.string()) }),
+  act_4: z.object({ range: z.tuple([z.number(), z.number()]), theme: z.string(), key_events: z.array(z.string()) }),
+});
+
+const PacingPlanSchema = z.object({
+  hook_episodes: z.array(z.number().int()),
+  peak_episodes: z.array(z.number().int()),
+  twist_episodes: z.array(z.number().int()),
+  estimated_weekly_schedule: z.string().min(1),
+});
+
+export const Phase3OutputSchema = z.object({
+  phase: z.literal("100화_로드맵"),
+  summary: z.string().max(500, "summary는 500자 이내여야 합니다"),
+  arc_structure: ArcStructureSchema,
+  arcs: z.array(ArcSchema).min(1, "arcs 최소 1개"),
+  episodes: z
+    .array(EpisodeSchema)
+    .length(100, "episodes는 정확히 100개여야 합니다"),
+  pacing_plan: PacingPlanSchema,
+  agent_notes: z.object({
+    scenario_writer: z.string().min(1),
+    producer: z.string().min(1),
+  }),
+  revision_history: z.array(z.unknown()).default([]),
+});
+
+export type Phase3OutputValidated = z.infer<typeof Phase3OutputSchema>;
+
+export function validatePhase3Output(data: unknown) {
+  return Phase3OutputSchema.safeParse(data);
+}
+
 // ─── 공통 스키마 ──────────────────────────────────────────────
 
 export const AssetListSchema = z.object({

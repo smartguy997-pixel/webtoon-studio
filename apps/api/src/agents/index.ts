@@ -11,9 +11,11 @@ export {
 export {
   runProducerPhase1,
   runProducerPhase2,
+  runProducerPhase3,
   getFeasibilityVerdict,
   type Phase1FinalOutput,
   type Phase2FinalOutput,
+  type Phase3FinalOutput,
   type FeasibilityVerdict,
 } from "./producer.js";
 
@@ -33,3 +35,16 @@ export {
   type AssetList,
   type DesignOption,
 } from "./character.js";
+
+// Phase 3
+export {
+  runScenarioAgent,
+  type ScenarioInput,
+  type ScenarioMergedOutput,
+  type Arc,
+  type Episode,
+  type ArcStructure,
+  type PacingPlan,
+  type EpisodeType,
+  type ArcType,
+} from "./scenario.js";

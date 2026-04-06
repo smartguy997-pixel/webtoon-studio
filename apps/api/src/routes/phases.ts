@@ -10,6 +10,11 @@ import {
   approvePhase2Assets,
   Phase2PipelineError,
 } from "../phases/phase2.js";
+import {
+  runPhase3Pipeline,
+  approvePhase3Roadmap,
+  Phase3PipelineError,
+} from "../phases/phase3.js";
 import { validatePhase2Output, checkPhase2GatingConditions } from "../utils/json-validator.js";
 import { collections } from "../services/firestore.js";
 
@@ -293,12 +298,150 @@ phasesRouter.post("/:projectId/gate/2", authMiddleware, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// PHASE 3, 4 (추후 구현)
+// PHASE 3
 // ═══════════════════════════════════════════════════════════════
 
-phasesRouter.post("/:projectId/phase-3", authMiddleware, async (_req, res) => {
-  res.status(501).json({ message: "Phase 3 — 100화 로드맵 (구현 예정)" });
+const Phase3InputSchema = z.object({
+  platform: z.enum(["naver", "kakao", "lezhin", "other"]).default("naver"),
+  episodes_per_week: z.number().int().min(1).max(7).default(1),
 });
+
+/**
+ * POST /api/phases/:projectId/phase-3
+ *
+ * Phase 2 승인된 에셋을 자동 로드하여 100화 시리즈 로드맵을 생성한다.
+ * Body: { platform?, episodes_per_week? }
+ */
+phasesRouter.post(
+  "/:projectId/phase-3",
+  authMiddleware,
+  validate(Phase3InputSchema),
+  async (req, res) => {
+    const uid = (req as typeof req & { uid: string }).uid;
+    const project = await getProjectOrFail(req.params.projectId, uid, res);
+    if (!project) return;
+
+    // Phase 2 GATING 완료 확인
+    const phase2 = (project as Record<string, Record<string, unknown>>).phase_results
+      ?.phase_2 as
+      | {
+          gating_passed?: boolean;
+          world_design?: { physical_env?: { era?: string } };
+          asset_list?: {
+            characters?: Array<{ id: string; name: string; role: string }>;
+            locations?: Array<{ id: string; name: string }>;
+          };
+        }
+      | undefined;
+
+    if (!phase2?.gating_passed) {
+      res
+        .status(400)
+        .json({ error: "Phase 2 GATING이 완료되지 않았습니다. /gate/2를 먼저 호출해주세요." });
+      return;
+    }
+
+    const phase1 = (project as Record<string, Record<string, unknown>>).phase_results
+      ?.phase_1 as { genre?: string; usp?: string[]; summary?: string } | undefined;
+
+    const { platform, episodes_per_week } = req.body as {
+      platform: "naver" | "kakao" | "lezhin" | "other";
+      episodes_per_week: number;
+    };
+
+    // 세계관 요약 구성
+    const worldDesignSummary = phase2.world_design?.physical_env?.era
+      ? `배경 시대: ${phase2.world_design.physical_env.era}`
+      : "세계관 정보 없음";
+
+    try {
+      const result = await runPhase3Pipeline(req.params.projectId, {
+        genre: phase1?.genre ?? "",
+        usp: phase1?.usp ?? [],
+        worldDesignSummary,
+        characters: (phase2.asset_list?.characters ?? []) as Array<{
+          id: string;
+          name: string;
+          role: string;
+        }>,
+        locations: (phase2.asset_list?.locations ?? []) as Array<{
+          id: string;
+          name: string;
+        }>,
+        platform,
+        episodesPerWeek: episodes_per_week,
+      });
+
+      res.json({
+        success: true,
+        data: result.output,
+        gating: result.gating,
+        message: buildPhase3GatingMessage(result.gating),
+      });
+    } catch (err) {
+      if (err instanceof Phase3PipelineError) {
+        console.error(`[Phase3] ${err.stage} 단계 실패:`, err.message);
+        res.status(500).json({ error: "Phase 3 로드맵 생성 중 오류", stage: err.stage });
+        return;
+      }
+      console.error("[Phase3] 예상치 못한 오류:", err);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  }
+);
+
+/**
+ * POST /api/phases/:projectId/gate/3
+ *
+ * Phase 3 GATING 최종 확인:
+ * - 조건 1: ep 1~100 전체 커버 확인
+ * - 조건 2: 사용자 확인 (이 API 호출 자체가 확인 의미)
+ * Body: { start_episode?: number }  (기본값 1)
+ */
+const Gate3Schema = z.object({
+  start_episode: z.number().int().min(1).max(100).default(1),
+});
+
+phasesRouter.post("/:projectId/gate/3", authMiddleware, validate(Gate3Schema), async (req, res) => {
+  const uid = (req as typeof req & { uid: string }).uid;
+  const project = await getProjectOrFail(req.params.projectId, uid, res);
+  if (!project) return;
+
+  const phase3 = (project as Record<string, Record<string, unknown>>).phase_results
+    ?.phase_3 as { gating_passed?: boolean; episode_count?: number } | undefined;
+
+  if (!phase3) {
+    res.status(400).json({ error: "Phase 3이 아직 완료되지 않았습니다" });
+    return;
+  }
+  if (phase3.episode_count !== 100) {
+    res.status(400).json({
+      error: "GATING 조건 미충족",
+      detail: `에피소드 수(${phase3.episode_count ?? 0})가 100화가 아닙니다.`,
+    });
+    return;
+  }
+
+  const { start_episode } = req.body as { start_episode: number };
+
+  try {
+    await approvePhase3Roadmap(req.params.projectId, start_episode);
+
+    res.json({
+      success: true,
+      message: `Phase 3 GATING 통과. ${start_episode}화부터 대본 작성을 시작합니다.`,
+      next_phase: 4,
+      start_episode,
+    });
+  } catch (err) {
+    console.error("[gate/3] Firestore 저장 실패:", err);
+    res.status(500).json({ error: "로드맵 확정 저장 중 오류가 발생했습니다" });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PHASE 4 (추후 구현)
+// ═══════════════════════════════════════════════════════════════
 
 phasesRouter.post("/:projectId/phase-4/:episode", authMiddleware, async (req, res) => {
   res.status(501).json({ message: `Phase 4 — ${req.params.episode}화 대본 (구현 예정)` });
@@ -329,4 +472,24 @@ function buildPhase2GatingMessage(gating: {
     return "ASSET_LIST가 최소 기준을 충족하지 않습니다. 에이전트를 다시 실행해주세요.";
   }
   return `${gating.unselected.length}개 에셋의 A/B 선택이 필요합니다: ${gating.unselected.join(", ")}`;
+}
+
+function buildPhase3GatingMessage(gating: {
+  condition1: boolean;
+  missing_episodes: number[];
+  pacing_valid: boolean;
+  pacing_errors: string[];
+  pacing_warnings: string[];
+}): string {
+  if (!gating.condition1) {
+    return `누락된 에피소드가 있습니다: ${gating.missing_episodes.join(", ")}화. Phase 3을 다시 실행해주세요.`;
+  }
+  if (!gating.pacing_valid) {
+    return `완급 조절 규칙 위반이 있습니다: ${gating.pacing_errors.join(" | ")}. /gate/3을 호출하여 계속 진행하거나 Phase 3을 다시 실행해주세요.`;
+  }
+  const warnMsg =
+    gating.pacing_warnings.length > 0
+      ? ` (경고 ${gating.pacing_warnings.length}건 있음)`
+      : "";
+  return `100화 로드맵이 완성되었습니다${warnMsg}. 로드맵을 확인하고 /gate/3을 호출하여 대본 작성을 시작하세요.`;
 }
