@@ -1,0 +1,377 @@
+/* ─── Page Shell ─── */
+.page {
+  min-height: 100vh;
+  background: #0d0d14;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f1f5f9;
+  padding: 24px;
+  gap: 20px;
+}
+
+/* ─── Header ─── */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.phaseTag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c084fc;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #f1f5f9;
+  letter-spacing: -0.03em;
+  margin: 0 0 4px;
+}
+.subtitle {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+.progressBadge {
+  background: rgba(192,132,252,0.1);
+  border: 1px solid rgba(192,132,252,0.3);
+  border-radius: 99px;
+  color: #c084fc;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ─── Warning / Error ─── */
+.warningBanner {
+  background: rgba(251,191,36,0.07);
+  border: 1px solid rgba(251,191,36,0.25);
+  border-radius: 10px;
+  color: #fbbf24;
+  font-size: 13px;
+  padding: 12px 16px;
+}
+.errorBanner {
+  background: rgba(248,113,113,0.07);
+  border: 1px solid rgba(248,113,113,0.25);
+  border-radius: 10px;
+  color: #f87171;
+  font-size: 13px;
+  padding: 12px 16px;
+}
+
+/* ─── MST Panel ─── */
+.mstPanel {
+  background: #16161f;
+  border: 1px solid rgba(192,132,252,0.25);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.mstHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.mstTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c084fc;
+  letter-spacing: 0.03em;
+}
+.mstLocked {
+  font-size: 11px;
+  color: #64748b;
+  background: rgba(100,116,139,0.1);
+  border: 1px solid rgba(100,116,139,0.2);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.mstGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.mstField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mstFieldLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.mstFieldValue {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+.mstTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.mstTag {
+  background: rgba(192,132,252,0.1);
+  border: 1px solid rgba(192,132,252,0.25);
+  border-radius: 5px;
+  color: #c084fc;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+}
+.mstForbidden {
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* ─── Characters ─── */
+.charRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.charChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #16161f;
+  border: 1px solid #2a2a3d;
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+.charRole {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.charName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+/* ─── Controls ─── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.epSelector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.epLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.epSelect {
+  background: #16161f;
+  border: 1px solid #2a2a3d;
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 13px;
+  padding: 7px 12px;
+  outline: none;
+  cursor: pointer;
+}
+.epSelect:focus { border-color: #c084fc; }
+.runBtn {
+  background: #c084fc;
+  border: none;
+  border-radius: 10px;
+  color: #0d0d14;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 24px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.runBtn:hover:not(:disabled) { background: #a855f7; }
+.runBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.runBtnBusy { opacity: 0.7; }
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(13,13,20,0.3);
+  border-top-color: #0d0d14;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Image Prompts Section ─── */
+.promptsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.promptGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.promptCard {
+  background: #16161f;
+  border: 1px solid #2a2a3d;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.promptCardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.promptCutNum {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+.promptAngle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  background: #1e1e2a;
+  border: 1px solid #2a2a3d;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.promptScene {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c084fc;
+}
+.promptText {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.65;
+  font-family: "Consolas", "Monaco", monospace;
+  background: #111118;
+  border: 1px solid #1e1e2a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  word-break: break-all;
+}
+.promptNeg {
+  font-size: 11px;
+  color: #4a4a6a;
+}
+.promptNegLabel {
+  font-weight: 700;
+  color: #64748b;
+}
+
+/* ─── SCC Report ─── */
+.sccReport {
+  background: #16161f;
+  border: 1px solid #2a2a3d;
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.sccReportHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.sccReportTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sccOverallScore {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.sccStats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.sccStat {
+  font-size: 13px;
+  color: #64748b;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: 600;
+}
+.sccRecommendation {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ─── Agent Discussion ─── */
+.discussion {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.discussionTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3a3a52;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 800px;
+}
+.msgHeader {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding-left: 2px;
+}
+.msgBody {
+  padding: 10px 14px;
+  border-radius: 4px 14px 14px 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.streaming {
+  animation: blink 0.9s step-end infinite;
+}
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }

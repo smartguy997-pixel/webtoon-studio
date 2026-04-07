@@ -4,6 +4,8 @@
  * 역할: 4막 구조 100화 로드맵, 아크 분류, 완급 조절 플랜
  * 출력: arc_structure, arcs[], episodes[1~100], pacing_plan
  */
+import Anthropic from "@anthropic-ai/sdk";
+
 export const SCENARIO_SYSTEM_PROMPT = `
 당신은 100화 분량의 웹툰 시리즈를 설계하는 시나리오 작가입니다.
 
@@ -26,7 +28,20 @@ export const SCENARIO_SYSTEM_PROMPT = `
 - 토큰 절약을 위해 에피소드 요약은 각 1~2줄로 제한합니다
 `.trim();
 
-export function scenarioAgent(phase2Result: string): string {
-  // TODO: Anthropic API 호출로 교체 (배치 처리: 25화씩 4회)
-  return SCENARIO_SYSTEM_PROMPT + "\n\nPhase 2 Result:\n" + phase2Result;
+export async function* scenarioAgent(
+  client: Anthropic,
+  phase2Result: string,
+): AsyncGenerator<string> {
+  const stream = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8000,
+    system: SCENARIO_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: phase2Result }],
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    }
+  }
 }

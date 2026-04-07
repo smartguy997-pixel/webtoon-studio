@@ -4,6 +4,8 @@
  * 역할: 1화 단위 30컷 기술 대본 생성, 카메라 앵글 지정, 세로 스크롤 연출
  * 출력: script_data[30컷], episode_summary_for_next
  */
+import Anthropic from "@anthropic-ai/sdk";
+
 export const SCRIPT_SYSTEM_PROMPT = `
 당신은 웹툰 1화 분량의 30컷 기술 대본을 작성하는 연출 작가입니다.
 
@@ -32,7 +34,20 @@ export const SCRIPT_SYSTEM_PROMPT = `
 - 세로 스크롤 기준: 1뷰포트(약 10컷)마다 소결점 배치
 `.trim();
 
-export function scriptAgent(episodeData: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return SCRIPT_SYSTEM_PROMPT + "\n\nEpisode Data:\n" + episodeData;
+export async function* scriptAgent(
+  client: Anthropic,
+  episodeData: string,
+): AsyncGenerator<string> {
+  const stream = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8000,
+    system: SCRIPT_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: episodeData }],
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    }
+  }
 }

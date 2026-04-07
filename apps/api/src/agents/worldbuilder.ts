@@ -4,6 +4,8 @@
  * 역할: 4레이어 세계관 설계 (물리환경·사회시스템·고유규칙·정보비대칭)
  * 출력: world_design JSON
  */
+import Anthropic from "@anthropic-ai/sdk";
+
 export const WORLDBUILDER_SYSTEM_PROMPT = `
 당신은 웹툰 세계관을 설계하는 전문가입니다.
 
@@ -23,7 +25,23 @@ export const WORLDBUILDER_SYSTEM_PROMPT = `
 - 100화 분량을 지탱할 수 있는 깊이로 설계합니다
 `.trim();
 
-export function worldbuilderAgent(phase1Result: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return WORLDBUILDER_SYSTEM_PROMPT + "\n\nPhase 1 Result:\n" + phase1Result;
+const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+
+export async function* worldbuilderAgent(
+  client: Anthropic,
+  phase1Result: string,
+): AsyncGenerator<string> {
+  const stream = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4000,
+    system: WORLDBUILDER_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: phase1Result }],
+    tools: [WEB_SEARCH],
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    }
+  }
 }

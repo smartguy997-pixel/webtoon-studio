@@ -78,6 +78,88 @@ ${discussionContext}
 말투: 친근하지만 전문적. 자연스러운 한국어. 분량: 200~350자.`;
 }
 
+function buildStrategistRound2Prompt(userMsg: string, context: string): string {
+  return `당신은 K-웹툰 시장 전문 전략 기획자(agent_strategist)입니다. Phase 1 기획 분석 2라운드 토론에 참여합니다.
+
+아래는 1라운드 토론 내역입니다:
+---
+${context}
+---
+
+사용자 추가 의견: "${userMsg}"
+
+역할:
+- 사용자의 추가 의견을 반영하여 전략적 분석을 심화합니다
+- 1라운드에서 미처 다루지 못한 시장 기회나 리스크를 보완합니다
+- 웹 검색으로 최신 데이터를 보강하여 분석의 정확도를 높입니다
+- USP 및 포지셔닝 전략을 더욱 구체화합니다
+
+말투: 전문적이고 논리적. 자연스러운 한국어. 분량: 250~400자.`;
+}
+
+function buildResearcherRound2Prompt(userMsg: string, context: string): string {
+  return `당신은 스토리 논리성·현실성 검토 전문 심층 조사자(agent_researcher)입니다. Phase 1 기획 분석 2라운드 토론에 참여합니다.
+
+아래는 1라운드 토론 내역입니다:
+---
+${context}
+---
+
+사용자 추가 의견: "${userMsg}"
+
+역할:
+- 사용자의 피드백을 바탕으로 기획안의 보완 가능성을 재검토합니다
+- 1라운드에서 지적한 문제점에 대한 구체적 해결 방안을 제시합니다
+- 유사 작품의 성공 사례를 웹 검색으로 추가 발굴합니다
+- 전략기획자의 2라운드 분석을 보완하는 새로운 시각을 제시합니다
+
+말투: 분석적이고 건설적. 항상 대안 제시. 자연스러운 한국어. 분량: 250~400자.`;
+}
+
+function buildProducerRound2Prompt(context: string): string {
+  return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다. Phase 1 기획 분석 2라운드 중간 종합을 진행합니다.
+
+아래는 지금까지의 토론 내역입니다:
+---
+${context}
+---
+
+역할:
+- 2라운드 전략기획자와 심층조사자의 보완 분석을 간략히 종합합니다
+- 1라운드 대비 개선된 점과 남은 과제를 명확히 정리합니다
+- 곧 최종 마무리가 진행됨을 안내합니다
+
+말투: 권위 있고 명확. 결론 지향. 자연스러운 한국어. 분량: 150~250자.
+⚠️ 이 응답에는 [PHASE1_RESULT] 블록을 포함하지 마세요.`;
+}
+
+function buildProducerWrapupPrompt(context: string): string {
+  return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다. Phase 1 기획 분석 토론 최종 마무리를 진행합니다.
+
+아래는 전체 토론 내역입니다:
+---
+${context}
+---
+
+역할:
+- "토론을 마무리합니다." 로 시작합니다
+- 2라운드 전체 토론을 종합하여 최종 실현가능성 평가를 내립니다
+- 전략기획자와 심층조사자의 모든 의견을 반영한 최종 USP를 정리합니다
+- Phase 2 진행 여부를 명확히 안내합니다
+- 필요 시 웹 검색으로 추가 데이터를 확인합니다
+
+말투: 권위 있고 명확. 결론 지향. 자연스러운 한국어. 분량: 250~350자.
+
+⚠️ 응답 마지막에 반드시 아래 JSON 블록을 정확히 포함하세요 (다른 텍스트 없이 줄바꿈만):
+
+[PHASE1_RESULT]
+{"feasibility_score":0.75,"verdict":"conditional","usp":["USP 예시 1","USP 예시 2","USP 예시 3"],"summary":"100자 이내 요약"}
+[/PHASE1_RESULT]
+
+verdict 기준: "go" ≥ 0.70, "conditional" 0.50~0.69, "reject" < 0.50
+feasibility_score는 2라운드 전체 토론을 반영하여 정직하게 산정하세요.`;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Msg {
@@ -95,6 +177,26 @@ interface Msg {
 }
 
 type Stage = "form" | "chat";
+
+interface AgentTexts {
+  r1_strategist: string;
+  r1_researcher: string;
+  r1_producer: string;
+  r2_user: string;
+  r2_strategist: string;
+  r2_researcher: string;
+  r2_producer: string;
+  r3_producer: string;
+}
+
+interface PrevDiscussion {
+  genre: string;
+  concept: string;
+  agentTexts: AgentTexts;
+  result: Msg["card"] | null;
+  discussionContext: string;
+  savedAt: { toDate?: () => Date } | null;
+}
 
 const GENRES = ["판타지", "로맨스", "액션", "SF", "스릴러", "일상·힐링", "무협", "스포츠", "공포", "역사"];
 
@@ -229,6 +331,10 @@ function MsgBubble({ msg }: { msg: Msg }) {
   );
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const MAX_ROUNDS = 3;
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Phase1Page({ params }: { params: { projectId: string } }) {
@@ -245,12 +351,22 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
   const [restoredFromSave, setRestoredFromSave] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // ── New state: round tracking + discussion closed ──
+  const [roundCount, setRoundCount] = useState<0 | 1 | 3>(0);
+  const [discussionClosed, setDiscussionClosed] = useState(false);
+
+  // ── New state: Firestore previous discussion ──
+  const [prevDiscussion, setPrevDiscussion] = useState<PrevDiscussion | null>(null);
+  const [checkingFirestore, setCheckingFirestore] = useState(true);
+
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Holds the full discussion text for follow-up context
   const discussionRef = useRef<string>("");
   // Track active streams for potential cleanup
   const abortRef = useRef<AbortController | null>(null);
+  // Track raw agent texts for Firestore save
+  const savedMsgsRef = useRef<Partial<AgentTexts>>({});
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -260,24 +376,84 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
 
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
-  // Restore saved result
+  // ── Restore saved result or pre-seed from localStorage ──
   useEffect(() => {
     const key = `wts_phase1_${projectId}`;
     const saved = localStorage.getItem(key);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as {
-        data: NonNullable<Msg["card"]>;
-        input: { genre: string; concept: string };
-        savedAt: string;
-      };
-      if (parsed.data && parsed.input) {
-        setGenre(parsed.input.genre);
-        setConcept(parsed.input.concept);
-        setResult(parsed.data);
-        setRestoredFromSave(true);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as {
+          data: NonNullable<Msg["card"]>;
+          input: { genre: string; concept: string };
+          savedAt: string;
+        };
+        if (parsed.data && parsed.input) {
+          setGenre(parsed.input.genre);
+          setConcept(parsed.input.concept);
+          setResult(parsed.data);
+          setRestoredFromSave(true);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+    // Pre-seed from project creation (no result yet)
+    const seed = localStorage.getItem(`wts_project_seed_${projectId}`);
+    if (seed) {
+      try {
+        const { genre: g, concept: c } = JSON.parse(seed) as { genre: string; concept: string };
+        if (g) setGenre(g);
+        if (c) setConcept(c);
+      } catch { /* ignore */ }
+    }
+  }, [projectId]);
+
+  // ── Load previous Firestore discussion on mount ──
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPrev() {
+      try {
+        const { collection, query, orderBy, limit, getDocs } = await import("firebase/firestore");
+        const { db } = await import("@/lib/firebase");
+        const colRef = collection(db, "projects", projectId, "phase1_discussions");
+        const q = query(colRef, orderBy("savedAt", "desc"), limit(1));
+        const snap = await getDocs(q);
+        if (!cancelled && !snap.empty) {
+          const doc = snap.docs[0].data() as PrevDiscussion;
+          setPrevDiscussion(doc);
+        }
+      } catch {
+        // silently fail
+      } finally {
+        if (!cancelled) setCheckingFirestore(false);
       }
-    } catch { /* ignore */ }
+    }
+    loadPrev();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  // ── Save discussion to Firestore ──
+  const saveToFirestore = useCallback(async (
+    g: string,
+    c: string,
+    agentTexts: AgentTexts,
+    card: Msg["card"] | null,
+    context: string,
+  ) => {
+    try {
+      const { collection, addDoc, serverTimestamp } = await import("firebase/firestore");
+      const { db } = await import("@/lib/firebase");
+      const colRef = collection(db, "projects", projectId, "phase1_discussions");
+      await addDoc(colRef, {
+        genre: g,
+        concept: c,
+        agentTexts,
+        result: card ?? null,
+        discussionContext: context,
+        savedAt: serverTimestamp(),
+      });
+    } catch {
+      // silently fail
+    }
   }, [projectId]);
 
   /**
@@ -287,7 +463,7 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
   const runAgentStream = useCallback(async (
     agent: AgentId,
     systemPrompt: string,
-    messages: Array<{ role: "user" | "assistant"; content: string }>,
+    msgs: Array<{ role: "user" | "assistant"; content: string }>,
     apiKey: string,
     isCard = false,
     useWebSearch = true,
@@ -300,7 +476,7 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     const gen = streamClaude({
       apiKey,
       systemPrompt,
-      messages,
+      messages: msgs,
       maxTokens: 3000,
       tools: useWebSearch ? [WEB_SEARCH_TOOL] : [],
     });
@@ -311,7 +487,6 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
       setMessages(prev => prev.map(m =>
         m.id === id ? { ...m, text: fullText, ...(isCard && { card: parsePhase1Result(fullText) ?? undefined }) } : m
       ));
-      // suppress unused variable warning
       void displayText;
       scrollToBottom();
     }
@@ -331,6 +506,109 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     return fullText;
   }, [scrollToBottom]);
 
+  /** Round 1: strategist → researcher → producer (with result card) */
+  const runRound1 = useCallback(async (g: string, c: string, apiKey: string): Promise<{
+    strategistText: string;
+    researcherText: string;
+    producerText: string;
+  }> => {
+    const userPrompt = `장르: ${g}\n\n아이디어: ${c}`;
+
+    const strategistText = await runAgentStream(
+      "strategist",
+      STRATEGIST_PROMPT,
+      [{ role: "user", content: userPrompt }],
+      apiKey,
+    );
+    savedMsgsRef.current.r1_strategist = strategistText;
+
+    const researcherText = await runAgentStream(
+      "researcher",
+      RESEARCHER_PROMPT,
+      [
+        { role: "user", content: userPrompt },
+        { role: "assistant", content: `[전략기획자]\n${strategistText}` },
+        { role: "user", content: "심층 조사자의 분석을 부탁합니다." },
+      ],
+      apiKey,
+    );
+    savedMsgsRef.current.r1_researcher = researcherText;
+
+    const producerText = await runAgentStream(
+      "producer",
+      PRODUCER_SYNTHESIS_PROMPT,
+      [
+        { role: "user", content: userPrompt },
+        { role: "assistant", content: `[전략기획자]\n${strategistText}\n\n[심층조사자]\n${researcherText}` },
+        { role: "user", content: "총괄 프로듀서의 최종 평가를 부탁합니다." },
+      ],
+      apiKey,
+      true,
+    );
+    savedMsgsRef.current.r1_producer = producerText;
+
+    return { strategistText, researcherText, producerText };
+  }, [runAgentStream]);
+
+  /** Round 2 + 3: user message → strategist(r2) → researcher(r2) → producer(r2) → AUTO producer wrap-up (r3/card) */
+  const runRound2And3 = useCallback(async (userMsg: string, apiKey: string) => {
+    savedMsgsRef.current.r2_user = userMsg;
+
+    const context = discussionRef.current;
+
+    const r2Strategist = await runAgentStream(
+      "strategist",
+      buildStrategistRound2Prompt(userMsg, context),
+      [{ role: "user", content: userMsg }],
+      apiKey,
+    );
+    savedMsgsRef.current.r2_strategist = r2Strategist;
+
+    const r2Researcher = await runAgentStream(
+      "researcher",
+      buildResearcherRound2Prompt(userMsg, context),
+      [
+        { role: "user", content: userMsg },
+        { role: "assistant", content: `[전략기획자 2라운드]\n${r2Strategist}` },
+        { role: "user", content: "심층 조사자의 2라운드 분석을 부탁합니다." },
+      ],
+      apiKey,
+    );
+    savedMsgsRef.current.r2_researcher = r2Researcher;
+
+    const r2Context = [
+      context,
+      `[사용자 추가 의견]\n${userMsg}`,
+      `[전략기획자 2라운드]\n${r2Strategist}`,
+      `[심층조사자 2라운드]\n${r2Researcher}`,
+    ].join("\n\n");
+
+    const r2Producer = await runAgentStream(
+      "producer",
+      buildProducerRound2Prompt(r2Context),
+      [{ role: "user", content: "2라운드 중간 종합을 부탁합니다." }],
+      apiKey,
+    );
+    savedMsgsRef.current.r2_producer = r2Producer;
+
+    // Auto-trigger Round 3 wrap-up (with result card)
+    const r3Context = [
+      r2Context,
+      `[총괄프로듀서 2라운드]\n${r2Producer}`,
+    ].join("\n\n");
+
+    const r3Producer = await runAgentStream(
+      "producer",
+      buildProducerWrapupPrompt(r3Context),
+      [{ role: "user", content: "최종 마무리를 부탁합니다." }],
+      apiKey,
+      true,
+    );
+    savedMsgsRef.current.r3_producer = r3Producer;
+
+    return { r2Context: r3Context, r3Producer };
+  }, [runAgentStream]);
+
   /** Full Phase 1 agent discussion pipeline */
   const runDiscussion = useCallback(async (g: string, c: string) => {
     const apiKey = getAnthropicKey();
@@ -341,42 +619,10 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     }
     setApiError(null);
     setChatRunning(true);
-
-    const userPrompt = `장르: ${g}\n\n아이디어: ${c}`;
+    savedMsgsRef.current = {};
 
     try {
-      // ── 1. Strategist ──
-      const strategistText = await runAgentStream(
-        "strategist",
-        STRATEGIST_PROMPT,
-        [{ role: "user", content: userPrompt }],
-        apiKey,
-      );
-
-      // ── 2. Researcher ──
-      const researcherText = await runAgentStream(
-        "researcher",
-        RESEARCHER_PROMPT,
-        [
-          { role: "user", content: userPrompt },
-          { role: "assistant", content: `[전략기획자]\n${strategistText}` },
-          { role: "user", content: "심층 조사자의 분석을 부탁합니다." },
-        ],
-        apiKey,
-      );
-
-      // ── 3. Producer (synthesis + result card) ──
-      const producerText = await runAgentStream(
-        "producer",
-        PRODUCER_SYNTHESIS_PROMPT,
-        [
-          { role: "user", content: userPrompt },
-          { role: "assistant", content: `[전략기획자]\n${strategistText}\n\n[심층조사자]\n${researcherText}` },
-          { role: "user", content: "총괄 프로듀서의 최종 평가를 부탁합니다." },
-        ],
-        apiKey,
-        true, // isCard
-      );
+      const { strategistText, researcherText, producerText } = await runRound1(g, c, apiKey);
 
       // Save discussion context for follow-ups
       discussionRef.current = [
@@ -394,6 +640,8 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
           JSON.stringify({ data: card, input: { genre: g, concept: c }, savedAt: new Date().toISOString() }),
         );
       }
+
+      setRoundCount(1);
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       const msg = raw.includes("401") || raw.includes("authentication")
@@ -403,7 +651,7 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     } finally {
       setChatRunning(false);
     }
-  }, [runAgentStream, projectId]);
+  }, [runRound1, projectId]);
 
   const handleFormSubmit = useCallback(() => {
     if (concept.trim().length < 10) return;
@@ -411,7 +659,7 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     setTimeout(() => runDiscussion(genre, concept), 100);
   }, [concept, genre, runDiscussion]);
 
-  /** User follow-up → producer responds */
+  /** User send: handles round 2+3 vs closed discussion follow-up */
   const handleUserSend = useCallback(async () => {
     const text = userInput.trim();
     if (!text || chatRunning) return;
@@ -424,11 +672,70 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     setApiError(null);
     setUserInput("");
 
-    // Add user message
+    // Add user message to chat
     setMessages(prev => [...prev, { id: uid(), agent: "user", type: "text", text, streaming: false }]);
     setChatRunning(true);
 
     try {
+      // ── If discussion already closed: producer follow-up (stay closed) ──
+      if (discussionClosed) {
+        if (text === "계속") {
+          await runAgentStream(
+            "producer",
+            buildProducerFollowupPrompt(discussionRef.current),
+            [{ role: "user", content: text }],
+            apiKey,
+          );
+        } else {
+          // Remind user about "계속"
+          const id = uid();
+          setMessages(prev => [...prev, {
+            id,
+            agent: "producer",
+            text: "추가 논의를 원하면 '계속'을 입력해주세요.",
+            type: "text",
+            streaming: false,
+          }]);
+        }
+        return;
+      }
+
+      // ── Round 2 (first user message after round 1) ──
+      if (roundCount === 1) {
+        const { r2Context, r3Producer } = await runRound2And3(text, apiKey);
+
+        // Update discussion context with full r2+r3 context
+        discussionRef.current = r2Context;
+
+        // Extract card from r3 producer
+        const card = parsePhase1Result(r3Producer);
+        if (card) {
+          setResult(card);
+          localStorage.setItem(
+            `wts_phase1_${projectId}`,
+            JSON.stringify({ data: card, input: { genre, concept }, savedAt: new Date().toISOString() }),
+          );
+        }
+
+        setRoundCount(3);
+        setDiscussionClosed(true);
+
+        // Save to Firestore
+        const agentTexts: AgentTexts = {
+          r1_strategist: savedMsgsRef.current.r1_strategist ?? "",
+          r1_researcher: savedMsgsRef.current.r1_researcher ?? "",
+          r1_producer: savedMsgsRef.current.r1_producer ?? "",
+          r2_user: savedMsgsRef.current.r2_user ?? "",
+          r2_strategist: savedMsgsRef.current.r2_strategist ?? "",
+          r2_researcher: savedMsgsRef.current.r2_researcher ?? "",
+          r2_producer: savedMsgsRef.current.r2_producer ?? "",
+          r3_producer: savedMsgsRef.current.r3_producer ?? "",
+        };
+        await saveToFirestore(genre, concept, agentTexts, card ?? null, r2Context);
+        return;
+      }
+
+      // ── Fallback: producer follow-up for any other state ──
       await runAgentStream(
         "producer",
         buildProducerFollowupPrompt(discussionRef.current),
@@ -444,7 +751,7 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     } finally {
       setChatRunning(false);
     }
-  }, [userInput, chatRunning, runAgentStream]);
+  }, [userInput, chatRunning, discussionClosed, roundCount, runAgentStream, runRound2And3, saveToFirestore, genre, concept, projectId]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -457,18 +764,94 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     return () => { abortRef.current?.abort(); };
   }, []);
 
+  /** Reconstruct messages from a PrevDiscussion's agentTexts */
+  const reconstructMessages = useCallback((pd: PrevDiscussion): Msg[] => {
+    const msgs: Msg[] = [];
+    const at = pd.agentTexts;
+
+    if (at.r1_strategist) msgs.push({ id: uid(), agent: "strategist", text: at.r1_strategist, type: "text", streaming: false });
+    if (at.r1_researcher) msgs.push({ id: uid(), agent: "researcher", text: at.r1_researcher, type: "text", streaming: false });
+    if (at.r1_producer) {
+      const card = parsePhase1Result(at.r1_producer);
+      msgs.push({ id: uid(), agent: "producer", text: at.r1_producer, type: card ? "card" : "text", streaming: false, card: card ?? undefined });
+    }
+    if (at.r2_user) msgs.push({ id: uid(), agent: "user", text: at.r2_user, type: "text", streaming: false });
+    if (at.r2_strategist) msgs.push({ id: uid(), agent: "strategist", text: at.r2_strategist, type: "text", streaming: false });
+    if (at.r2_researcher) msgs.push({ id: uid(), agent: "researcher", text: at.r2_researcher, type: "text", streaming: false });
+    if (at.r2_producer) msgs.push({ id: uid(), agent: "producer", text: at.r2_producer, type: "text", streaming: false });
+    if (at.r3_producer) {
+      const card = parsePhase1Result(at.r3_producer);
+      msgs.push({ id: uid(), agent: "producer", text: at.r3_producer, type: card ? "card" : "text", streaming: false, card: card ?? undefined });
+    }
+
+    return msgs;
+  }, []);
+
+  const handleContinuePrev = useCallback(() => {
+    if (!prevDiscussion) return;
+    const { genre: g, concept: c, agentTexts, result: prevResult, discussionContext } = prevDiscussion;
+    setGenre(g);
+    setConcept(c);
+    discussionRef.current = discussionContext ?? "";
+    savedMsgsRef.current = { ...agentTexts };
+    const msgs = reconstructMessages(prevDiscussion);
+    setMessages(msgs);
+    if (prevResult) setResult(prevResult);
+    setRoundCount(3);
+    setDiscussionClosed(true);
+    setStage("chat");
+  }, [prevDiscussion, reconstructMessages]);
+
   const conceptSnippet = concept.length > 60 ? concept.slice(0, 60) + "…" : concept;
 
   return (
     <div className={styles.page}>
       {stage === "form" ? (
         <div className={styles.formWrap}>
-          {restoredFromSave && result && (
+          {/* ── Firestore previous discussion banner ── */}
+          {checkingFirestore ? (
+            <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <ThinkingDots />
+              이전 토론 내역 확인 중...
+            </div>
+          ) : prevDiscussion ? (
+            <div className={styles.prevBanner}>
+              <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 10 }}>
+                <strong style={{ color: "#f1f5f9" }}>이전 토론 내역이 있습니다</strong>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                <span style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                  {prevDiscussion.genre}
+                </span>
+                <span style={{ fontSize: 13, color: "#94a3b8" }}>
+                  {prevDiscussion.concept.slice(0, 50)}{prevDiscussion.concept.length > 50 ? "…" : ""}
+                </span>
+              </div>
+              <div className={styles.prevBannerBtns}>
+                <button
+                  onClick={handleContinuePrev}
+                  style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.4)", color: "#34d399", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                >
+                  이어하기
+                </button>
+                <button
+                  onClick={() => setPrevDiscussion(null)}
+                  style={{ background: "rgba(148,163,184,0.08)", border: "1px solid rgba(148,163,184,0.2)", color: "#94a3b8", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                >
+                  새로 시작하기
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* ── localStorage restored banner ── */}
+          {!prevDiscussion && restoredFromSave && result && (
             <div style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#34d399", display: "flex", alignItems: "center", gap: 8 }}>
               <span>✓</span>
               <span>이전 분석 결과 불러옴 — 다시 분석하거나 Phase 2로 이동할 수 있습니다.</span>
             </div>
           )}
+
           <div className={styles.formCard}>
             <div className={styles.formTitle}>Phase 1 — 기획 분석</div>
             <div className={styles.formDesc}>
@@ -496,7 +879,7 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
               ✦ 분석 시작
             </button>
 
-            {restoredFromSave && result && (
+            {!prevDiscussion && restoredFromSave && result && (
               <button className={styles.btnStart} style={{ marginTop: 10, background: "#1e4d3a", borderColor: "#34d399", color: "#34d399" }}
                 onClick={() => router.push(`/projects/${projectId}/phase-2`)}>
                 Phase 2 시작 →
@@ -510,6 +893,11 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
             <span style={{ color: "#a78bfa", fontWeight: 600 }}>{genre}</span>
             <span style={{ color: "#64748b", margin: "0 8px" }}>·</span>
             <span style={{ color: "#94a3b8", fontSize: 13 }}>{conceptSnippet}</span>
+            {roundCount > 0 && (
+              <span className={styles.roundBadge}>
+                라운드 {roundCount} / {MAX_ROUNDS}
+              </span>
+            )}
             {chatRunning && (
               <span style={{ marginLeft: "auto", fontSize: 12, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
                 에이전트 토론 중 <ThinkingDots />
@@ -538,6 +926,12 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
             </div>
           )}
 
+          {discussionClosed && (
+            <div className={styles.closedBanner}>
+              토론이 마무리되었습니다. &apos;계속&apos;을 입력하면 추가 질문이 가능합니다.
+            </div>
+          )}
+
           <div className={styles.chatInputRow}>
             <textarea
               ref={inputRef}
@@ -545,7 +939,13 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
               value={userInput}
               onChange={e => setUserInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="에이전트에게 추가 질문이나 의견을 보내세요… (Enter 전송, Shift+Enter 줄바꿈)"
+              placeholder={
+                discussionClosed
+                  ? "'계속'을 입력하면 추가 질문이 가능합니다…"
+                  : roundCount === 1
+                  ? "추가 의견을 보내면 에이전트들이 2라운드 토론을 진행합니다… (Enter 전송)"
+                  : "에이전트에게 추가 질문이나 의견을 보내세요… (Enter 전송, Shift+Enter 줄바꿈)"
+              }
               rows={1}
               disabled={chatRunning}
             />

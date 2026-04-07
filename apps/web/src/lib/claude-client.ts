@@ -1,63 +1,77 @@
 /**
- * Browser-side Anthropic API client (SSE streaming via fetch)
- * API key is read from localStorage.
+ * Browser-side Anthropic API helper.
+ * Uses the `anthropic-dangerous-direct-browser-access` header to allow
+ * direct browser → Anthropic API calls without a proxy server.
  */
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-4-6";
+const ANTHROPIC_VERSION = "2023-06-01";
 
-/** Web search server-side tool (Anthropic-hosted, no beta header required) */
+// ─── Web search tool definition ───────────────────────────────────────────────
+
 export const WEB_SEARCH_TOOL = {
   type: "web_search_20260209",
   name: "web_search",
 } as const;
 
-export type AnthropicTool = typeof WEB_SEARCH_TOOL;
+// ─── API key helper ───────────────────────────────────────────────────────────
 
-/** Returns the stored API key (trimmed) or null. */
+/**
+ * Reads the Anthropic API key from localStorage.
+ * Tries `wts_anthropic_key` first, then falls back to `ANTHROPIC_API_KEY`.
+ * Always trims whitespace.
+ */
 export function getAnthropicKey(): string | null {
   if (typeof window === "undefined") return null;
   const raw =
     localStorage.getItem("wts_anthropic_key") ||
     localStorage.getItem("ANTHROPIC_API_KEY") ||
     "";
-  const key = raw.trim();
-  return key || null;
+  return raw.trim() || null;
 }
 
-export interface ClaudeMessage {
-  role: "user" | "assistant";
-  content: string;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Calls the Anthropic Messages API with streaming enabled.
- * Yields text chunks as they arrive.
- *
- * When web_search tool is included, the generator also yields
- * human-readable search indicators like:
- *   "\n\n🔍 웹 검색: \"query\"\n\n"
- */
-export async function* streamClaude({
-  apiKey,
-  systemPrompt,
-  messages,
-  maxTokens = 2048,
-  tools = [],
-}: {
+export interface StreamClaudeOptions {
   apiKey: string;
   systemPrompt: string;
-  messages: ClaudeMessage[];
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
   maxTokens?: number;
-  tools?: AnthropicTool[];
-}): AsyncGenerator<string, void, unknown> {
+  /** Tools to enable. Pass [] to disable all tools. */
+  tools?: Array<{ type: string; name: string }>;
+  model?: string;
+}
+
+// ─── Streaming generator ──────────────────────────────────────────────────────
+
+/**
+ * Streams a Claude response as an async generator of text chunks.
+ *
+ * Handles:
+ * - `content_block_delta` text deltas → yields the text chunk
+ * - `tool_use` blocks (web_search) → yields a human-readable search indicator
+ * - `tool_result` blocks → silently skipped (internal plumbing)
+ *
+ * Throws on non-200 responses (including 401 authentication errors).
+ */
+export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<string> {
+  const {
+    apiKey,
+    systemPrompt,
+    messages,
+    maxTokens = 2048,
+    tools = [],
+    model = "claude-sonnet-4-6",
+  } = opts;
+
   const body: Record<string, unknown> = {
-    model: MODEL,
+    model,
     max_tokens: maxTokens,
     system: systemPrompt,
     messages,
     stream: true,
   };
+
   if (tools.length > 0) {
     body.tools = tools;
   }
@@ -67,7 +81,7 @@ export async function* streamClaude({
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      "anthropic-version": ANTHROPIC_VERSION,
       "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify(body),
@@ -78,85 +92,84 @@ export async function* streamClaude({
     throw new Error(`Anthropic API ${res.status}: ${errText}`);
   }
 
-  const reader = res.body!.getReader();
+  if (!res.body) throw new Error("No response body");
+
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
 
-  // Block-level state for tool-use tracking
-  let blockType = "";   // "text" | "tool_use" | "server_tool_use" | "tool_result" | "web_search_tool_result" | ...
-  let toolName = "";
+  // Track current tool_use block for web search indicator
+  let blockType: string | null = null;
+  let toolName: string | null = null;
   let toolInputBuf = "";
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
+    buf += decoder.decode(value, { stream: true });
 
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") return;
+    // Process complete SSE lines
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
 
-        let evt: Record<string, unknown>;
-        try {
-          evt = JSON.parse(data) as Record<string, unknown>;
-        } catch {
-          continue; // ignore malformed lines
-        }
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") return;
 
-        if (evt.type === "content_block_start") {
-          const cb = (evt.content_block ?? {}) as Record<string, string>;
-          blockType = cb.type ?? "";
-          toolName = cb.name ?? "";
-          toolInputBuf = "";
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(data) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
 
-        } else if (evt.type === "content_block_delta") {
-          const delta = (evt.delta ?? {}) as Record<string, string>;
+      const type = event.type as string;
 
-          if (blockType === "text" && delta.type === "text_delta" && delta.text) {
-            // Regular response text — yield directly
-            yield delta.text;
+      // ── Content block start ──
+      if (type === "content_block_start") {
+        const block = event.content_block as Record<string, unknown> | undefined;
+        blockType = (block?.type as string) ?? null;
+        toolName = blockType === "tool_use" ? (block?.name as string) ?? null : null;
+        toolInputBuf = "";
+      }
 
-          } else if (
-            (blockType === "tool_use" || blockType === "server_tool_use") &&
-            delta.type === "input_json_delta" &&
-            delta.partial_json
-          ) {
-            // Accumulate tool input JSON to extract search query at block stop
-            toolInputBuf += delta.partial_json;
-          }
-          // tool_result / web_search_tool_result deltas → skip (raw search data)
+      // ── Content block delta ──
+      if (type === "content_block_delta") {
+        const delta = event.delta as Record<string, unknown> | undefined;
+        const deltaType = delta?.type as string;
 
-        } else if (evt.type === "content_block_stop") {
-          const isSearch =
-            (blockType === "tool_use" || blockType === "server_tool_use") &&
-            toolName === "web_search";
-
-          if (isSearch) {
-            // Parse the search query and emit a readable indicator
-            let query = "";
-            try {
-              const input = JSON.parse(toolInputBuf) as Record<string, string>;
-              query = input.query ?? input.q ?? "";
-            } catch {
-              query = toolInputBuf.slice(0, 120);
-            }
-            const label = query ? `"${query}"` : "…";
-            yield `\n\n🔍 **웹 검색**: ${label}\n\n`;
-          }
-
-          // Reset block state
-          blockType = "";
-          toolName = "";
-          toolInputBuf = "";
+        if (deltaType === "text_delta") {
+          yield (delta?.text as string) ?? "";
+        } else if (deltaType === "input_json_delta" && blockType === "tool_use") {
+          toolInputBuf += (delta?.partial_json as string) ?? "";
         }
       }
+
+      // ── Content block stop ──
+      if (type === "content_block_stop") {
+        // Emit web search indicator when search tool completes
+        if (blockType === "tool_use" && toolName === "web_search" && toolInputBuf) {
+          try {
+            const input = JSON.parse(toolInputBuf) as { query?: string };
+            if (input.query) {
+              yield `\n\n🔍 **웹 검색**: "${input.query}"\n\n`;
+            }
+          } catch {
+            // ignore malformed JSON
+          }
+        }
+        blockType = null;
+        toolName = null;
+        toolInputBuf = "";
+      }
+
+      // ── Top-level error ──
+      if (type === "error") {
+        const err = event.error as Record<string, unknown> | undefined;
+        throw new Error((err?.message as string) ?? "Anthropic stream error");
+      }
     }
-  } finally {
-    reader.releaseLock();
   }
 }
