@@ -6,14 +6,15 @@
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
 
-/** Returns the stored API key or null. */
+/** Returns the stored API key (trimmed) or null. */
 export function getAnthropicKey(): string | null {
   if (typeof window === "undefined") return null;
-  return (
+  const raw =
     localStorage.getItem("wts_anthropic_key") ||
     localStorage.getItem("ANTHROPIC_API_KEY") ||
-    null
-  );
+    "";
+  const key = raw.trim();
+  return key || null;
 }
 
 export interface ClaudeMessage {

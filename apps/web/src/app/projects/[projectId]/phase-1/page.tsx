@@ -384,8 +384,11 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
         );
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setApiError(`API 오류: ${msg}`);
+      const raw = err instanceof Error ? err.message : String(err);
+      const msg = raw.includes("401") || raw.includes("authentication")
+        ? "API 키가 유효하지 않습니다. 설정 페이지에서 sk-ant-api03-... 형식의 키를 다시 확인해주세요."
+        : `API 오류: ${raw}`;
+      setApiError(msg);
     } finally {
       setChatRunning(false);
     }
@@ -422,8 +425,11 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
         apiKey,
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setApiError(`API 오류: ${msg}`);
+      const raw = err instanceof Error ? err.message : String(err);
+      const msg = raw.includes("401") || raw.includes("authentication")
+        ? "API 키가 유효하지 않습니다. 설정 페이지에서 키를 다시 확인해주세요."
+        : `API 오류: ${raw}`;
+      setApiError(msg);
     } finally {
       setChatRunning(false);
     }
