@@ -6,7 +6,6 @@ export async function computeClipScore(
   imageUrl: string,
   referenceText: string
 ): Promise<number> {
-  // TODO: 실제 Replicate API 호출 구현
   const response = await fetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: {
@@ -31,7 +30,6 @@ export async function computeOrbMatch(
   imageUrl: string,
   referenceImageUrl: string
 ): Promise<number> {
-  // TODO: Python OpenCV 서버 연동 구현
   const response = await fetch(`${process.env.OPENCV_SERVER_URL}/orb-match`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

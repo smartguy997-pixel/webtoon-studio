@@ -544,6 +544,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         data: { world: worldData, characters: [char1Data, char2Data], mst: mstData, ab: abData },
         savedAt: new Date().toISOString(),
       }));
+
+      // Sync MST to style_registry API (fire-and-forget)
+      if (mstData) {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+        fetch(`${API_BASE}/api/style/${projectId}/registry`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer local" },
+          body: JSON.stringify({ mst: mstData }),
+        }).catch(() => { /* non-critical: localStorage is source of truth */ });
+      }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       const msg = raw.includes("401") || raw.includes("authentication")
@@ -572,6 +582,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         }
       }
     } catch { /* ignore */ }
+
+    // Sync AB choice to style_registry API (fire-and-forget)
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+    fetch(`${API_BASE}/api/style/${projectId}/registry`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer local" },
+      body: JSON.stringify({ mst: {}, ab_choice: label }),
+    }).catch(() => { /* non-critical */ });
 
     const userMsgId = uid();
     setMessages(prev => [...prev, { id: userMsgId, agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);

@@ -14,7 +14,6 @@ export async function generateImage(
   const mst = await getMST(projectId);
   const finalPrompt = buildPrompt(mst, assetTags);
 
-  // TODO: 실제 Whisk API 호출 구현
   const response = await fetch("https://api.whisk.com/v1/generate", {
     method: "POST",
     headers: {
@@ -33,10 +32,11 @@ export async function generateImage(
 }
 
 async function getMST(projectId: string): Promise<string> {
-  const doc = await collections.styleRegistry(projectId).collection("mst").get();
-  if (doc.empty) return getDefaultMST();
-  // MST를 태그 문자열로 직렬화
-  const mst = doc.docs[0].data();
+  const doc = await collections.styleRegistry(projectId).get();
+  if (!doc.exists) return getDefaultMST();
+  const data = doc.data();
+  const mst = data?.mst as Record<string, string> | undefined;
+  if (!mst) return getDefaultMST();
   return [mst.art_style, mst.line_weight, mst.color_palette, mst.rendering, mst.perspective]
     .filter(Boolean)
     .join(", ");

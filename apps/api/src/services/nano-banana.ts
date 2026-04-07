@@ -5,7 +5,6 @@ export async function generateImageNanoBanana(
   prompt: string,
   negativePrompt?: string
 ): Promise<string> {
-  // TODO: 실제 Nano Banana API 호출 구현
   const response = await fetch("https://api.nanobanana.io/v1/generate", {
     method: "POST",
     headers: {
