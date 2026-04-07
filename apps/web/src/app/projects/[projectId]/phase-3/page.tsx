@@ -3,149 +3,153 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import s from "./page.module.css";
+import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-client";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+// ─── Agent definitions ────────────────────────────────────────────────────────
 
 const AGENTS = {
-  scenario:  { label: "시나리오 작가", color: "#fbbf24", bg: "rgba(251,191,36,0.12)"   },
-  researcher:{ label: "심층 조사자",   color: "#34d399", bg: "rgba(52,211,153,0.12)"   },
-  producer:  { label: "총괄 프로듀서", color: "#f1f5f9", bg: "rgba(241,245,249,0.12)"  },
-  user:      { label: "나",            color: "#7c6cfc", bg: "rgba(124,108,252,0.12)"  },
+  scenario:   { label: "시나리오 작가", color: "#fbbf24", bg: "rgba(251,191,36,0.12)"  },
+  researcher: { label: "심층 조사자",   color: "#34d399", bg: "rgba(52,211,153,0.12)"  },
+  producer:   { label: "총괄 프로듀서", color: "#f1f5f9", bg: "rgba(241,245,249,0.12)" },
+  user:       { label: "나",            color: "#7c6cfc", bg: "rgba(124,108,252,0.12)" },
 } as const;
 type AgentId = keyof typeof AGENTS;
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface EpisodeDetail {
+  ep: number; title: string; event: string;
+  characters: string[]; emotion: string;
+  foreshadow: string; cliffhanger: string;
+  arc: number; tension: number;
+}
+interface EpisodeCard { episodes: EpisodeDetail[]; arcLabel: string; arcColor: string }
+interface RoadmapCard {
+  arcs: { num: number; name: string; theme: string; eps: [number, number]; color: string }[];
+  totalEps: number;
+}
+
 interface Msg {
-  id: string;
-  agent: AgentId;
-  text: string;
-  done: boolean;
+  id: string; agent: AgentId; text: string;
+  streaming: boolean;
   card?: EpisodeCard | RoadmapCard;
   cardType?: "episode" | "roadmap";
 }
 
-interface EpisodeDetail {
-  ep: number;
-  title: string;
-  event: string;
-  characters: string[];
-  emotion: string;
-  foreshadow: string;
-  cliffhanger: string;
-  arc: number;
-  tension: number;
+const ARC_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6"];
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+
+// ─── System prompts ───────────────────────────────────────────────────────────
+
+function buildResearcherPrompt(genre: string, context: string): string {
+  return `당신은 AI Webtoon Studio 심층 조사자(agent_researcher)입니다. Phase 3 시리즈 로드맵 설계를 지원합니다.
+
+${context}
+
+역할:
+- 웹 검색으로 ${genre} 장르 장기 연재 웹툰의 독자 유지율 패턴을 조사합니다
+- 성공적인 100화 이상 연재작의 막 구조와 서사 패턴을 분석합니다
+- 독자 이탈 방지를 위한 훅 배치, 클리프행어 전략을 제안합니다
+
+말투: 분석적이고 데이터 기반. 자연스러운 한국어. 분량: 200~300자.`;
 }
 
-interface EpisodeCard {
-  episodes: EpisodeDetail[];
-  arcLabel: string;
-  arcColor: string;
+function buildRoadmapPrompt(genre: string, context: string, researchSummary: string): string {
+  return `당신은 AI Webtoon Studio 시나리오 작가(agent_scenario)입니다. Phase 3 100화 로드맵 설계를 담당합니다.
+
+${context}
+조사 결과: ${researchSummary}
+
+역할:
+- 4막 구조(각 25화)로 100화 전체 로드맵을 설계합니다
+- 각 막의 이름, 주제, 핵심 테마가 장르와 기획에 맞아야 합니다
+- 전체적인 서사 흐름과 장력 배분을 고려합니다
+
+말투: 창의적이고 전문적. 자연스러운 한국어. 분량: 100~150자 설명 후 JSON.
+
+⚠️ 응답 마지막에 반드시 아래 형식으로 JSON 블록을 포함하세요:
+
+[ROADMAP_CARD]
+{"arcs":[{"num":1,"name":"막 이름","theme":"핵심 테마","eps":[1,25],"color":"#60a5fa"},{"num":2,"name":"막 이름","theme":"핵심 테마","eps":[26,50],"color":"#34d399"},{"num":3,"name":"막 이름","theme":"핵심 테마","eps":[51,75],"color":"#fbbf24"},{"num":4,"name":"막 이름","theme":"핵심 테마","eps":[76,100],"color":"#f472b6"}],"totalEps":100}
+[/ROADMAP_CARD]`;
 }
 
-interface RoadmapCard {
-  arcs: { num: number; name: string; theme: string; eps: [number,number]; color: string }[];
-  totalEps: number;
+function buildEpisodePrompt(
+  arcNum: number, arcName: string, arcTheme: string, epsRange: [number, number],
+  genre: string, context: string, roadmapSummary: string,
+): string {
+  const arcColor = ARC_COLORS[arcNum - 1];
+  return `당신은 AI Webtoon Studio 시나리오 작가(agent_scenario)입니다. ${arcNum}막 에피소드 목록을 설계합니다.
+
+${context}
+로드맵: ${roadmapSummary}
+담당 막: ${arcNum}막 "${arcName}" — ${arcTheme} (EP ${epsRange[0]}–${epsRange[1]})
+
+역할:
+- EP ${epsRange[0]}부터 ${epsRange[1]}까지 총 25화 각각의 에피소드를 설계합니다
+- 각 화마다: 제목, 핵심 사건, 등장인물, 감정 곡선, 복선, 클리프행어(5화마다), 장력(1-5) 설정
+- ${arcNum}막 테마인 "${arcTheme}"를 전체적으로 관통하되 각 화는 독립적 훅이 있어야 합니다
+- tension은 1(저)부터 5(고)로 막의 흐름에 따라 자연스럽게 변화시키세요
+
+말투: 자연스러운 한국어. 분량: 50자 설명 후 JSON.
+
+⚠️ 응답 마지막에 반드시 아래 형식으로 JSON 블록을 포함하세요:
+
+[EPISODE_CARD_${arcNum}]
+{"episodes":[{"ep":${epsRange[0]},"title":"화 제목","event":"핵심 사건 설명","characters":["주인공"],"emotion":"감정 키워드","foreshadow":"복선 (없으면 빈 문자열)","cliffhanger":"클리프행어 (없으면 빈 문자열)","arc":${arcNum},"tension":3}],"arcLabel":"${arcNum}막 — ${arcName}","arcColor":"${arcColor}"}
+[/EPISODE_CARD_${arcNum}]
+
+정확히 25개의 에피소드 객체를 생성하세요.`;
 }
 
-const ARC_COLORS = ["#60a5fa","#34d399","#fbbf24","#f472b6"];
+function buildProducerSignoffPrompt(genre: string, context: string): string {
+  return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다. Phase 3 100화 로드맵 검토를 마무리합니다.
 
-function mkId() { return Math.random().toString(36).slice(2); }
+${context}
 
-function buildArcEpisodes(arcNum: number, genre: string, title: string): EpisodeDetail[] {
-  const start = (arcNum-1)*25+1;
-  const arcNames: Record<string, string[][]> = {
-    "판타지": [
-      ["각성","시련","성장","반전"],
-      ["각성의 시작","첫 번째 시련","힘의 각성","예언의 반전"],
-    ],
-    "로맨스": [
-      ["설렘","갈등","위기","완성"],
-      ["첫 만남의 설렘","오해와 갈등","헤어짐의 위기","재결합과 완성"],
-    ],
-    "액션": [
-      ["입문","도전","배신","결전"],
-      ["세계에 입문","첫 번째 도전","동료의 배신","최후의 결전"],
-    ],
-    "스릴러": [
-      ["불안","추적","함정","대결"],
-      ["불안의 씨앗","숨막히는 추적","정교한 함정","최후의 대결"],
-    ],
-  };
-  const emotions = ["긴장","고조","폭발","여운","전환","반전","상승","절정","하강","회복"];
-  const events: string[][] = [
-    ["주인공이 새로운 능력을 발견한다","예상치 못한 인물이 등장한다","비밀이 하나씩 드러나기 시작한다","동료와의 갈등이 수면 위로 올라온다","적의 진짜 목적이 밝혀진다"],
-    ["과거의 트라우마가 현재를 침범한다","믿었던 인물이 배신한다","위기의 절정, 모든 것이 무너지는 듯 보인다","반전이 연속으로 일어난다","새로운 동맹이 형성된다"],
-    ["최강의 적이 등장한다","주인공이 한계를 넘어선다","희생이 불가피한 선택이 찾아온다","진실이 완전히 드러난다","결전을 앞두고 모두가 하나가 된다"],
-    ["최후의 결전이 시작된다","예상치 못한 도움이 나타난다","오랜 복수와 화해가 교차한다","클라이맥스, 운명의 순간","여운을 남기는 엔딩"],
-  ];
-  const foreshadows = [
-    "1막 초반의 작은 단서가 여기서 의미를 드러낸다",
-    "주인공의 꿈 속 장면이 현실이 된다",
-    "적이 남긴 말의 진짜 의미가 밝혀진다",
-    "오래된 물건이 새로운 열쇠가 된다",
-    "처음 만난 장소가 다시 중요해진다",
-  ];
-  const cliffhangers = [
-    "\"당신이...설마?\" — 다음 화가 궁금해지는 정체 폭로",
-    "갑작스러운 적의 습격, 아무도 예상 못한 순간에",
-    "선택의 기로 — 어떤 길을 택하든 대가가 따른다",
-    "오랫동안 숨겨온 비밀이 마침내 터져나온다",
-    "예상치 못한 구원자의 등장 — 하지만 의도는?",
-  ];
-  const characters = [
-    ["주인공","라이벌"],
-    ["주인공","조력자","악당"],
-    ["주인공","악당"],
-    ["주인공","조력자"],
-    ["주인공","라이벌","조력자"],
-  ];
+역할:
+- 4막 구조와 완급 배분이 ${genre} 장르 독자 기대치에 부합하는지 최종 검토합니다
+- 특히 인상적인 에피소드 설계나 개선 포인트를 간략히 언급합니다
+- Phase 4 진행 방법을 안내합니다
 
-  return Array.from({ length: 25 }, (_, i) => {
-    const ep = start + i;
-    const tension = Math.min(5, Math.max(1, Math.round(1 + (ep/100)*3.5 + Math.sin(ep*0.4)*0.7)));
-    return {
-      ep,
-      title: `${ep}화 — ${arcNames[genre]?.[1]?.[arcNum-1] ?? "전개"}${i > 15 ? "의 절정" : ""}`,
-      event: events[arcNum-1][i % events[arcNum-1].length],
-      characters: characters[i % characters.length],
-      emotion: emotions[i % emotions.length],
-      foreshadow: foreshadows[i % foreshadows.length],
-      cliffhanger: i % 5 === 4 ? cliffhangers[Math.floor(i/5) % cliffhangers.length] : "",
-      arc: arcNum,
-      tension,
-    };
-  });
+말투: 권위 있고 명확. 자연스러운 한국어. 분량: 150~200자.`;
 }
 
-function buildFullRoadmap(genre: string, title: string) {
-  const arcNameMap: Record<string,string[]> = {
-    "판타지": ["각성과 출발","시련과 성장","위기와 반전","결전과 완성"],
-    "로맨스": ["첫 만남과 설렘","갈등과 오해","위기와 화해","사랑의 완성"],
-    "액션":   ["입문과 각성","훈련과 도전","배신과 극복","최후의 결전"],
-    "SF":     ["발견과 탐험","갈등과 생존","진실과 반전","귀환과 새 시작"],
-    "스릴러": ["불안의 씨앗","추적과 회피","함정과 폭로","최후의 대결"],
-  };
-  const arcThemes = [
-    "주인공 확립 · 세계관 도입",
-    "핵심 갈등 심화 · 중간 보스 등장",
-    "반전 연속 · 동료 위기",
-    "클라이맥스 · 해결 · 여운",
-  ];
-  const names = arcNameMap[genre] ?? ["서막","갈등","전환","결말"];
-  return {
-    arcs: names.map((name, i) => ({
-      num: i+1, name, theme: arcThemes[i],
-      eps: ([[1,25],[26,50],[51,75],[76,100]] as [number,number][])[i],
-      color: ARC_COLORS[i],
-    })),
-    totalEps: 100,
-  };
+function buildProducerFollowupPrompt(context: string): string {
+  return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
+
+아래는 Phase 3 100화 로드맵 토론 내역입니다:
+---
+${context}
+---
+
+역할: 사용자의 수정 요청이나 질문에 응답합니다.
+특정 화 수정 요청이 있다면 시나리오 작가의 입장에서 어떻게 반영할지 구체적으로 설명하세요.
+말투: 친근하지만 전문적. 자연스러운 한국어. 분량: 150~250자.`;
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function ThinkingDots() {
+  return <span className={s.dots}><span /><span /><span /></span>;
+}
+
+function StreamCursor() {
+  return (
+    <span style={{
+      display: "inline-block", width: 2, height: 13, background: "#7c6cfc",
+      marginLeft: 2, verticalAlign: "middle", borderRadius: 1,
+      animation: "blink 0.9s step-start infinite",
+    }} />
+  );
 }
 
 function TensionDots({ level }: { level: number }) {
-  const colors = ["","#4ade80","#a3e635","#fbbf24","#f97316","#ef4444"];
+  const colors = ["", "#4ade80", "#a3e635", "#fbbf24", "#f97316", "#ef4444"];
   return (
     <span className={s.tensionDots}>
-      {[1,2,3,4,5].map(n => (
+      {[1, 2, 3, 4, 5].map(n => (
         <span key={n} className={s.tensionDot}
           style={{ background: n <= level ? colors[level] : "#252535" }} />
       ))}
@@ -154,13 +158,11 @@ function TensionDots({ level }: { level: number }) {
 }
 
 function EpCardView({ card }: { card: EpisodeCard }) {
-  const [expanded, setExpanded] = useState<number|null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
   return (
     <div className={s.epCard}>
       <div className={s.epCardHeader}>
-        <span className={s.epCardArcLabel} style={{ color: card.arcColor }}>
-          {card.arcLabel}
-        </span>
+        <span className={s.epCardArcLabel} style={{ color: card.arcColor }}>{card.arcLabel}</span>
         <span className={s.epCardCount}>{card.episodes.length}화</span>
       </div>
       <div className={s.epList}>
@@ -174,30 +176,11 @@ function EpCardView({ card }: { card: EpisodeCard }) {
             </div>
             {expanded === ep.ep && (
               <div className={s.epDetail}>
-                <div className={s.epDetailRow}>
-                  <span className={s.epDetailLabel}>핵심 사건</span>
-                  <span className={s.epDetailVal}>{ep.event}</span>
-                </div>
-                <div className={s.epDetailRow}>
-                  <span className={s.epDetailLabel}>등장인물</span>
-                  <span className={s.epDetailVal}>{ep.characters.join(", ")}</span>
-                </div>
-                <div className={s.epDetailRow}>
-                  <span className={s.epDetailLabel}>감정 곡선</span>
-                  <span className={s.epDetailVal}>{ep.emotion}</span>
-                </div>
-                {ep.foreshadow && (
-                  <div className={s.epDetailRow}>
-                    <span className={s.epDetailLabel}>복선</span>
-                    <span className={s.epDetailVal}>{ep.foreshadow}</span>
-                  </div>
-                )}
-                {ep.cliffhanger && (
-                  <div className={s.epDetailRow}>
-                    <span className={s.epDetailLabel}>클리프행어</span>
-                    <span className={s.epDetailVal} style={{ color: "#fbbf24" }}>{ep.cliffhanger}</span>
-                  </div>
-                )}
+                <div className={s.epDetailRow}><span className={s.epDetailLabel}>핵심 사건</span><span className={s.epDetailVal}>{ep.event}</span></div>
+                <div className={s.epDetailRow}><span className={s.epDetailLabel}>등장인물</span><span className={s.epDetailVal}>{ep.characters.join(", ")}</span></div>
+                <div className={s.epDetailRow}><span className={s.epDetailLabel}>감정 곡선</span><span className={s.epDetailVal}>{ep.emotion}</span></div>
+                {ep.foreshadow && <div className={s.epDetailRow}><span className={s.epDetailLabel}>복선</span><span className={s.epDetailVal}>{ep.foreshadow}</span></div>}
+                {ep.cliffhanger && <div className={s.epDetailRow}><span className={s.epDetailLabel}>클리프행어</span><span className={s.epDetailVal} style={{ color: "#fbbf24" }}>{ep.cliffhanger}</span></div>}
               </div>
             )}
           </div>
@@ -232,209 +215,273 @@ function RoadmapCardView({ card }: { card: RoadmapCard }) {
   );
 }
 
+function MsgBubble({ msg }: { msg: Msg }) {
+  const cfg = AGENTS[msg.agent];
+  const isUser = msg.agent === "user";
+  if (msg.cardType === "roadmap" && msg.card) {
+    return <RoadmapCardView card={msg.card as RoadmapCard} />;
+  }
+  if (msg.cardType === "episode" && msg.card) {
+    return <EpCardView card={msg.card as EpisodeCard} />;
+  }
+  return (
+    <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
+      {!isUser && (
+        <div className={s.avatar} style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33` }}>
+          {cfg.label[0]}
+        </div>
+      )}
+      <div className={s.msgContent}>
+        {!isUser && <div className={s.agentName} style={{ color: cfg.color }}>{cfg.label}</div>}
+        <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`}
+          style={!isUser ? { borderColor: `${cfg.color}22` } : {}}>
+          {msg.streaming && !msg.text ? (
+            <ThinkingDots />
+          ) : (
+            <span style={{ whiteSpace: "pre-wrap" }}>
+              {msg.text}
+              {msg.streaming && <StreamCursor />}
+            </span>
+          )}
+        </div>
+      </div>
+      {isUser && (
+        <div className={s.avatar} style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33` }}>나</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function Phase3Page({ params }: { params: { projectId: string } }) {
   const { projectId } = params;
   const router = useRouter();
 
-  const [stage, setStage] = useState<"idle"|"chat">("idle");
+  const [stage, setStage] = useState<"idle" | "chat">("idle");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [genre, setGenre] = useState("판타지");
-  const [title, setTitle] = useState("");
-  const [isMock, setIsMock] = useState(false);
   const [roadmapDone, setRoadmapDone] = useState(false);
-  const [editingEp, setEditingEp] = useState<string>("");
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const contextRef = useRef<string>("");
 
   useEffect(() => {
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
-      if (p1?.input?.title) setTitle(p1.input.title);
-      const projs = JSON.parse(localStorage.getItem("wts_projects") ?? "[]");
-      const p = projs.find((x: {id:string}) => x.id === projectId);
-      if (p?.title) setTitle(p.title);
-    } catch {}
-
-    const saved = localStorage.getItem(`wts_phase3_chat_${projectId}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setMessages(parsed.messages);
-        setRoadmapDone(parsed.roadmapDone);
-        setIsMock(parsed.isMock);
-        setStage("chat");
-      } catch {}
-    }
+    } catch { /* ignore */ }
   }, [projectId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const addMsg = useCallback((m: Omit<Msg,"id">) => {
-    const id = mkId();
-    setMessages(prev => [...prev, { ...m, id }]);
-    return id;
+  useEffect(() => {
+    const id = "wts-blink-style";
+    if (!document.getElementById(id)) {
+      const el = document.createElement("style");
+      el.id = id;
+      el.textContent = "@keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }";
+      document.head.appendChild(el);
+    }
   }, []);
 
-  const reveal = useCallback((id: string, delay: number) =>
-    new Promise<void>(res => setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, done: true } : m));
-      res();
-    }, delay)), []);
+  // Streaming text helper (plain text, no card)
+  const streamText = useCallback(async (
+    agent: AgentId,
+    systemPrompt: string,
+    msgs: Array<{ role: "user" | "assistant"; content: string }>,
+    apiKey: string,
+  ): Promise<string> => {
+    const id = uid();
+    setMessages(prev => [...prev, { id, agent, text: "", streaming: true }]);
 
-  function saveChat(msgs: Msg[], done: boolean, mock: boolean) {
-    localStorage.setItem(`wts_phase3_chat_${projectId}`, JSON.stringify({
-      messages: msgs, roadmapDone: done, isMock: mock,
-    }));
-  }
+    let fullText = "";
+    const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 2000, tools: [WEB_SEARCH_TOOL] });
+    for await (const chunk of gen) {
+      fullText += chunk;
+      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText } : m));
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, streaming: false } : m));
+    return fullText;
+  }, []);
 
-  async function startRoadmap() {
+  // Streaming JSON card helper
+  const streamCard = useCallback(async (
+    agent: AgentId,
+    systemPrompt: string,
+    msgs: Array<{ role: "user" | "assistant"; content: string }>,
+    apiKey: string,
+    cardType: "roadmap" | "episode",
+    arcNum?: number,
+  ): Promise<string> => {
+    const id = uid();
+    // Add a placeholder text bubble that becomes a card on completion
+    setMessages(prev => [...prev, { id, agent, text: "에피소드 생성 중...", streaming: true }]);
+
+    let fullText = "";
+    const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 8000, tools: [] });
+    for await (const chunk of gen) {
+      fullText += chunk;
+      // Update progress text
+      const lineCount = (fullText.match(/"ep":/g) || []).length;
+      if (cardType === "episode" && lineCount > 0) {
+        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `에피소드 생성 중... (${lineCount}/25화)` } : m));
+      }
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+
+    // Parse and show card
+    if (cardType === "roadmap") {
+      const tag = "ROADMAP_CARD";
+      const re = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`);
+      const match = fullText.match(re);
+      let card: RoadmapCard | null = null;
+      try { if (match) card = JSON.parse(match[1]) as RoadmapCard; } catch { /* ignore */ }
+      if (card) {
+        setMessages(prev => prev.map(m => m.id === id
+          ? { ...m, text: "", streaming: false, cardType: "roadmap", card }
+          : m));
+      } else {
+        // Show raw text if parse fails
+        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText, streaming: false } : m));
+      }
+    } else {
+      const tag = `EPISODE_CARD_${arcNum ?? 1}`;
+      const re = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`);
+      const match = fullText.match(re);
+      let card: EpisodeCard | null = null;
+      try { if (match) card = JSON.parse(match[1]) as EpisodeCard; } catch { /* ignore */ }
+      if (card) {
+        setMessages(prev => prev.map(m => m.id === id
+          ? { ...m, text: "", streaming: false, cardType: "episode", card }
+          : m));
+      } else {
+        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: "에피소드 생성 완료 (파싱 오류)", streaming: false } : m));
+      }
+    }
+    return fullText;
+  }, []);
+
+  const startRoadmap = useCallback(async () => {
+    const apiKey = getAnthropicKey();
+    if (!apiKey) {
+      setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다. 설정 페이지에서 API 키를 입력해주세요.");
+      return;
+    }
+    setApiError(null);
     setStage("chat");
     setBusy(true);
-    const key = localStorage.getItem("wts_anthropic_key") ?? "";
-    const useMock = !key;
-    setIsMock(useMock);
+    setMessages([]);
+    setRoadmapDone(false);
 
-    const msgs: Msg[] = [];
+    // Build context from Phase 1+2
+    let context = `장르: ${genre}`;
+    try {
+      const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
+      if (p1?.input?.concept) context += `\n기획 아이디어: ${p1.input.concept}`;
+      if (p1?.data?.summary) context += `\nPhase 1 요약: ${p1.data.summary}`;
+      const p2 = JSON.parse(localStorage.getItem(`wts_phase2_${projectId}`) ?? "null");
+      if (p2?.data?.world) context += `\n세계관: ${p2.data.world.era} / ${p2.data.world.atmosphere}`;
+    } catch { /* ignore */ }
 
-    // Researcher message
-    const r1id = mkId();
-    const r1: Msg = { id: r1id, agent: "researcher", done: false,
-      text: `${genre} 장르 "${title || "이 작품"}"의 독자 유지율 패턴을 분석했습니다. 5화 간격 훅 배치가 이탈률을 32% 낮추고, 25화마다 정점(PEAK)을 두는 4막 구조가 장기 연재에 최적입니다. 클리프행어는 매 5화 단위로 강도를 높이는 것을 권장합니다.` };
-    setMessages([r1]);
-    msgs.push(r1);
-    await new Promise<void>(res => setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === r1id ? { ...m, done: true } : m));
-      res();
-    }, 1200));
+    try {
+      // ── 1. Researcher analysis ──
+      const researchText = await streamText(
+        "researcher",
+        buildResearcherPrompt(genre, context),
+        [{ role: "user", content: `${genre} 장르 웹툰의 장기 연재 전략을 분석해주세요.` }],
+        apiKey,
+      );
 
-    await new Promise(r => setTimeout(r, 400));
+      // ── 2. Roadmap overview ──
+      const roadmapText = await streamCard(
+        "scenario",
+        buildRoadmapPrompt(genre, context, researchText.slice(0, 300)),
+        [{ role: "user", content: "100화 4막 구조 로드맵 개요를 작성해주세요." }],
+        apiKey,
+        "roadmap",
+      );
 
-    // Scenario writer announces structure
-    const s1id = mkId();
-    const s1: Msg = { id: s1id, agent: "scenario", done: false,
-      text: `연구자 분석을 바탕으로 100화 4막 구조를 설계했습니다. 각 막은 25화로 구성되며, 막마다 독립적인 서사 호를 가집니다. 로드맵 개요를 먼저 확인해 주세요.` };
-    setMessages(prev => { msgs.push(s1); return [...prev, s1]; });
-    await new Promise<void>(res => setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === s1id ? { ...m, done: true } : m));
-      res();
-    }, 1000));
+      // Parse roadmap for arc info
+      let roadmapData: RoadmapCard | null = null;
+      try {
+        const m = roadmapText.match(/\[ROADMAP_CARD\]\s*([\s\S]*?)\s*\[\/ROADMAP_CARD\]/);
+        if (m) roadmapData = JSON.parse(m[1]) as RoadmapCard;
+      } catch { /* ignore */ }
 
-    await new Promise(r => setTimeout(r, 300));
+      const arcSummary = roadmapData
+        ? roadmapData.arcs.map(a => `${a.num}막: ${a.name} (${a.theme})`).join(", ")
+        : "4막 구조 로드맵 완성";
 
-    // Roadmap card
-    const rmCard = buildFullRoadmap(genre, title);
-    const rmId = mkId();
-    const rm: Msg = { id: rmId, agent: "scenario", done: true,
-      text: "", card: rmCard, cardType: "roadmap" };
-    setMessages(prev => { msgs.push(rm); return [...prev, rm]; });
-    await new Promise(r => setTimeout(r, 600));
+      // ── 3. Episodes per arc (4 calls) ──
+      for (let arcNum = 1; arcNum <= 4; arcNum++) {
+        const arc = roadmapData?.arcs[arcNum - 1];
+        const arcName = arc?.name ?? `${arcNum}막`;
+        const arcTheme = arc?.theme ?? "전개";
+        const epsRange: [number, number] = arc?.eps ?? [(arcNum - 1) * 25 + 1, arcNum * 25];
 
-    // Arc by arc episodes
-    for (let arcNum = 1; arcNum <= 4; arcNum++) {
-      const arc = rmCard.arcs[arcNum - 1];
-      const sArcId = mkId();
-      const sArc: Msg = { id: sArcId, agent: "scenario", done: false,
-        text: `${arcNum}막 "${arc.name}"(EP ${arc.eps[0]}–${arc.eps[1]}) 에피소드 목록입니다. 각 화를 클릭하면 핵심 사건·등장인물·감정 곡선·복선·클리프행어를 확인할 수 있습니다.` };
-      setMessages(prev => { msgs.push(sArc); return [...prev, sArc]; });
-      await new Promise<void>(res => setTimeout(() => {
-        setMessages(prev => prev.map(m => m.id === sArcId ? { ...m, done: true } : m));
-        res();
-      }, 900));
-
-      await new Promise(r => setTimeout(r, 300));
-
-      const episodes = buildArcEpisodes(arcNum, genre, title);
-      const epCard: EpisodeCard = { episodes, arcLabel: `${arcNum}막 — ${arc.name}`, arcColor: arc.color };
-      const epId = mkId();
-      const epMsg: Msg = { id: epId, agent: "scenario", done: true,
-        text: "", card: epCard, cardType: "episode" };
-      setMessages(prev => { msgs.push(epMsg); return [...prev, epMsg]; });
-      await new Promise(r => setTimeout(r, 500));
-    }
-
-    // Producer sign-off
-    const pId = mkId();
-    const p1msg: Msg = { id: pId, agent: "producer", done: false,
-      text: `100화 로드맵 검토 완료. 4막 구조와 완급 배분이 ${genre} 장르 독자 기대치에 부합합니다. 특정 화의 내용을 수정하고 싶으시면 "N화 수정: [의견]" 형식으로 말씀해 주세요. 준비가 되셨으면 Phase 4(첫 화 대본 작성)로 넘어가겠습니다.` };
-    setMessages(prev => { msgs.push(p1msg); return [...prev, p1msg]; });
-    await new Promise<void>(res => setTimeout(() => {
-      setMessages(prev => prev.map(m => m.id === pId ? { ...m, done: true } : m));
-      res();
-    }, 1400));
-
-    setRoadmapDone(true);
-    setBusy(false);
-
-    setMessages(prev => {
-      saveChat(prev, true, useMock);
-      return prev;
-    });
-  }
-
-  async function sendMessage() {
-    if (!input.trim() || busy) return;
-    const text = input.trim();
-    setInput("");
-    setBusy(true);
-
-    const uId = mkId();
-    setMessages(prev => [...prev, { id: uId, agent: "user", text, done: true }]);
-
-    await new Promise(r => setTimeout(r, 500));
-
-    const epMatch = text.match(/(\d+)화\s*수정/);
-    if (epMatch) {
-      const epNum = parseInt(epMatch[1]);
-      const sId = mkId();
-      setMessages(prev => [...prev, { id: sId, agent: "scenario", done: false,
-        text: `${epNum}화를 재작성합니다. 말씀하신 의견을 반영해 핵심 사건과 클리프행어를 조정했습니다.` }]);
-      await new Promise<void>(res => setTimeout(() => {
-        setMessages(prev => prev.map(m => m.id === sId ? { ...m, done: true } : m));
-        res();
-      }, 1000));
-
-      await new Promise(r => setTimeout(r, 300));
-
-      const arcNum = epNum <= 25 ? 1 : epNum <= 50 ? 2 : epNum <= 75 ? 3 : 4;
-      const arc = buildFullRoadmap(genre, title).arcs[arcNum-1];
-      const allEps = buildArcEpisodes(arcNum, genre, title);
-      const ep = allEps.find(e => e.ep === epNum);
-      if (ep) {
-        ep.event = `[수정됨] ${text.replace(/\d+화\s*수정\s*:?\s*/,"").slice(0,60) || ep.event}`;
-        ep.cliffhanger = ep.cliffhanger || "새로운 반전이 독자를 다음 화로 이끈다";
-        const card: EpisodeCard = { episodes: [ep], arcLabel: `${arcNum}막 — ${arc.name}`, arcColor: arc.color };
-        const cId = mkId();
-        setMessages(prev => [...prev, { id: cId, agent: "scenario", done: true,
-          text: "", card, cardType: "episode" }]);
+        await streamCard(
+          "scenario",
+          buildEpisodePrompt(arcNum, arcName, arcTheme, epsRange, genre, context, arcSummary),
+          [{ role: "user", content: `${arcNum}막 (EP ${epsRange[0]}–${epsRange[1]}) 에피소드 목록을 생성해주세요.` }],
+          apiKey,
+          "episode",
+          arcNum,
+        );
       }
 
-      const pId = mkId();
-      setMessages(prev => [...prev, { id: pId, agent: "producer", done: false,
-        text: `${epNum}화 수정 완료. 전체 흐름과의 정합성을 확인했습니다. 다른 화도 수정이 필요하시면 말씀해 주세요.` }]);
-      await new Promise<void>(res => setTimeout(() => {
-        setMessages(prev => prev.map(m => m.id === pId ? { ...m, done: true } : m));
-        res();
-      }, 900));
-    } else {
-      const pId = mkId();
-      setMessages(prev => [...prev, { id: pId, agent: "producer", done: false,
-        text: `말씀 감사합니다. "${text.slice(0,40)}${text.length>40?"...":""}" — 의견을 반영해 전체 로드맵 품질을 개선하겠습니다. 특정 화 수정은 "N화 수정: [내용]" 형식을 사용해 주세요.` }]);
-      await new Promise<void>(res => setTimeout(() => {
-        setMessages(prev => prev.map(m => m.id === pId ? { ...m, done: true } : m));
-        res();
-      }, 1000));
-    }
+      // ── 4. Producer sign-off ──
+      contextRef.current = `${context}\n로드맵: ${arcSummary}`;
+      await streamText(
+        "producer",
+        buildProducerSignoffPrompt(genre, contextRef.current),
+        [{ role: "user", content: "100화 로드맵 검토 및 Phase 4 안내를 부탁합니다." }],
+        apiKey,
+      );
 
-    setBusy(false);
-    setMessages(prev => {
-      saveChat(prev, roadmapDone, isMock);
-      return prev;
-    });
-  }
+      setRoadmapDone(true);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      const msg = raw.includes("401") || raw.includes("authentication")
+        ? "API 키가 유효하지 않습니다. 설정 페이지에서 키를 다시 확인해주세요."
+        : `API 오류: ${raw}`;
+      setApiError(msg);
+    } finally {
+      setBusy(false);
+    }
+  }, [genre, projectId, streamText, streamCard]);
+
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    const apiKey = getAnthropicKey();
+    if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); return; }
+
+    setApiError(null);
+    setInput("");
+    setMessages(prev => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
+    setBusy(true);
+
+    try {
+      await streamText(
+        "producer",
+        buildProducerFollowupPrompt(contextRef.current),
+        [{ role: "user", content: text }],
+        apiKey,
+      );
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      setApiError(raw.includes("401") ? "API 키가 유효하지 않습니다." : `API 오류: ${raw}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [input, busy, streamText]);
 
   return (
     <div className={s.page}>
@@ -442,17 +489,16 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
       {stage === "idle" && (
         <div className={s.idleWrap}>
-          {isMock && (
-            <div className={s.mockNote}>
-              ⚠ ANTHROPIC_API_KEY 미설정 — Mock 데이터로 생성됩니다.&nbsp;
-              <a href="/settings">설정 →</a>
+          {apiError && (
+            <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#f87171" }}>
+              ⚠ {apiError}
             </div>
           )}
           <div className={s.idleCard}>
             <div className={s.idleIcon}>🗺</div>
             <div className={s.idleTitle}>100화 로드맵 자동 설계</div>
             <div className={s.idleDesc}>
-              심층 조사자 · 시나리오 작가 · 총괄 프로듀서가 협업하여<br/>
+              심층 조사자 · 시나리오 작가 · 총괄 프로듀서가 협업하여<br />
               4막 구조 100화 에피소드 — 제목·핵심사건·감정곡선·복선·클리프행어를 자동 생성합니다.
             </div>
             <button className={s.btnStart} onClick={startRoadmap}>
@@ -464,40 +510,15 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
       {stage === "chat" && (
         <div className={s.chatLayout}>
+          {apiError && (
+            <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", margin: "12px 20px 0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+              <span>⚠</span><span>{apiError}</span>
+              <a href="/settings" style={{ marginLeft: "auto", color: "#f87171", textDecoration: "underline", whiteSpace: "nowrap" }}>설정으로 이동</a>
+            </div>
+          )}
+
           <div className={s.chatBody}>
-            {isMock && (
-              <div className={s.mockBadge}>
-                ⚠ Mock 데이터 — <a href="/settings">API 키 설정</a>
-              </div>
-            )}
-            {messages.map(msg => {
-              const cfg = AGENTS[msg.agent];
-              const isUser = msg.agent === "user";
-              return (
-                <div key={msg.id} className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
-                  {!isUser && (
-                    <div className={s.avatar} style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33` }}>
-                      {cfg.label[0]}
-                    </div>
-                  )}
-                  <div className={s.msgContent}>
-                    {!isUser && <div className={s.agentName} style={{ color: cfg.color }}>{cfg.label}</div>}
-                    {msg.cardType === "roadmap" && msg.card ? (
-                      <RoadmapCardView card={msg.card as RoadmapCard} />
-                    ) : msg.cardType === "episode" && msg.card ? (
-                      <EpCardView card={msg.card as EpisodeCard} />
-                    ) : (
-                      <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`}
-                        style={!isUser ? { borderColor: `${cfg.color}22` } : {}}>
-                        {!msg.done ? (
-                          <span className={s.dots}><span/><span/><span/></span>
-                        ) : msg.text}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {messages.map(msg => <MsgBubble key={msg.id} msg={msg} />)}
             <div ref={bottomRef} />
           </div>
 
@@ -523,7 +544,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
               onChange={e => setInput(e.target.value)}
               disabled={busy}
               rows={1}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             />
             <button className={s.btnSend} onClick={sendMessage} disabled={busy || !input.trim()}>
               전송
