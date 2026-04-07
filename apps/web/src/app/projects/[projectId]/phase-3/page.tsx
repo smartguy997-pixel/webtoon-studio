@@ -446,6 +446,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       );
 
       setRoadmapDone(true);
+      localStorage.setItem(`wts_phase3_done_${projectId}`, JSON.stringify({ savedAt: new Date().toISOString() }));
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       const msg = raw.includes("401") || raw.includes("authentication")

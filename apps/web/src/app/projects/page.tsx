@@ -161,7 +161,7 @@ function syncProjectProgress(project: Project): Project {
       if (score !== undefined) updated.feasibilityScore = Number(score);
       // Advance phase if Phase 2 done
       if (localStorage.getItem(`wts_phase2_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 2) as Phase;
-      if (localStorage.getItem(`wts_phase3_chat_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 3) as Phase;
+      if (localStorage.getItem(`wts_phase3_done_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 3) as Phase;
       // Count Phase 4 done episodes
       let epCount = 0;
       for (let i = 1; i <= 100; i++) {
