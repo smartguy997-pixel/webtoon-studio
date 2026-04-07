@@ -542,6 +542,20 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
                     borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600,
                     padding: "10px 14px", cursor: "pointer", whiteSpace: "nowrap",
                   }} onClick={() => {
+                    const saved = localStorage.getItem(`wts_phase4_card_${projectId}_${selectedEp}`);
+                    if (!saved) return;
+                    const { card } = JSON.parse(saved) as { card: CutScriptCard };
+                    const blob = new Blob([JSON.stringify(card, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `script_ep${selectedEp}_${projectId}.json`; a.click(); URL.revokeObjectURL(url);
+                  }}>
+                    📥 JSON 내보내기
+                  </button>
+                  <button style={{
+                    background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)",
+                    borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600,
+                    padding: "10px 14px", cursor: "pointer", whiteSpace: "nowrap",
+                  }} onClick={() => {
                     localStorage.removeItem(`wts_phase4_card_${projectId}_${selectedEp}`);
                     setMessages([]); setScriptDone(false); setStage("idle");
                   }}>

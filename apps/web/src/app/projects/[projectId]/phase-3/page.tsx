@@ -580,6 +580,38 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
+                  <button className={s.btnGatingSecondary} onClick={() => {
+                    const saved = localStorage.getItem(`wts_phase3_data_${projectId}`);
+                    if (!saved) return;
+                    const data = JSON.parse(saved) as { roadmapCard: RoadmapCard; episodeCards: EpisodeCard[]; genre: string };
+                    const allEps = data.episodeCards.flatMap(ec => ec.episodes).sort((a, b) => a.ep - b.ep);
+                    const lines = [
+                      `[${data.genre} 웹툰] 100화 로드맵`,
+                      `생성일: ${new Date().toLocaleDateString("ko-KR")}`,
+                      "",
+                      ...data.roadmapCard.arcs.map(a => `■ ${a.num}막 "${a.name}" (EP ${a.eps[0]}~${a.eps[1]}) — ${a.theme}`),
+                      "",
+                      ...allEps.map(ep =>
+                        `${String(ep.ep).padStart(3, " ")}화 | ${ep.title}\n     → ${ep.event} | 감정: ${ep.emotion}${ep.cliffhanger ? ` | 클리프행어: ${ep.cliffhanger}` : ""}`
+                      ),
+                    ];
+                    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `roadmap_${projectId}.txt`; a.click(); URL.revokeObjectURL(url);
+                  }}>
+                    📄 텍스트 내보내기
+                  </button>
+                  <button className={s.btnGatingSecondary} onClick={() => {
+                    const saved = localStorage.getItem(`wts_phase3_data_${projectId}`);
+                    if (!saved) return;
+                    const data = JSON.parse(saved) as { roadmapCard: RoadmapCard; episodeCards: EpisodeCard[]; genre: string };
+                    const allEps = data.episodeCards.flatMap(ec => ec.episodes).sort((a, b) => a.ep - b.ep);
+                    const blob = new Blob([JSON.stringify({ genre: data.genre, arcs: data.roadmapCard.arcs, episodes: allEps }, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = `roadmap_${projectId}.json`; a.click(); URL.revokeObjectURL(url);
+                  }}>
+                    📥 JSON 내보내기
+                  </button>
                   {restored && (
                     <button className={s.btnGatingSecondary} onClick={() => {
                       localStorage.removeItem(`wts_phase3_data_${projectId}`);
