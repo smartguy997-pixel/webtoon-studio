@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import s from "./page.module.css";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-
 // ── Config ────────────────────────────────────────────────
 interface KeyConfig {
   id: "anthropic" | "whisk" | "replicate";
@@ -110,24 +108,39 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
 
     setState((p) => ({ ...p, status: "testing", errorMsg: "" }));
 
-    // 연결 테스트
-    let ok = true;
+    let ok = false;
     let msg = "";
 
     try {
-      const res = await fetch(`${API_BASE}/api/test-key`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service: cfg.id, key: val }),
-        signal: AbortSignal.timeout(8000),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string };
-      ok = data.ok;
-      msg = data.error ?? "";
-    } catch {
-      // API 서버 미실행 — 형식만 검증
-      ok = !fmtErr;
-      msg = ok ? "" : (fmtErr ?? "형식 오류");
+      if (cfg.id === "anthropic") {
+        // Direct browser test against Anthropic API
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": val,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 10,
+            messages: [{ role: "user", content: "hi" }],
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (res.ok) {
+          ok = true;
+        } else {
+          const data = await res.json() as { error?: { message?: string } };
+          msg = data.error?.message ?? `HTTP ${res.status}`;
+        }
+      } else {
+        // Format-only validation for other services (no direct test available)
+        ok = true;
+      }
+    } catch (e) {
+      msg = e instanceof Error ? e.message : "연결 실패";
     }
 
     if (ok) {
