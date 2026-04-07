@@ -22,6 +22,7 @@ const PHASES = [
   { num: 2, label: "세계관/에셋",  desc: "세계관 설계·캐릭터/배경 A/B 선택", slug: "phase-2", color: "#60a5fa", bg: "rgba(96,165,250,0.12)"   },
   { num: 3, label: "100화 로드맵", desc: "4막 구조·아크 분류·완급 조절",      slug: "phase-3", color: "#fbbf24", bg: "rgba(251,191,36,0.12)"  },
   { num: 4, label: "30컷 대본",    desc: "컷별 JSON 대본·SCC 화풍 검증",     slug: "phase-4", color: "#f87171", bg: "rgba(248,113,113,0.12)"  },
+  { num: 5, label: "이미지 생성",  desc: "MST 자동 주입·CLIP SCC 검증",      slug: "phase-5", color: "#c084fc", bg: "rgba(192,132,252,0.12)"  },
 ];
 
 function feasibilityLabel(score: number) {
@@ -38,6 +39,7 @@ export default function ProjectPage({ params }: Props) {
   const [p2, setP2] = useState<Phase2Data | null>(null);
   const [p3done, setP3done] = useState(false);
   const [epCount, setEpCount] = useState(0);
+  const [p5EpCount, setP5EpCount] = useState(0);
   const [projectName, setProjectName] = useState("");
 
   useEffect(() => {
@@ -56,13 +58,19 @@ export default function ProjectPage({ params }: Props) {
       }
       setEpCount(count);
 
+      let p5count = 0;
+      for (let i = 1; i <= 100; i++) {
+        if (localStorage.getItem(`wts_phase5_ep_${projectId}_${i}`)) p5count++;
+      }
+      setP5EpCount(p5count);
+
       const projs = JSON.parse(localStorage.getItem("wts_projects") ?? "[]") as Array<{ id: string; title: string }>;
       const proj = projs.find(p => p.id === projectId);
       if (proj) setProjectName(proj.title);
     } catch { /* ignore */ }
   }, [projectId]);
 
-  const currentPhase = epCount > 0 ? 4 : p3done ? 3 : p2 ? 2 : p1 ? 1 : 0;
+  const currentPhase = p5EpCount > 0 ? 5 : epCount > 0 ? 4 : p3done ? 3 : p2 ? 2 : p1 ? 1 : 0;
   const score = p1?.data?.feasibility_score;
   const feasibility = score !== undefined ? feasibilityLabel(score) : null;
 
@@ -157,6 +165,14 @@ export default function ProjectPage({ params }: Props) {
               </div>
             </div>
           )}
+          {p5EpCount > 0 && (
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#c084fc", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>이미지 SCC</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#c084fc" }}>
+                {p5EpCount}<span style={{ fontSize: 13, fontWeight: 400, color: "#64748b" }}> 화 검증</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -170,7 +186,8 @@ export default function ProjectPage({ params }: Props) {
             (phase.num === 1 && !!p1) ||
             (phase.num === 2 && !!p2) ||
             (phase.num === 3 && p3done) ||
-            (phase.num === 4 && epCount > 0);
+            (phase.num === 4 && epCount > 0) ||
+            (phase.num === 5 && p5EpCount > 0);
           const isCurrent = phase.num === currentPhase + 1 || (currentPhase === 0 && phase.num === 1);
           const isLocked = !isDone && phase.num > currentPhase + 1;
 

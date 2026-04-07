@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import s from "./page.module.css";
 
-type Phase = 1 | 2 | 3 | 4;
+type Phase = 1 | 2 | 3 | 4 | 5;
 
 interface Project {
   id: string;
@@ -19,8 +19,8 @@ interface Project {
   createdAt: string;
 }
 
-const PHASE_LABELS = ["기획 분석", "세계관/에셋", "100화 로드맵", "30컷 대본"];
-const PHASE_ROUTES = ["phase-1", "phase-2", "phase-3", "phase-4"];
+const PHASE_LABELS = ["기획 분석", "세계관/에셋", "100화 로드맵", "30컷 대본", "이미지 생성"];
+const PHASE_ROUTES = ["phase-1", "phase-2", "phase-3", "phase-4", "phase-5"];
 const GENRES = [
   "판타지", "로맨스", "액션", "SF", "스릴러", "일상/힐링",
   "무협", "스포츠", "공포", "역사", "드라마", "개그",
@@ -61,10 +61,10 @@ function PhaseStepper({ current }: { current: Phase }) {
   return (
     <div>
       <div className={s.stepper}>
-        {([1, 2, 3, 4] as Phase[]).map((phase, i) => (
+        {([1, 2, 3, 4, 5] as Phase[]).map((phase, i) => (
           <div key={phase} className={`${s.step} ${phaseClass(phase, current)}`}>
             <div className={s.stepDot}>{phase < current ? "✓" : phase}</div>
-            {i < 3 && <div className={s.stepLine} style={phase < current ? { background: "var(--primary)" } : undefined} />}
+            {i < 4 && <div className={s.stepLine} style={phase < current ? { background: "var(--primary)" } : undefined} />}
           </div>
         ))}
       </div>
@@ -171,6 +171,12 @@ function syncProjectProgress(project: Project): Project {
         updated.currentPhase = Math.max(updated.currentPhase, 4) as Phase;
         updated.episodeProgress = epCount;
       }
+      // Count Phase 5 done episodes
+      let p5count = 0;
+      for (let i = 1; i <= 100; i++) {
+        if (localStorage.getItem(`wts_phase5_ep_${project.id}_${i}`)) p5count++;
+      }
+      if (p5count > 0) updated.currentPhase = Math.max(updated.currentPhase, 5) as Phase;
       return updated;
     }
   } catch { /* ignore */ }

@@ -228,6 +228,7 @@
 .phase2 { background: var(--phase-2-bg); color: var(--phase-2-color); }
 .phase3 { background: var(--phase-3-bg); color: var(--phase-3-color); }
 .phase4 { background: var(--phase-4-bg); color: var(--phase-4-color); }
+.phase5 { background: var(--phase-5-bg); color: var(--phase-5-color); }
 .phaseDone {
   background: rgba(163,163,163,0.1);
   color: #a3a3a3;

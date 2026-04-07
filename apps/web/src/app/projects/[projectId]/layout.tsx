@@ -14,9 +14,10 @@ const PHASES = [
   { num: 2, label: "세계관/에셋",  sub: "A/B 디자인 선택",      slug: "phase-2" },
   { num: 3, label: "100화 로드맵", sub: "4막 구조 · 아크",      slug: "phase-3" },
   { num: 4, label: "30컷 대본",    sub: "컷별 이미지 · SCC",    slug: "phase-4" },
+  { num: 5, label: "이미지 생성",  sub: "MST 주입 · SCC 검증",  slug: "phase-5" },
 ];
 
-const PHASE_COLORS = ["#a78bfa", "#60a5fa", "#fbbf24", "#f87171"];
+const PHASE_COLORS = ["#a78bfa", "#60a5fa", "#fbbf24", "#f87171", "#c084fc"];
 
 export default function ProjectLayout({ children, params }: Props) {
   const { projectId } = params;
