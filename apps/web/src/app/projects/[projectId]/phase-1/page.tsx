@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
-import { streamClaude, getAnthropicKey } from "@/lib/claude-client";
+import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-client";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
@@ -24,33 +24,37 @@ type AgentId = keyof typeof AGENTS;
 const STRATEGIST_PROMPT = `당신은 K-웹툰 시장 전문 전략 기획자(agent_strategist)입니다. Phase 1 기획 분석 토론에 참여합니다.
 
 역할:
-- 네이버 웹툰·카카오페이지·레진코믹스 트렌드를 분석합니다
+- 웹 검색으로 최신 네이버 웹툰·카카오페이지·레진코믹스 트렌드를 조사합니다
 - 장르 포지셔닝(대중성 vs 마니아, 신규 IP vs 클리셰 재해석)을 평가합니다
-- 경쟁작 2~3종을 벤치마크하고 차별화 전략을 도출합니다
+- 실제 경쟁작 2~3종을 검색·벤치마크하고 차별화 전략을 도출합니다
 - 독자 관점 USP 3~5개를 구체적으로 제시합니다
 
-말투: 전문적이고 논리적. 실제 시장 데이터와 근거를 들어 분석. 자연스러운 한국어.
-분량: 250~400자.`;
+웹 검색을 적극 활용하여 최신 시장 데이터, 인기 작품, 독자 반응을 확인하세요.
+말투: 전문적이고 논리적. 검색으로 찾은 실제 데이터를 근거로 분석. 자연스러운 한국어.
+분량: 300~500자.`;
 
 const RESEARCHER_PROMPT = `당신은 스토리 논리성·현실성 검토 전문 심층 조사자(agent_researcher)입니다. Phase 1 기획 분석 토론에 참여합니다.
 
 역할:
+- 웹 검색으로 기획안의 설정·배경이 실제와 맞는지 팩트체크합니다
 - 기획안의 클리셰·내부 모순을 찾아 건설적으로 지적합니다
-- 역사·과학·사회 레퍼런스와의 충돌을 팩트체크합니다
+- 유사 소재의 기존 웹툰·만화를 검색하여 차별화 포인트를 분석합니다
 - 전략기획자의 분석을 보완하거나 다른 시각을 제시합니다
 - 반드시 건설적 개선 방향·대안을 함께 제안합니다
 
+웹 검색을 적극 활용하여 유사 소재의 선행 작품, 독자 반응, 클리셰 여부를 확인하세요.
 말투: 분석적이고 날카롭지만 건설적. 단순 비판 금지, 항상 대안 제시. 자연스러운 한국어.
-분량: 250~400자.`;
+분량: 300~500자.`;
 
 const PRODUCER_SYNTHESIS_PROMPT = `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다. Phase 1 기획 분석 토론을 마무리합니다.
 
 역할:
 - 전략기획자와 심층조사자의 의견을 종합하고 갈등을 중재합니다
+- 필요 시 웹 검색으로 추가 데이터를 확인하여 최종 판단의 근거를 보강합니다
 - Phase 1 최종 실현가능성 평가를 내립니다
 - 다음 단계(Phase 2) 진행 여부를 사용자에게 명확히 안내합니다
 
-말투: 권위 있고 명확. 결론 지향. 자연스러운 한국어. 분량: 150~250자.
+말투: 권위 있고 명확. 결론 지향. 자연스러운 한국어. 분량: 200~300자.
 
 ⚠️ 응답 마지막에 반드시 아래 JSON 블록을 정확히 포함하세요 (다른 텍스트 없이 줄바꿈만):
 
@@ -70,7 +74,7 @@ ${discussionContext}
 ---
 
 역할: 사용자의 추가 질문·의견에 에이전트 팀을 대표하여 명확하고 전문적으로 응답합니다.
-필요 시 전략기획자·심층조사자의 관점을 언급하며 종합 의견을 제시하세요.
+필요 시 웹 검색으로 최신 정보를 확인하고, 전략기획자·심층조사자의 관점을 언급하며 종합 의견을 제시하세요.
 말투: 친근하지만 전문적. 자연스러운 한국어. 분량: 200~350자.`;
 }
 
@@ -286,13 +290,20 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
     messages: Array<{ role: "user" | "assistant"; content: string }>,
     apiKey: string,
     isCard = false,
+    useWebSearch = true,
   ): Promise<string> => {
     const id = uid();
     setMessages(prev => [...prev, { id, agent, text: "", type: isCard ? "card" : "text", streaming: true }]);
     scrollToBottom();
 
     let fullText = "";
-    const gen = streamClaude({ apiKey, systemPrompt, messages });
+    const gen = streamClaude({
+      apiKey,
+      systemPrompt,
+      messages,
+      maxTokens: 3000,
+      tools: useWebSearch ? [WEB_SEARCH_TOOL] : [],
+    });
 
     for await (const chunk of gen) {
       fullText += chunk;
