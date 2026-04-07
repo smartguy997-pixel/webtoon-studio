@@ -391,6 +391,23 @@
   cursor: not-allowed;
 }
 
+/* ─── Streaming cursor ─── */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.streamCursor {
+  display: inline-block;
+  width: 2px;
+  height: 13px;
+  background: #7c6cfc;
+  margin-left: 2px;
+  vertical-align: middle;
+  border-radius: 1px;
+  animation: blink 0.9s step-start infinite;
+}
+
 /* ─── Gating Row ─── */
 .gatingRow {
   flex-shrink: 0;
