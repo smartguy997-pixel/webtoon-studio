@@ -236,10 +236,11 @@ export default function ProjectsPage() {
       `wts_phase1_${id}`,
       `wts_phase2_${id}`,
       `wts_phase3_done_${id}`,
+      `wts_phase3_data_${id}`,
       `wts_phase5_done_${id}`,
     ];
     for (let i = 1; i <= 100; i++) {
-      keysToRemove.push(`wts_phase4_ep_${id}_${i}`, `wts_phase5_ep_${id}_${i}`);
+      keysToRemove.push(`wts_phase4_ep_${id}_${i}`, `wts_phase4_card_${id}_${i}`, `wts_phase5_ep_${id}_${i}`);
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
   }

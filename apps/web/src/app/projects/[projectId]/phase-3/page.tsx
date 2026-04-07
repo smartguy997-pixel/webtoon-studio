@@ -265,14 +265,41 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   const [genre, setGenre] = useState("판타지");
   const [roadmapDone, setRoadmapDone] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
 
+  // ── Restore saved roadmap on mount ──
   useEffect(() => {
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
+
+      const saved = localStorage.getItem(`wts_phase3_data_${projectId}`);
+      if (saved) {
+        const { roadmapCard, episodeCards, context, genre: savedGenre } = JSON.parse(saved) as {
+          roadmapCard: RoadmapCard;
+          episodeCards: EpisodeCard[];
+          context: string;
+          genre: string;
+        };
+        if (roadmapCard && episodeCards) {
+          if (savedGenre) setGenre(savedGenre);
+          contextRef.current = context ?? "";
+          // Reconstruct messages from saved cards
+          const restored: Msg[] = [
+            { id: uid(), agent: "scenario", text: "", streaming: false, cardType: "roadmap", card: roadmapCard },
+            ...episodeCards.map(ec => ({
+              id: uid(), agent: "scenario" as AgentId, text: "", streaming: false, cardType: "episode" as const, card: ec,
+            })),
+          ];
+          setMessages(restored);
+              setRoadmapDone(true);
+          setStage("chat");
+          setRestored(true);
+        }
+      }
     } catch { /* ignore */ }
   }, [projectId]);
 
@@ -420,13 +447,15 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
         : "4막 구조 로드맵 완성";
 
       // ── 3. Episodes per arc (4 calls) ──
+      const collectedEpisodeCards: EpisodeCard[] = [];
+
       for (let arcNum = 1; arcNum <= 4; arcNum++) {
         const arc = roadmapData?.arcs[arcNum - 1];
         const arcName = arc?.name ?? `${arcNum}막`;
         const arcTheme = arc?.theme ?? "전개";
         const epsRange: [number, number] = arc?.eps ?? [(arcNum - 1) * 25 + 1, arcNum * 25];
 
-        await streamCard(
+        const arcText = await streamCard(
           "scenario",
           buildEpisodePrompt(arcNum, arcName, arcTheme, epsRange, genre, context, arcSummary),
           [{ role: "user", content: `${arcNum}막 (EP ${epsRange[0]}–${epsRange[1]}) 에피소드 목록을 생성해주세요.` }],
@@ -434,6 +463,12 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
           "episode",
           arcNum,
         );
+        // Collect episode card for persistence
+        try {
+          const tag = `EPISODE_CARD_${arcNum}`;
+          const em = arcText.match(new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`));
+          if (em) collectedEpisodeCards.push(JSON.parse(em[1]) as EpisodeCard);
+        } catch { /* ignore */ }
       }
 
       // ── 4. Producer sign-off ──
@@ -446,7 +481,18 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       );
 
       setRoadmapDone(true);
-      localStorage.setItem(`wts_phase3_done_${projectId}`, JSON.stringify({ savedAt: new Date().toISOString() }));
+      // Save roadmap data for persistence across page refreshes
+      const savedAt = new Date().toISOString();
+      localStorage.setItem(`wts_phase3_done_${projectId}`, JSON.stringify({ savedAt }));
+      if (roadmapData && collectedEpisodeCards.length > 0) {
+        localStorage.setItem(`wts_phase3_data_${projectId}`, JSON.stringify({
+          roadmapCard: roadmapData,
+          episodeCards: collectedEpisodeCards,
+          context: contextRef.current,
+          genre,
+          savedAt,
+        }));
+      }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       const msg = raw.includes("401") || raw.includes("authentication")
@@ -528,11 +574,25 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
               <div className={s.gatingBanner}>
                 <div className={s.gatingText}>
                   <strong>✓ 100화 로드맵 완성</strong>
-                  <span>특정 화 수정: "N화 수정: [의견]" · Phase 4에서 첫 화 대본을 작성합니다</span>
+                  <span>
+                    {restored ? "저장된 로드맵 복원됨 · " : ""}
+                    특정 화 수정: "N화 수정: [의견]" · Phase 4에서 첫 화 대본을 작성합니다
+                  </span>
                 </div>
-                <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-4`)}>
-                  Phase 4 시작 →
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {restored && (
+                    <button className={s.btnGatingSecondary} onClick={() => {
+                      localStorage.removeItem(`wts_phase3_data_${projectId}`);
+                      localStorage.removeItem(`wts_phase3_done_${projectId}`);
+                      setStage("idle"); setMessages([]); setRoadmapDone(false); setRestored(false);
+                    }}>
+                      재생성
+                    </button>
+                  )}
+                  <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-4`)}>
+                    Phase 4 시작 →
+                  </button>
+                </div>
               </div>
             </div>
           )}

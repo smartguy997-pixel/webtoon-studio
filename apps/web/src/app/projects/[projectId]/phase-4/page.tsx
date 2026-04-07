@@ -262,18 +262,32 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
       if (p1?.input?.genre) setGenre(p1.input.genre);
     } catch { /* ignore */ }
     const done = new Set<number>();
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 100; i++) {
       if (localStorage.getItem(`wts_phase4_ep_${projectId}_${i}`)) done.add(i);
     }
     setDoneEps(done);
   }, [projectId]);
 
   useEffect(() => {
+    // Try to restore saved cut script for this episode
+    const savedCard = localStorage.getItem(`wts_phase4_card_${projectId}_${selectedEp}`);
+    if (savedCard) {
+      try {
+        const { card } = JSON.parse(savedCard) as { card: CutScriptCard };
+        if (card?.cuts?.length > 0) {
+          setMessages([{ id: uid(), agent: "script", text: "", streaming: false, cardType: "cutScript", card }]);
+          setScriptDone(true);
+          setStage("chat");
+          setApiError(null);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
     setMessages([]);
     setScriptDone(false);
     setStage("idle");
     setApiError(null);
-  }, [selectedEp]);
+  }, [selectedEp, projectId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -419,7 +433,9 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
       setScriptDone(true);
       setDoneEps(prev => new Set([...prev, selectedEp]));
       if (card) {
-        localStorage.setItem(`wts_phase4_ep_${projectId}_${selectedEp}`, JSON.stringify({ sccRate: card.sccRate, savedAt: new Date().toISOString() }));
+        const savedAt = new Date().toISOString();
+        localStorage.setItem(`wts_phase4_ep_${projectId}_${selectedEp}`, JSON.stringify({ sccRate: card.sccRate, savedAt }));
+        localStorage.setItem(`wts_phase4_card_${projectId}_${selectedEp}`, JSON.stringify({ card, savedAt }));
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
@@ -520,9 +536,21 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
                   <strong>✓ {selectedEp}화 대본 완성</strong>
                   <span>컷 수정: "컷 N 수정: [의견]" · 다음 화로 이동하거나 Phase 5를 시작하세요</span>
                 </div>
-                <button className={s.btnGating} onClick={() => setSelectedEp(prev => Math.min(prev + 1, 100))}>
-                  {selectedEp + 1}화 대본 →
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={{
+                    background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)",
+                    borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600,
+                    padding: "10px 14px", cursor: "pointer", whiteSpace: "nowrap",
+                  }} onClick={() => {
+                    localStorage.removeItem(`wts_phase4_card_${projectId}_${selectedEp}`);
+                    setMessages([]); setScriptDone(false); setStage("idle");
+                  }}>
+                    재생성
+                  </button>
+                  <button className={s.btnGating} onClick={() => setSelectedEp(prev => Math.min(prev + 1, 100))}>
+                    {selectedEp + 1}화 대본 →
+                  </button>
+                </div>
               </div>
             </div>
           )}

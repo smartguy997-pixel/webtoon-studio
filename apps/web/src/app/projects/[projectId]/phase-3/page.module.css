@@ -424,6 +424,20 @@
 }
 .btnGating:hover { background: rgba(52,211,153,0.22); }
 
+.btnGatingSecondary {
+  background: rgba(100,116,139,0.1);
+  border: 1px solid rgba(100,116,139,0.3);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btnGatingSecondary:hover { background: rgba(100,116,139,0.2); }
+
 /* ─── Chat Input ─── */
 .chatInputRow {
   flex-shrink: 0;
