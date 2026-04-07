@@ -79,20 +79,29 @@ function PhaseStepper({ current }: { current: Phase }) {
   );
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: string) => void }) {
+  function handleDelete(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.confirm(`"${project.title}" 프로젝트를 삭제하시겠습니까?\n\n모든 Phase 데이터가 함께 삭제됩니다.`)) {
+      onDelete(project.id);
+    }
+  }
+
   return (
     <Link href={`/projects/${project.id}/${PHASE_ROUTES[project.currentPhase - 1]}`} className={s.card}>
       <div className={s.cardTop}>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div className={s.cardTitle}>{project.title}</div>
           <div className={s.cardMeta}>
             <span className={`${s.tag} ${s.tagGenre}`}>{project.genre}</span>
             <span className={phaseBadgeClass(project.currentPhase)}>Phase {project.currentPhase} · {PHASE_LABELS[project.currentPhase - 1]}</span>
           </div>
         </div>
+        <button className={s.cardDeleteBtn} onClick={handleDelete} title="프로젝트 삭제">✕</button>
       </div>
       <PhaseStepper current={project.currentPhase} />
-      {project.currentPhase === 4 && project.episodeProgress !== undefined && (
+      {project.currentPhase >= 4 && project.episodeProgress !== undefined && (
         <div className={s.episodeBar}>
           <div className={s.episodeBarLabel}><span>화별 대본 진행</span><span>{project.episodeProgress} / 100화</span></div>
           <div className={s.episodeBarTrack}><div className={s.episodeBarFill} style={{ width: `${project.episodeProgress}%` }} /></div>
@@ -186,7 +195,13 @@ function syncProjectProgress(project: Project): Project {
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(true);
   const router = useRouter();
+
+  useEffect(() => {
+    const key = localStorage.getItem("wts_anthropic_key") ?? "";
+    setHasApiKey(key.trim().length > 0);
+  }, []);
 
   const loadAndSync = useCallback(() => {
     const raw = loadProjects();
@@ -211,8 +226,26 @@ export default function ProjectsPage() {
     router.push(`/projects/${project.id}/phase-1`);
   }
 
+  function handleDelete(id: string) {
+    const next = projects.filter(p => p.id !== id);
+    setProjects(next);
+    saveProjects(next);
+    // Clean up all phase data for the project
+    const keysToRemove = [
+      `wts_project_seed_${id}`,
+      `wts_phase1_${id}`,
+      `wts_phase2_${id}`,
+      `wts_phase3_done_${id}`,
+      `wts_phase5_done_${id}`,
+    ];
+    for (let i = 1; i <= 100; i++) {
+      keysToRemove.push(`wts_phase4_ep_${id}_${i}`, `wts_phase5_ep_${id}_${i}`);
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+  }
+
   const active = projects.filter((p) => p.status === "active");
-  const inPhase4 = projects.filter((p) => p.currentPhase === 4);
+  const inPhase4Plus = projects.filter((p) => p.currentPhase >= 4);
   const avgFeasibility = projects.filter((p) => p.feasibilityScore !== undefined).reduce((sum, p, _, arr) => sum + (p.feasibilityScore ?? 0) / arr.length, 0);
 
   return (
@@ -222,17 +255,31 @@ export default function ProjectsPage() {
         <div className={s.headerRight}><button className={s.btnPrimary} onClick={() => setShowModal(true)}>+ 새 프로젝트</button></div>
       </header>
       <main className={s.content}>
+        {!hasApiKey && (
+          <div className={s.apiBanner}>
+            <div className={s.apiBannerLeft}>
+              <span className={s.apiBannerIcon}>🔑</span>
+              <div>
+                <div className={s.apiBannerTitle}>Anthropic API 키가 필요합니다</div>
+                <div className={s.apiBannerDesc}>Phase 1~5 에이전트 실행에 사용됩니다. 설정 페이지에서 sk-ant-api03-... 형식의 키를 입력해주세요.</div>
+              </div>
+            </div>
+            <button className={s.apiBannerBtn} onClick={() => router.push("/settings")}>
+              설정하기 →
+            </button>
+          </div>
+        )}
         <div className={s.stats}>
           <div className={s.statCard}><span className={s.statLabel}>전체 프로젝트</span><span className={s.statValue}>{projects.length}</span><span className={s.statSub}>총 작업 수</span></div>
           <div className={s.statCard}><span className={s.statLabel}>진행 중</span><span className={s.statValue} style={{ color: "var(--primary)" }}>{active.length}</span><span className={s.statSub}>활성 프로젝트</span></div>
-          <div className={s.statCard}><span className={s.statLabel}>대본 작업</span><span className={s.statValue} style={{ color: "var(--phase-4-color)" }}>{inPhase4.length}</span><span className={s.statSub}>Phase 4 진행 중</span></div>
+          <div className={s.statCard}><span className={s.statLabel}>대본/이미지</span><span className={s.statValue} style={{ color: "var(--phase-4-color)" }}>{inPhase4Plus.length}</span><span className={s.statSub}>Phase 4~5 진행 중</span></div>
           <div className={s.statCard}><span className={s.statLabel}>평균 실현가능성</span><span className={s.statValue} style={{ color: avgFeasibility >= 0.7 ? "var(--phase-2-color)" : avgFeasibility >= 0.5 ? "var(--phase-3-color)" : "var(--text)" }}>{projects.some((p) => p.feasibilityScore !== undefined) ? `${Math.round(avgFeasibility * 100)}%` : "—"}</span><span className={s.statSub}>Phase 1 기준</span></div>
         </div>
         <div className={s.sectionHeader}><span className={s.sectionTitle}>내 프로젝트</span><span className={s.sectionCount}>{projects.length}개</span></div>
         <div className={s.grid}>
           {projects.length === 0 ? (
             <div className={s.empty}><div className={s.emptyIcon}>✦</div><div className={s.emptyTitle}>아직 프로젝트가 없어요</div><div className={s.emptyDesc}>새 프로젝트를 만들면 7인의 AI 에이전트가 기획부터 대본까지 함께 만들어 드립니다.</div><button className={s.btnPrimary} onClick={() => setShowModal(true)}>첫 번째 프로젝트 시작하기</button></div>
-          ) : projects.map((p) => <ProjectCard key={p.id} project={p} />)}
+          ) : projects.map((p) => <ProjectCard key={p.id} project={p} onDelete={handleDelete} />)}
         </div>
       </main>
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={handleCreate} />}

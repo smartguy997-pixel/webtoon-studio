@@ -202,7 +202,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
     setMsgs(prev => [...prev, { id: msgId, agent, text: "", streaming: true }]);
 
     let full = "";
-    for await (const chunk of streamClaude({ system, messages, apiKey, maxTokens: 4000 })) {
+    for await (const chunk of streamClaude({ systemPrompt: system, messages, apiKey, maxTokens: 4000 })) {
       full += chunk;
       setMsgs(prev => prev.map(m => m.id === msgId ? { ...m, text: full } : m));
     }
