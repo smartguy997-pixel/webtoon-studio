@@ -332,6 +332,37 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
+
+      // Restore saved Phase 2 data
+      const saved = localStorage.getItem(`wts_phase2_${projectId}`);
+      if (saved) {
+        const { data } = JSON.parse(saved) as {
+          data: { world?: WorldCard; characters?: (CharSheet | null)[]; mst?: MstCard; ab?: AbCard };
+        };
+        if (data) {
+          const restored: Msg[] = [];
+          if (data.world) {
+            restored.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "world", world: data.world, streaming: false });
+          }
+          if (data.characters) {
+            data.characters.filter(Boolean).forEach(c => {
+              if (c) restored.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "character", character: c, streaming: false });
+            });
+          }
+          if (data.mst) {
+            restored.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "mst", mst: data.mst, streaming: false });
+            setMstDone(true);
+          }
+          if (data.ab) {
+            restored.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "ab", ab: data.ab, streaming: false });
+          }
+          if (restored.length > 0) {
+            setMessages(restored);
+            setStarted(true);
+            setAbChosen(!!data.ab);
+          }
+        }
+      }
     } catch { /* ignore */ }
   }, [projectId]);
 
@@ -507,9 +538,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         `[A/B 제안]\n${stripBlocks(abText).slice(0, 200)}`,
       ].join("\n\n");
 
-      // Save to localStorage
+      // Save to localStorage (include AB card for restore)
+      const abData = parseBlock<AbCard>(abText, "AB_CARD");
       localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
-        data: { world: worldData, characters: [char1Data, char2Data], mst: mstData },
+        data: { world: worldData, characters: [char1Data, char2Data], mst: mstData, ab: abData },
         savedAt: new Date().toISOString(),
       }));
     } catch (err) {
@@ -529,6 +561,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       return { ...m, ab: { ...m.ab, chosen: label } };
     }));
     setAbChosen(true);
+    // Persist AB choice back to localStorage
+    try {
+      const saved = localStorage.getItem(`wts_phase2_${projectId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { data: Record<string, unknown>; savedAt: string };
+        if (parsed.data?.ab) {
+          (parsed.data.ab as Record<string, unknown>).chosen = label;
+          localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify(parsed));
+        }
+      }
+    } catch { /* ignore */ }
 
     const userMsgId = uid();
     setMessages(prev => [...prev, { id: userMsgId, agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);
@@ -631,7 +674,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             {canProceed && (
               <div className={s.gatingRow}>
                 <span className={s.gatingMsg}>✓ 세계관 · 캐릭터 · MST · 디자인 방향 확정 — Phase 3 진행 가능</span>
-                <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-3`)}>Phase 3 시작 →</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={{
+                    background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)",
+                    borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600,
+                    padding: "10px 14px", cursor: "pointer", whiteSpace: "nowrap",
+                  }} onClick={() => {
+                    localStorage.removeItem(`wts_phase2_${projectId}`);
+                    setMessages([]); setStarted(false); setMstDone(false); setAbChosen(false);
+                  }}>
+                    재생성
+                  </button>
+                  <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-3`)}>Phase 3 시작 →</button>
+                </div>
               </div>
             )}
             <div className={s.inputRow}>
