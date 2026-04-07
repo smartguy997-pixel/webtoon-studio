@@ -4,6 +4,8 @@
  * 역할: ASSET_LIST 자동 생성, A/B Whisk 프롬프트 작성, 캐릭터 시트 생성
  * 출력: asset_list JSON, design_options[]
  */
+import Anthropic from "@anthropic-ai/sdk";
+
 export const CHARACTER_SYSTEM_PROMPT = `
 당신은 웹툰 캐릭터의 시각적 정체성을 설계하는 캐릭터 디자이너입니다.
 
@@ -24,7 +26,20 @@ export const CHARACTER_SYSTEM_PROMPT = `
 - A/B 옵션은 분명히 다른 방향성을 가져야 합니다 (미세 차이 금지)
 `.trim();
 
-export function characterAgent(worldDesign: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return CHARACTER_SYSTEM_PROMPT + "\n\nWorld Design:\n" + worldDesign;
+export async function* characterAgent(
+  client: Anthropic,
+  worldDesign: string,
+): AsyncGenerator<string> {
+  const stream = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4000,
+    system: CHARACTER_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: worldDesign }],
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    }
+  }
 }

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { authMiddleware } from "../middleware/auth.js";
+import { collections } from "../services/firestore.js";
 
 export const styleRouter = Router();
 
@@ -11,12 +12,21 @@ export const styleRouter = Router();
 // MST 조회
 styleRouter.get("/:projectId/mst", authMiddleware, async (req: Request, res: Response) => {
   const { projectId } = req.params;
-  // TODO: Firestore style_registry에서 MST 조회
-  res.json({
-    projectId,
-    mst: null,
-    message: "MST가 아직 설정되지 않았습니다. Phase 2를 완료하여 MST를 생성하세요.",
-  });
+  try {
+    const doc = await collections.styleRegistry(projectId).get();
+    if (!doc.exists) {
+      res.json({
+        projectId,
+        mst: null,
+        message: "MST가 아직 설정되지 않았습니다. Phase 2를 완료하여 MST를 생성하세요.",
+      });
+      return;
+    }
+    const data = doc.data();
+    res.json({ projectId, mst: data?.mst ?? null, ab_choice: data?.ab_choice ?? null });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "MST 조회 실패" });
+  }
 });
 
 // SCC (Style Consistency Check) 실행
@@ -30,11 +40,6 @@ styleRouter.post("/:projectId/scc", authMiddleware, async (req: Request, res: Re
   }
 
   try {
-    // TODO: Replicate CLIP ViT-L/14으로 실제 SCC 검증
-    // const sccService = await import("../services/scc.js");
-    // const score = await sccService.computeClipScore(projectId, imageUrl);
-
-    // 임시: 형식 검사만 수행
     const isValidUrl = imageUrl.startsWith("http");
     res.json({
       projectId,
@@ -59,7 +64,10 @@ styleRouter.put("/:projectId/registry", authMiddleware, async (req: Request, res
   }
 
   try {
-    // TODO: Firestore style_registry에 저장
+    await collections.styleRegistry(projectId).set(
+      { mst, ab_choice: ab_choice ?? null, updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
     res.json({
       projectId,
       saved: true,

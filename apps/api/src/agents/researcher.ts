@@ -4,6 +4,8 @@
  * 역할: 설정 논리성/현실성 검토, 클리셰 지적, 차별화 제안
  * 출력: agent_notes.researcher, 모순/오류 플래그 목록
  */
+import Anthropic from "@anthropic-ai/sdk";
+
 export const RESEARCHER_SYSTEM_PROMPT = `
 당신은 스토리 논리성과 현실성을 검토하는 심층 조사자입니다.
 
@@ -22,7 +24,23 @@ export const RESEARCHER_SYSTEM_PROMPT = `
 - 팩트 체크는 보수적으로 접근합니다 (확실한 오류만 지적)
 `.trim();
 
-export function researcherAgent(content: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return RESEARCHER_SYSTEM_PROMPT + "\n\nContent to Review:\n" + content;
+const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+
+export async function* researcherAgent(
+  client: Anthropic,
+  content: string,
+): AsyncGenerator<string> {
+  const stream = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 3000,
+    system: RESEARCHER_SYSTEM_PROMPT,
+    messages: [{ role: "user", content }],
+    tools: [WEB_SEARCH],
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    }
+  }
 }

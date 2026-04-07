@@ -7,6 +7,8 @@
  * - GATING 조건 충족 여부 판단 및 사용자 안내
  * - 항상 마지막으로 발언
  */
+import Anthropic from "@anthropic-ai/sdk";
+
 export const PRODUCER_SYSTEM_PROMPT = `
 당신은 AI Webtoon Studio의 총괄 프로듀서입니다.
 
@@ -29,7 +31,23 @@ export const PRODUCER_SYSTEM_PROMPT = `
 출력 형식: 공통 JSON 스키마 준수 + agent_notes.producer 필드 포함
 `.trim();
 
-export function producerAgent(context: string): string {
-  // TODO: Anthropic API 호출로 교체
-  return PRODUCER_SYSTEM_PROMPT + "\n\nContext:\n" + context;
+const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+
+export async function* producerAgent(
+  client: Anthropic,
+  context: string,
+): AsyncGenerator<string> {
+  const stream = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4000,
+    system: PRODUCER_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: context }],
+    tools: [WEB_SEARCH],
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      yield event.delta.text;
+    }
+  }
 }
