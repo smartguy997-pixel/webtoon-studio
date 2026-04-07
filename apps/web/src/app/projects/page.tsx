@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import s from "./page.module.css";
 
@@ -122,7 +123,12 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    onCreate({ id: uid(), title: title.trim(), genre, targetAudience: target.trim() || "미설정", currentPhase: 1, status: "active", createdAt: new Date().toISOString() });
+    const id = uid();
+    // Pre-seed genre+concept for Phase 1 auto-fill
+    if (genre || concept.trim()) {
+      localStorage.setItem(`wts_project_seed_${id}`, JSON.stringify({ genre, concept: concept.trim() }));
+    }
+    onCreate({ id, title: title.trim(), genre, targetAudience: target.trim() || "미설정", currentPhase: 1, status: "active", createdAt: new Date().toISOString() });
     onClose();
   }
 
@@ -145,16 +151,58 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   );
 }
 
+/** Read Phase 1 result from localStorage and update project fields */
+function syncProjectProgress(project: Project): Project {
+  try {
+    const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${project.id}`) ?? "null");
+    if (p1?.data) {
+      const score = p1.data.feasibility_score ?? p1.data.score;
+      const updated = { ...project };
+      if (score !== undefined) updated.feasibilityScore = Number(score);
+      // Advance phase if Phase 2 done
+      if (localStorage.getItem(`wts_phase2_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 2) as Phase;
+      if (localStorage.getItem(`wts_phase3_chat_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 3) as Phase;
+      // Count Phase 4 done episodes
+      let epCount = 0;
+      for (let i = 1; i <= 100; i++) {
+        if (localStorage.getItem(`wts_phase4_ep_${project.id}_${i}`)) epCount++;
+      }
+      if (epCount > 0) {
+        updated.currentPhase = Math.max(updated.currentPhase, 4) as Phase;
+        updated.episodeProgress = epCount;
+      }
+      return updated;
+    }
+  } catch { /* ignore */ }
+  return project;
+}
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const router = useRouter();
 
-  useEffect(() => { setProjects(loadProjects()); }, []);
+  const loadAndSync = useCallback(() => {
+    const raw = loadProjects();
+    const synced = raw.map(syncProjectProgress);
+    setProjects(synced);
+    // Save synced state back only if something changed
+    const changed = synced.some((p, i) =>
+      p.feasibilityScore !== raw[i].feasibilityScore ||
+      p.currentPhase !== raw[i].currentPhase ||
+      p.episodeProgress !== raw[i].episodeProgress
+    );
+    if (changed) saveProjects(synced);
+  }, []);
+
+  useEffect(() => { loadAndSync(); }, [loadAndSync]);
 
   function handleCreate(project: Project) {
     const next = [project, ...projects];
     setProjects(next);
     saveProjects(next);
+    // Navigate directly to Phase 1
+    router.push(`/projects/${project.id}/phase-1`);
   }
 
   const active = projects.filter((p) => p.status === "active");

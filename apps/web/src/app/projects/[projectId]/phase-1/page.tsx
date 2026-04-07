@@ -376,24 +376,35 @@ export default function Phase1Page({ params }: { params: { projectId: string } }
 
   useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
-  // ── Restore saved result from localStorage ──
+  // ── Restore saved result or pre-seed from localStorage ──
   useEffect(() => {
     const key = `wts_phase1_${projectId}`;
     const saved = localStorage.getItem(key);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved) as {
-        data: NonNullable<Msg["card"]>;
-        input: { genre: string; concept: string };
-        savedAt: string;
-      };
-      if (parsed.data && parsed.input) {
-        setGenre(parsed.input.genre);
-        setConcept(parsed.input.concept);
-        setResult(parsed.data);
-        setRestoredFromSave(true);
-      }
-    } catch { /* ignore */ }
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as {
+          data: NonNullable<Msg["card"]>;
+          input: { genre: string; concept: string };
+          savedAt: string;
+        };
+        if (parsed.data && parsed.input) {
+          setGenre(parsed.input.genre);
+          setConcept(parsed.input.concept);
+          setResult(parsed.data);
+          setRestoredFromSave(true);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+    // Pre-seed from project creation (no result yet)
+    const seed = localStorage.getItem(`wts_project_seed_${projectId}`);
+    if (seed) {
+      try {
+        const { genre: g, concept: c } = JSON.parse(seed) as { genre: string; concept: string };
+        if (g) setGenre(g);
+        if (c) setConcept(c);
+      } catch { /* ignore */ }
+    }
   }, [projectId]);
 
   // ── Load previous Firestore discussion on mount ──
