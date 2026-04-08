@@ -491,6 +491,35 @@ function RoundHeader({ round, label }: { round: number; label: string }) {
   );
 }
 
+// ─── Message line renderer (supports agent formatting) ───────────────────────
+
+function renderMsgLine(line: string, i: number, agentColor: string) {
+  // ━━ Section heading ━━
+  if (line.startsWith("━━") || (line.startsWith("[") && line.endsWith("]"))) {
+    return (
+      <div key={i} style={{ fontWeight: 700, color: agentColor, fontSize: 12, marginTop: i === 0 ? 0 : 10, marginBottom: 3, letterSpacing: "0.03em" }}>
+        {line}
+      </div>
+    );
+  }
+  // • or ① ② ③ bullets
+  if (/^[•①②③④⑤]/.test(line)) {
+    return (
+      <div key={i} style={{ paddingLeft: 12, color: "#cbd5e1", fontSize: 13, lineHeight: 1.6, marginBottom: 2 }}>
+        {line}
+      </div>
+    );
+  }
+  // Blank line → small gap
+  if (!line.trim()) return <div key={i} style={{ height: 6 }} />;
+  // Default
+  return (
+    <div key={i} style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.65 }}>
+      {line}
+    </div>
+  );
+}
+
 function MsgBubble({ msg }: { msg: Msg }) {
   const agent = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
@@ -513,12 +542,12 @@ function MsgBubble({ msg }: { msg: Msg }) {
           className={`${styles.bubble} ${isUser ? styles.bubbleUser : ""}`}
           style={!isUser ? { borderLeftColor: agent.color, background: agent.bg } : {}}
         >
-          {displayText.split("\n").map((line, i) => (
-            <span key={i}>
-              {line}
-              {i < displayText.split("\n").length - 1 && <br />}
-            </span>
-          ))}
+          {isUser
+            ? displayText.split("\n").map((line, i) => (
+                <span key={i}>{line}{i < displayText.split("\n").length - 1 && <br />}</span>
+              ))
+            : displayText.split("\n").map((line, i) => renderMsgLine(line, i, agent.color))
+          }
           {msg.streaming && <span className={styles.streamCursor} />}
           {msg.streaming && !displayText && <ThinkingDots />}
         </div>
