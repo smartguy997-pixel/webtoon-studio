@@ -905,7 +905,7 @@ export default function Phase1Page() {
 
     // 2) Fallback: load from Firestore (if localStorage is empty / cleared)
     getDoc(doc(db, "project_summary", projectId, "phase_1", "result"))
-      .then((snap) => {
+      .then((snap: import("firebase/firestore").DocumentSnapshot) => {
         if (!snap.exists()) return;
         const data = snap.data() as Phase1Result & { genre?: string; concept?: string; savedAt?: { toDate?: () => Date } };
         const savedDate = data.savedAt?.toDate?.()?.toISOString() ?? new Date().toISOString();
