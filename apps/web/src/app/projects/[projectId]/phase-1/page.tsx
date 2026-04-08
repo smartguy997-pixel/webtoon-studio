@@ -797,6 +797,13 @@ export default function Phase1Page() {
     setMsgs((prev) => prev.map((m) => m.id === id ? { ...m, text, streaming } : m));
   }, []);
 
+  // ── Helpers: sleep + context trim ──
+  // Context is trimmed before injection into prompts to prevent
+  // token accumulation across rounds (main cause of 429 rate limits).
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const trimCtx = (text: string, max = 700): string =>
+    text.length <= max ? text : text.slice(0, max) + "\n...(요약됨)";
+
   // ── Stream one agent ──
   const streamAgent = useCallback(async (
     apiKey: string,
@@ -805,6 +812,7 @@ export default function Phase1Page() {
     systemPrompt: string,
     userContent: string,
     useSearch = false,
+    maxTokens = 1100,
   ): Promise<string> => {
     const id = addMsg(agent, round, "", true);
     let full = "";
@@ -814,7 +822,7 @@ export default function Phase1Page() {
       apiKey,
       systemPrompt,
       messages: [{ role: "user", content: userContent }],
-      maxTokens: 1500,
+      maxTokens,
       tools,
     })) {
       full += chunk;
@@ -868,16 +876,29 @@ export default function Phase1Page() {
     }
 
     // ── Round 1 ──
+    // Web search only for strategist (first call). Researcher builds on that context.
+    // Each subsequent agent uses trimmed context to prevent token accumulation.
     setDebatePhase("r1");
     const userContent = `장르: ${g}\n기획 개요: ${c}`;
 
-    const strat1 = await streamAgent(apiKey, "strategist", 1, P_STRATEGIST_R1(g, c), userContent, true);
-    const resrch1 = await streamAgent(apiKey, "researcher", 1, P_RESEARCHER_R1(g, c),
-      `기획: ${c}\n\n전략기획자 분석:\n${strat1}`, true);
+    const strat1 = await streamAgent(
+      apiKey, "strategist", 1, P_STRATEGIST_R1(g, c),
+      userContent, /* useSearch */ true, /* maxTokens */ 1100,
+    );
+
+    await sleep(2000); // spread requests to avoid hitting 30k TPM limit
+
+    const resrch1 = await streamAgent(
+      apiKey, "researcher", 1, P_RESEARCHER_R1(g, c),
+      // Pass only trimmed strategist text to keep input tokens low
+      `기획: ${c.slice(0, 300)}\n\n[전략기획자 요약]\n${trimCtx(strat1, 600)}`,
+      /* useSearch */ false, /* maxTokens */ 1000,
+    );
 
     // ── Intervention ──
     setDebatePhase("r1_wait");
-    const r1Context = `[전략기획자 Round1]\n${strat1}\n\n[심층조사자 Round1]\n${resrch1}`;
+    // Build trimmed r1 context for Round 2 prompts
+    const r1Context = `[전략기획자]\n${trimCtx(strat1, 500)}\n\n[심층조사자]\n${trimCtx(resrch1, 500)}`;
 
     const userOpinion = await new Promise<string>((resolve) => {
       interventionResolveRef.current = resolve;
@@ -887,18 +908,43 @@ export default function Phase1Page() {
       addMsg("user", 1, userOpinion, false);
     }
 
+    await sleep(2000);
+
     // ── Round 2 ──
+    // Neither scenario nor script uses web search — they synthesise R1 context
     setDebatePhase("r2");
-    const scen2 = await streamAgent(apiKey, "scenario", 2, buildP_SCENARIO_R2(r1Context, userOpinion),
-      `장르: ${g}\n기획: ${c}`, true);
-    const scrpt2 = await streamAgent(apiKey, "script", 2, buildP_SCRIPT_R2(r1Context, userOpinion),
-      `장르: ${g}\n기획: ${c}\n\n시나리오작가 분석:\n${scen2}`, false);
+    const scen2 = await streamAgent(
+      apiKey, "scenario", 2, buildP_SCENARIO_R2(r1Context, userOpinion),
+      `장르: ${g}\n기획: ${c.slice(0, 200)}`,
+      /* useSearch */ false, /* maxTokens */ 1000,
+    );
+
+    await sleep(2000);
+
+    const scrpt2 = await streamAgent(
+      apiKey, "script", 2, buildP_SCRIPT_R2(r1Context, userOpinion),
+      `장르: ${g}\n기획: ${c.slice(0, 200)}\n\n[시나리오 요약]\n${trimCtx(scen2, 400)}`,
+      /* useSearch */ false, /* maxTokens */ 1000,
+    );
+
+    await sleep(2000);
 
     // ── Round 3 ──
+    // Producer receives trimmed summaries of all 4 agents
     setDebatePhase("r3");
-    const allContext = `${r1Context}\n\n[사용자 의견]\n${userOpinion || "(없음)"}\n\n[시나리오작가 Round2]\n${scen2}\n\n[연출작가 Round2]\n${scrpt2}`;
-    const prod3 = await streamAgent(apiKey, "producer", 3, buildP_PRODUCER_R3(allContext),
-      `장르: ${g}\n기획: ${c}`, false);
+    const allContext = [
+      `[전략기획자]\n${trimCtx(strat1, 400)}`,
+      `[심층조사자]\n${trimCtx(resrch1, 400)}`,
+      userOpinion ? `[사용자 의견]\n${userOpinion}` : "",
+      `[시나리오작가]\n${trimCtx(scen2, 400)}`,
+      `[연출작가]\n${trimCtx(scrpt2, 400)}`,
+    ].filter(Boolean).join("\n\n");
+
+    const prod3 = await streamAgent(
+      apiKey, "producer", 3, buildP_PRODUCER_R3(allContext),
+      `장르: ${g}\n기획: ${c.slice(0, 200)}`,
+      /* useSearch */ false, /* maxTokens */ 2000, // needs room for JSON output
+    );
 
     // Parse result
     const parsed = parsePhase1Result(prod3);
