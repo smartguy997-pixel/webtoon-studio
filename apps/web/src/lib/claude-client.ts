@@ -2,6 +2,9 @@
  * Browser-side Anthropic API helper.
  * Uses the `anthropic-dangerous-direct-browser-access` header to allow
  * direct browser → Anthropic API calls without a proxy server.
+ *
+ * 429 rate-limit handling: automatic exponential-backoff retry
+ * (yields a status line into the stream so the UI can show progress).
  */
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
@@ -16,11 +19,6 @@ export const WEB_SEARCH_TOOL = {
 
 // ─── API key helper ───────────────────────────────────────────────────────────
 
-/**
- * Reads the Anthropic API key from localStorage.
- * Tries `wts_anthropic_key` first, then falls back to `ANTHROPIC_API_KEY`.
- * Always trims whitespace.
- */
 export function getAnthropicKey(): string | null {
   if (typeof window === "undefined") return null;
   const raw =
@@ -42,17 +40,20 @@ export interface StreamClaudeOptions {
   model?: string;
 }
 
-// ─── Streaming generator ──────────────────────────────────────────────────────
+// ─── Streaming generator (with 429 auto-retry) ───────────────────────────────
 
 /**
  * Streams a Claude response as an async generator of text chunks.
+ *
+ * 429 rate-limit: waits [12 s, 25 s, 50 s] then retries (max 3 retries).
+ * Yields a human-readable wait message into the stream so the UI stays live.
  *
  * Handles:
  * - `content_block_delta` text deltas → yields the text chunk
  * - `tool_use` blocks (web_search) → yields a human-readable search indicator
  * - `tool_result` blocks → silently skipped (internal plumbing)
  *
- * Throws on non-200 responses (including 401 authentication errors).
+ * Throws on non-200 / non-429 responses (including 401 authentication errors).
  */
 export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<string> {
   const {
@@ -76,100 +77,110 @@ export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<s
     body.tools = tools;
   }
 
-  const res = await fetch(ANTHROPIC_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify(body),
-  });
+  // 429 backoff schedule (ms): 12 s, 25 s, 50 s  → up to 3 retries
+  const BACKOFF = [12_000, 25_000, 50_000] as const;
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Anthropic API ${res.status}: ${errText}`);
-  }
+  for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
+    // ── Wait on retry ──
+    if (attempt > 0) {
+      const wait = BACKOFF[attempt - 1];
+      yield `\n\n⏳ **레이트 리밋(429) — ${Math.round(wait / 1000)}초 대기 후 재시도 (${attempt}/${BACKOFF.length})...**\n\n`;
+      await new Promise<void>((r) => setTimeout(r, wait));
+    }
 
-  if (!res.body) throw new Error("No response body");
+    // ── Fetch ──
+    const res = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify(body),
+    });
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-
-  // Track current tool_use block for web search indicator
-  let blockType: string | null = null;
-  let toolName: string | null = null;
-  let toolInputBuf = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buf += decoder.decode(value, { stream: true });
-
-    // Process complete SSE lines
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") return;
-
-      let event: Record<string, unknown>;
-      try {
-        event = JSON.parse(data) as Record<string, unknown>;
-      } catch {
-        continue;
+    if (!res.ok) {
+      if (res.status === 429 && attempt < BACKOFF.length) {
+        continue; // will retry
       }
+      const errText = await res.text();
+      throw new Error(`Anthropic API ${res.status}: ${errText}`);
+    }
 
-      const type = event.type as string;
+    if (!res.body) throw new Error("No response body");
 
-      // ── Content block start ──
-      if (type === "content_block_start") {
-        const block = event.content_block as Record<string, unknown> | undefined;
-        blockType = (block?.type as string) ?? null;
-        toolName = blockType === "tool_use" ? (block?.name as string) ?? null : null;
-        toolInputBuf = "";
-      }
+    // ── Stream ──
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let blockType: string | null = null;
+    let toolName: string | null = null;
+    let toolInputBuf = "";
 
-      // ── Content block delta ──
-      if (type === "content_block_delta") {
-        const delta = event.delta as Record<string, unknown> | undefined;
-        const deltaType = delta?.type as string;
+    try {
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-        if (deltaType === "text_delta") {
-          yield (delta?.text as string) ?? "";
-        } else if (deltaType === "input_json_delta" && blockType === "tool_use") {
-          toolInputBuf += (delta?.partial_json as string) ?? "";
-        }
-      }
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
 
-      // ── Content block stop ──
-      if (type === "content_block_stop") {
-        // Emit web search indicator when search tool completes
-        if (blockType === "tool_use" && toolName === "web_search" && toolInputBuf) {
-          try {
-            const input = JSON.parse(toolInputBuf) as { query?: string };
-            if (input.query) {
-              yield `\n\n🔍 **웹 검색**: "${input.query}"\n\n`;
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break outer;
+
+          let event: Record<string, unknown>;
+          try { event = JSON.parse(data) as Record<string, unknown>; }
+          catch { continue; }
+
+          const type = event.type as string;
+
+          // ── Content block start ──
+          if (type === "content_block_start") {
+            const block = event.content_block as Record<string, unknown> | undefined;
+            blockType = (block?.type as string) ?? null;
+            toolName = blockType === "tool_use" ? (block?.name as string) ?? null : null;
+            toolInputBuf = "";
+          }
+
+          // ── Content block delta ──
+          if (type === "content_block_delta") {
+            const delta = event.delta as Record<string, unknown> | undefined;
+            const dt = delta?.type as string;
+            if (dt === "text_delta") {
+              yield (delta?.text as string) ?? "";
+            } else if (dt === "input_json_delta" && blockType === "tool_use") {
+              toolInputBuf += (delta?.partial_json as string) ?? "";
             }
-          } catch {
-            // ignore malformed JSON
+          }
+
+          // ── Content block stop ──
+          if (type === "content_block_stop") {
+            if (blockType === "tool_use" && toolName === "web_search" && toolInputBuf) {
+              try {
+                const input = JSON.parse(toolInputBuf) as { query?: string };
+                if (input.query) yield `\n\n🔍 **웹 검색**: "${input.query}"\n\n`;
+              } catch { /* ignore */ }
+            }
+            blockType = null;
+            toolName = null;
+            toolInputBuf = "";
+          }
+
+          // ── Top-level error ──
+          if (type === "error") {
+            const err = event.error as Record<string, unknown> | undefined;
+            throw new Error((err?.message as string) ?? "Anthropic stream error");
           }
         }
-        blockType = null;
-        toolName = null;
-        toolInputBuf = "";
       }
-
-      // ── Top-level error ──
-      if (type === "error") {
-        const err = event.error as Record<string, unknown> | undefined;
-        throw new Error((err?.message as string) ?? "Anthropic stream error");
-      }
+    } finally {
+      reader.releaseLock();
     }
+
+    return; // ← success: exit retry loop
   }
 }
