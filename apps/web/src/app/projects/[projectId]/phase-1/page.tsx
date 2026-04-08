@@ -494,6 +494,32 @@ function RoundHeader({ round, label }: { round: number; label: string }) {
 // ─── Message line renderer (supports agent formatting) ───────────────────────
 
 function renderMsgLine(line: string, i: number, agentColor: string) {
+  // 🔍 Web search indicator line
+  if (line.includes("🔍 **웹 검색**") || line.startsWith("🔍")) {
+    const query = line.replace(/.*🔍\s*\*\*웹 검색\*\*:\s*/, "").replace(/"/g, "");
+    return (
+      <div key={i} style={{
+        display: "flex", alignItems: "center", gap: 6,
+        background: "rgba(124,108,252,0.08)", border: "1px solid rgba(124,108,252,0.18)",
+        borderRadius: 6, padding: "4px 10px", margin: "6px 0", fontSize: 11, color: "#a78bfa",
+      }}>
+        <span>🔍</span>
+        <span style={{ color: "#64748b" }}>웹 검색:</span>
+        <span style={{ fontStyle: "italic" }}>{query}</span>
+      </div>
+    );
+  }
+  // ⏳ Rate-limit wait indicator
+  if (line.includes("⏳") && line.includes("레이트 리밋")) {
+    return (
+      <div key={i} style={{
+        background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)",
+        borderRadius: 6, padding: "4px 10px", margin: "4px 0", fontSize: 11, color: "#fbbf24",
+      }}>
+        {line.replace(/\*\*/g, "")}
+      </div>
+    );
+  }
   // ━━ Section heading ━━
   if (line.startsWith("━━") || (line.startsWith("[") && line.endsWith("]"))) {
     return (
