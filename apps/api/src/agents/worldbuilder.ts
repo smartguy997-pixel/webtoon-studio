@@ -25,7 +25,7 @@ export const WORLDBUILDER_SYSTEM_PROMPT = `
 - 100화 분량을 지탱할 수 있는 깊이로 설계합니다
 `.trim();
 
-const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+const WEB_SEARCH: Anthropic.Messages.WebSearchTool20260209 = { type: "web_search_20260209", name: "web_search" };
 
 export async function* worldbuilderAgent(
   client: Anthropic,

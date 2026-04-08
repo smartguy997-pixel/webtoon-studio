@@ -15,7 +15,7 @@ export const STRATEGIST_SYSTEM_PROMPT = `당신은 K-웹툰 시장 전문 전략
 출력: feasibility_score(0~1), market_analysis JSON, usp 배열, agent_notes.strategist
 제약: 독자 관점 언어로 USP 작성 / feasibility_score < 0.5 시 재기획 이유 명시`.trim();
 
-const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+const WEB_SEARCH: Anthropic.Messages.WebSearchTool20260209 = { type: "web_search_20260209", name: "web_search" };
 
 export async function* strategistAgent(
   client: Anthropic,

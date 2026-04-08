@@ -31,7 +31,7 @@ export const PRODUCER_SYSTEM_PROMPT = `
 출력 형식: 공통 JSON 스키마 준수 + agent_notes.producer 필드 포함
 `.trim();
 
-const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+const WEB_SEARCH: Anthropic.Messages.WebSearchTool20260209 = { type: "web_search_20260209", name: "web_search" };
 
 export async function* producerAgent(
   client: Anthropic,

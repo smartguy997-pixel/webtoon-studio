@@ -5,7 +5,7 @@ import { authMiddleware } from "../middleware/auth.js";
 export const phasesRouter = Router();
 
 const MODEL = "claude-sonnet-4-6";
-const WEB_SEARCH_TOOL = { type: "web_search_20260209" as const, name: "web_search" };
+const WEB_SEARCH_TOOL: Anthropic.Messages.WebSearchTool20260209 = { type: "web_search_20260209", name: "web_search" };
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────
 
@@ -42,7 +42,7 @@ async function streamAgent(
     max_tokens: maxTokens,
     system: systemPrompt,
     messages,
-    tools: tools as Anthropic.Tool[],
+    tools: tools as Anthropic.Messages.ToolUnion[],
     stream: true,
   });
 

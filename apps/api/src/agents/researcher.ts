@@ -24,7 +24,7 @@ export const RESEARCHER_SYSTEM_PROMPT = `
 - 팩트 체크는 보수적으로 접근합니다 (확실한 오류만 지적)
 `.trim();
 
-const WEB_SEARCH: Anthropic.Tool = { type: "web_search_20260209" as "web_search_20260209", name: "web_search" };
+const WEB_SEARCH: Anthropic.Messages.WebSearchTool20260209 = { type: "web_search_20260209", name: "web_search" };
 
 export async function* researcherAgent(
   client: Anthropic,
