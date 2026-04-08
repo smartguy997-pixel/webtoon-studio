@@ -126,25 +126,94 @@ async function streamAgent(
   return fullText;
 }
 
-// ─── Phase 1: 기획 분석 ───────────────────────────────────────────────────────
+// ─── Phase 1: 기획 분석 (상용화 수준, 3라운드 전문가 토론) ────────────────────
 
-const STRATEGIST_PROMPT = `당신은 K-웹툰 시장 전문 전략 기획자(agent_strategist)입니다.
-웹 검색으로 최신 웹툰 플랫폼 트렌드를 조사하고, 장르 포지셔닝·경쟁작 벤치마크·USP 3~5개를 도출합니다.
-말투: 전문적이고 논리적. 자연스러운 한국어. 분량: 300~500자.`;
+const P1_STRATEGIST = `당신은 K-웹툰 시장 전문 전략 기획자(agent_strategist)입니다.
+네이버웹툰/카카오페이지/레진코믹스에서 10년 이상 경험한 시니어 PD 수준의 분석을 제공합니다.
 
-const RESEARCHER_PROMPT = `당신은 스토리 논리성·현실성 검토 전문 심층 조사자(agent_researcher)입니다.
-웹 검색으로 유사 소재 선행 작품·클리셰 여부를 팩트체크하고 건설적 개선 방향을 제안합니다.
-말투: 분석적이고 건설적. 자연스러운 한국어. 분량: 300~500자.`;
+[필수 수행]
+1. 웹 검색으로 현재 해당 장르 실제 인기 트렌드·플랫폼 TOP 작품 확인
+2. 실제 경쟁작 2~3종 실명으로 벤치마크:
+   - 작품명, 플랫폼, 연재기간, 독자 반응 수치 명시
+   - 예: "《나 혼자만 레벨업》(카카오페이지, 2018~2021, 누적 14억 뷰)은..."
+3. 시장 포지셔닝 평가: 대중성(0~100점) / 신규IP(0~100점) 위치 명시
+4. 핵심 독자층 분석 (연령대/성별/소비 패턴)
+5. USP 3~5개: "독자는 이 작품에서 [구체적 경험]을 얻습니다" 형식
 
-const PRODUCER_PROMPT = `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
-전략기획자와 심층조사자의 의견을 종합하고 Phase 1 최종 실현가능성 평가를 내립니다.
-말투: 권위 있고 명확. 자연스러운 한국어. 분량: 200~300자.
+[말투] 데이터 기반, 논리적, 전문적. 불확실 수치는 "(추정)" 표시.
+[분량] 450~650자.`;
 
-⚠️ 응답 마지막에 반드시 아래 JSON 블록을 포함하세요:
+const P1_RESEARCHER = `당신은 스토리 논리성·현실성 검토 전문 심층 조사자(agent_researcher)입니다.
+
+[필수 수행]
+1. 웹 검색으로 기획안 배경·설정 현실성 팩트체크
+2. 유사 소재 선행 웹툰 2~3종 실명 언급:
+   - "이 [요소]는 《작품명》(플랫폼, 연도)의 [소재]와 유사합니다"
+   - 클리셰 수준: 심각/경미/차별화 가능 평가
+3. 내부 설정 모순 구체적 지적:
+   - "X 능력이 Y 조건이면 Z 장면이 논리적으로 불가능해집니다"
+   - 각 문제마다 구체적 대안 반드시 제시 (단순 비판 금지)
+4. 전략기획자 분석 보완 또는 다른 시각 제시
+
+[말투] 날카롭되 건설적. 작품명·수치 구체 인용. 문제마다 대안 필수.
+[분량] 400~600자.`;
+
+const P1_SCENARIO = `당신은 K-웹툰 전문 시나리오 작가(agent_scenario)입니다.
+
+[필수 수행]
+1. 3막 구조 화수 배분 (구체적 숫자):
+   - 1막 도입 (1~N화): 훅, 세계관 설정, 동기 확립
+   - 2막 갈등 (N~M화): 핵심 갈등, 반전 포인트
+   - 3막 해결 (M~100화): 클라이맥스, 엔딩
+2. 독자 이탈 방지 훅 포인트 화수 명시:
+   예: "5화: 첫 반전 / 20화: 시즌1 클라이맥스 / 50화: 주인공 각성"
+3. 웹 검색으로 동일 장르 장기 연재 성공 패턴 확인
+4. 시즌 분리·스핀오프 잠재력 평가
+
+[말투] 실무적, 구체적. 화수는 반드시 숫자. [분량] 350~500자.`;
+
+const P1_SCRIPT = `당신은 K-웹툰 전문 대본/연출 작가(agent_script)입니다.
+
+[필수 수행]
+1. 웹툰 세로스크롤 특성 반영 연출 전략:
+   - 독자가 스크롤 멈추는 "정지 포인트" 컷 배치 제안
+   - 모바일 기준 1화 최적 분량 (컷 수)
+2. 장르별 연출 문법:
+   예: 로맨스→감정선 클로즈업 / 액션→와이드+스플래시 / 공포→공백 활용
+3. 화 유형별 컷 배분 (구체적 숫자):
+   - 도입화·클라이맥스화·일상화 각각
+4. 독자 감정 조절 시각적 장치 제안
+
+[말투] 현장감 있는 실무 언어. 컷 수 구체적. [분량] 350~500자.`;
+
+const P1_PRODUCER_FINAL = `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
+실제 웹툰 기획사 대표 PD 수준의 최종 보고서를 작성합니다.
+
+[필수 수행]
+1. "토론을 마무리합니다." 로 시작
+2. 4에이전트 핵심 의견 종합 (충돌 지점 중재 포함)
+3. Phase 2 진행 여부 명확히 안내
+
+[말투] 권위 있고 명확. PD 보고서 수준. [분량] 300~450자 (JSON 별도).
+
+⚠️ 응답 마지막에 반드시 아래 JSON을 정확히 포함하세요:
+
 [PHASE1_RESULT]
-{"feasibility_score":0.75,"verdict":"conditional","usp":["USP 1","USP 2","USP 3"],"summary":"100자 이내 요약"}
+{
+  "feasibility_score": 0.82,
+  "feasibility_breakdown": {"market": 85, "originality": 80, "producibility": 75, "commercial": 88},
+  "verdict": "go",
+  "summary": "80자 이내 핵심 요약",
+  "usp": [{"icon": "⚡", "title": "USP 제목", "desc": "설명\\n2줄", "prediction": "독자 반응 예측"}],
+  "competitors": [{"title": "실제 작품명", "platform": "네이버웹툰", "period": "2022~연재중", "readers": "주간 200만+", "strengths": "강점", "weaknesses": "약점", "differentiation": "차별점", "genre_color": "#60a5fa"}],
+  "positioning": {"ours": {"x": 65, "y": 72, "label": "우리 작품"}, "competitors": [{"x": 80, "y": 30, "label": "작품명"}]},
+  "radar": {"ours": [70, 85, 60, 80, 75], "avg": [65, 60, 70, 65, 70], "categories": ["신선도", "감정몰입", "세계관", "캐릭터", "상업성"]},
+  "final_report": "A4 1장 기획 요약서 전문 (최소 300자)"
+}
 [/PHASE1_RESULT]
-verdict 기준: "go" ≥ 0.70, "conditional" 0.50~0.69, "reject" < 0.50`;
+
+verdict: "go" ≥ 0.70 | "conditional" 0.50~0.69 | "reject" < 0.50
+모든 수치는 실제 토론 기반으로 정직하게 산정.`;
 
 phasesRouter.post("/:projectId/phase-1", authMiddleware, async (req: Request, res: Response) => {
   const { genre, concept } = req.body as { genre?: string; concept?: string };
@@ -154,26 +223,42 @@ phasesRouter.post("/:projectId/phase-1", authMiddleware, async (req: Request, re
   sseHeaders(res);
 
   try {
-    const userPrompt = `장르: ${genre}\n\n아이디어: ${concept}`;
+    const userPrompt = `장르: ${genre}\n\n기획 아이디어:\n${concept}`;
 
-    // Strategist
-    const strategistText = await streamAgent(res, client, "strategist", STRATEGIST_PROMPT,
-      [{ role: "user", content: userPrompt }]);
+    // ── Round 1: 전략기획자 ──
+    sendEvent(res, "round_start", { round: 1, label: "시장 분석 · 팩트체크" });
+    const s1Text = await streamAgent(res, client, "strategist", P1_STRATEGIST,
+      [{ role: "user", content: userPrompt }], 2000, true);
 
-    // Researcher
-    const researcherText = await streamAgent(res, client, "researcher", RESEARCHER_PROMPT, [
+    // ── Round 1: 심층조사자 ──
+    const r1Text = await streamAgent(res, client, "researcher", P1_RESEARCHER, [
       { role: "user", content: userPrompt },
-      { role: "assistant", content: `[전략기획자]\n${strategistText}` },
-      { role: "user", content: "심층 조사자의 분석을 부탁합니다." },
-    ]);
+      { role: "assistant", content: `[전략기획자]\n${s1Text}` },
+      { role: "user", content: "심층 조사 분석을 진행해주세요." },
+    ], 2000, true);
 
-    // Producer
-    await streamAgent(res, client, "producer", PRODUCER_PROMPT, [
-      { role: "user", content: userPrompt },
-      { role: "assistant", content: `[전략기획자]\n${strategistText}\n\n[심층조사자]\n${researcherText}` },
-      { role: "user", content: "총괄 프로듀서의 최종 평가를 부탁합니다." },
-    ], 3000, true);
+    const r1Context = `[전략기획자 Round 1]\n${s1Text}\n\n[심층조사자 Round 1]\n${r1Text}`;
 
+    // ── Round 2: 시나리오 작가 ──
+    sendEvent(res, "round_start", { round: 2, label: "구조 설계 · 연출 전략" });
+    const sc2Text = await streamAgent(res, client, "scenario", P1_SCENARIO, [
+      { role: "user", content: `${userPrompt}\n\n[1라운드 토론]\n${r1Context}\n\n2라운드 시나리오 구조 분석을 진행해주세요.` },
+    ], 2000, true);
+
+    // ── Round 2: 연출 작가 ──
+    const sp2Text = await streamAgent(res, client, "script", P1_SCRIPT, [
+      { role: "user", content: `${userPrompt}\n\n[1라운드 토론]\n${r1Context}\n\n2라운드 연출 전략을 분석해주세요.` },
+    ], 2000, false);
+
+    const allContext = `${r1Context}\n\n[시나리오 작가 Round 2]\n${sc2Text}\n\n[연출 작가 Round 2]\n${sp2Text}`;
+
+    // ── Round 3: 총괄 프로듀서 ──
+    sendEvent(res, "round_start", { round: 3, label: "최종 종합 · PD 보고서" });
+    await streamAgent(res, client, "producer", P1_PRODUCER_FINAL, [
+      { role: "user", content: `${userPrompt}\n\n[전체 토론]\n${allContext}\n\n최종 종합 평가를 진행해주세요.` },
+    ], 3500, true);
+
+    void sp2Text; // used via allContext
     await tickWindow(res, client, req.params.projectId, 1, userPrompt);
     sendEvent(res, "done", { phase: 1 });
   } catch (err) {
