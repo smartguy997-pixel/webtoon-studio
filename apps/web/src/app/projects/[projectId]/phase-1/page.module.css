@@ -112,6 +112,69 @@
   color: #32324a;
 }
 
+/* ─── Form row / col ─────────────────────────────────────────────────────── */
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.formCol {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Platform cards ─────────────────────────────────────────────────────── */
+
+.platformGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.platformCard {
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.platformCard:hover {
+  border-color: #4a4a6a;
+  background: #1e1e2e;
+}
+
+.platformCardActive {
+  border-color: #7c6cfc;
+  background: rgba(124,108,252,0.08);
+}
+
+.platformCardLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.platformCardActive .platformCardLabel {
+  color: #a78bfa;
+}
+
+.platformCardDesc {
+  font-size: 11px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* ─── Start button ───────────────────────────────────────────────────────── */
+
 .btnStart {
   margin-top: 24px;
   width: 100%;
