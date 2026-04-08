@@ -1012,6 +1012,28 @@
   padding: 14px 20px 16px;
   background: #0d0d14;
   border-top: 1px solid #1e1e2e;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btnDashboard {
+  width: 100%;
+  background: rgba(124,108,252,0.10);
+  border: 1px solid rgba(124,108,252,0.35);
+  border-radius: 12px;
+  color: #a78bfa;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 0;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btnDashboard:hover {
+  background: rgba(124,108,252,0.18);
+  transform: translateY(-1px);
 }
 
 .btnGating {

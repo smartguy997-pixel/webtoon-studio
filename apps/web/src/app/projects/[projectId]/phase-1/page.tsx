@@ -1094,6 +1094,12 @@ export default function Phase1Page() {
 
               {/* Gating */}
               <div className={styles.gatingRow}>
+                <button
+                  className={styles.btnDashboard}
+                  onClick={() => router.push(`/projects/${projectId}/phase-1/dashboard`)}
+                >
+                  📊 대시보드 보기
+                </button>
                 {result.verdict !== "reject" ? (
                   <button
                     className={styles.btnGating}
