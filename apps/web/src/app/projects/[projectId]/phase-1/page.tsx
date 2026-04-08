@@ -875,6 +875,7 @@ export default function Phase1Page() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [result, setResult] = useState<Phase1Result | null>(null);
   const [isMock, setIsMock] = useState(false);
+  const [showGatingModal, setShowGatingModal] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [savedGenre, setSavedGenre] = useState<string | null>(null);
@@ -1359,7 +1360,12 @@ Round 1 검토를 반영합니다. 전략기획자의 "하이브리드 감정 �
               ))}
             </div>
 
-            <label className={styles.formLabel} style={{ marginTop: 18 }}>기획 개요</label>
+            <div className={styles.formLabelRow}>
+              <label className={styles.formLabel} style={{ marginTop: 18, marginBottom: 0 }}>기획 개요</label>
+              <span className={styles.charCount} style={{ color: concept.length >= 100 ? "#34d399" : concept.length >= 50 ? "#fbbf24" : "#475569" }}>
+                {concept.length}자 {concept.length >= 100 ? "✓ 충분" : concept.length >= 50 ? "· 조금 더" : "· 더 작성하세요"}
+              </span>
+            </div>
             <textarea
               className={styles.formTextarea}
               value={concept}
@@ -1407,6 +1413,34 @@ Round 1 검토를 반영합니다. 전략기획자의 "하이브리드 감정 �
           >
             다시 분석
           </button>
+        </div>
+
+        {/* Round progress bar */}
+        <div className={styles.progressBar}>
+          {[
+            { key: "r1",   label: "Round 1", sub: "시장 분석",  phases: ["r1", "r1_wait"] },
+            { key: "r2",   label: "Round 2", sub: "심화 분석",  phases: ["r2"] },
+            { key: "r3",   label: "Round 3", sub: "총괄 종합",  phases: ["r3"] },
+            { key: "done", label: "완료",     sub: "결과 확인",  phases: ["done"] },
+          ].map((step, idx) => {
+            const phaseOrder = ["r1", "r1_wait", "r2", "r3", "done"];
+            const currentIdx = phaseOrder.indexOf(debatePhase);
+            const stepBaseIdx = phaseOrder.indexOf(step.phases[0]);
+            const isActive = step.phases.includes(debatePhase);
+            const isDone   = currentIdx > phaseOrder.indexOf(step.phases[step.phases.length - 1]);
+            return (
+              <div key={step.key} className={styles.progressStep}>
+                {idx > 0 && <div className={`${styles.progressConnector} ${isDone || isActive ? styles.progressConnectorActive : ""}`} />}
+                <div className={`${styles.progressDot} ${isActive ? styles.progressDotActive : isDone ? styles.progressDotDone : ""}`}>
+                  {isDone ? "✓" : idx + 1}
+                </div>
+                <div className={styles.progressLabel}>
+                  <span className={`${styles.progressTitle} ${isActive ? styles.progressTitleActive : ""}`}>{step.label}</span>
+                  <span className={styles.progressSub}>{step.sub}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Chat body */}
@@ -1457,7 +1491,7 @@ Round 1 검토를 반영합니다. 전략기획자의 "하이브리드 감정 �
                 {result.verdict !== "reject" ? (
                   <button
                     className={styles.btnGating}
-                    onClick={() => router.push(`/projects/${projectId}/phase-2`)}
+                    onClick={() => setShowGatingModal(true)}
                   >
                     Phase 2 세계관 설계 시작 →
                   </button>
@@ -1477,6 +1511,55 @@ Round 1 검토를 반영합니다. 전략기획자의 "하이브리드 감정 �
           )}
         </div>
       </div>
+
+      {/* ── Phase 2 Gating Modal ── */}
+      {showGatingModal && result && (
+        <div className={styles.modalOverlay} onClick={() => setShowGatingModal(false)}>
+          <div className={styles.modalBox} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <span className={styles.modalIcon}>🚀</span>
+              <h2 className={styles.modalTitle}>Phase 2 진행 확인</h2>
+            </div>
+            <div className={styles.modalBody}>
+              <div className={styles.modalScoreRow}>
+                <div className={styles.modalScoreItem}>
+                  <span className={styles.modalScoreLabel}>실현가능성</span>
+                  <span className={styles.modalScoreVal} style={{ color: result.verdict === "go" ? "#34d399" : "#fbbf24" }}>
+                    {Math.round(result.feasibility_score * 100)}점
+                  </span>
+                </div>
+                <div className={styles.modalScoreItem}>
+                  <span className={styles.modalScoreLabel}>판정</span>
+                  <span className={styles.modalScoreVal} style={{ color: result.verdict === "go" ? "#34d399" : "#fbbf24", fontSize: 15 }}>
+                    {result.verdict === "go" ? "✅ GO" : "⚠️ 조건부 GO"}
+                  </span>
+                </div>
+              </div>
+              <p className={styles.modalDesc}>{result.summary}</p>
+              <div className={styles.modalNote}>
+                Phase 2에서는 <strong>세계관설계자</strong>와 <strong>캐릭터디자이너</strong>가 합류하여
+                능력 체계·사회 시스템·에셋 디자인을 설계합니다.
+                {result.verdict === "conditional" && (
+                  <span style={{ color: "#fbbf24", display: "block", marginTop: 8 }}>
+                    ⚠️ 조건부 판정 — 총괄프로듀서 지적 사항 해소 후 진행을 권장합니다.
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.modalBtnCancel} onClick={() => setShowGatingModal(false)}>
+                취소
+              </button>
+              <button
+                className={styles.modalBtnConfirm}
+                onClick={() => router.push(`/projects/${projectId}/phase-2`)}
+              >
+                Phase 2 시작 →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

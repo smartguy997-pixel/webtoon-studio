@@ -173,6 +173,244 @@
   line-height: 1.4;
 }
 
+/* ─── Form label row (label + char count) ───────────────────────────────── */
+
+.formLabelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.charCount {
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+/* ─── Round progress bar ─────────────────────────────────────────────────── */
+
+.progressBar {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: #0f0f1a;
+  border-bottom: 1px solid #1a1a27;
+  gap: 0;
+}
+
+.progressStep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.progressConnector {
+  height: 1px;
+  flex: 1;
+  background: #23233a;
+  margin-right: 8px;
+  transition: background 0.3s;
+}
+
+.progressConnectorActive {
+  background: #7c6cfc;
+}
+
+.progressDot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  flex-shrink: 0;
+  transition: all 0.25s;
+}
+
+.progressDotActive {
+  background: rgba(124,108,252,0.15);
+  border-color: #7c6cfc;
+  color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124,108,252,0.15);
+}
+
+.progressDotDone {
+  background: rgba(52,211,153,0.12);
+  border-color: #34d399;
+  color: #34d399;
+}
+
+.progressLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.progressTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  transition: color 0.2s;
+}
+
+.progressTitleActive {
+  color: #a78bfa;
+}
+
+.progressSub {
+  font-size: 9px;
+  color: #2a2a3d;
+}
+
+/* ─── Gating Modal ───────────────────────────────────────────────────────── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modalBox {
+  background: #13131d;
+  border: 1px solid #2a2a3d;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  overflow: hidden;
+  animation: modalIn 0.2s ease;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0); }
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid #1e1e2a;
+}
+
+.modalIcon {
+  font-size: 22px;
+}
+
+.modalTitle {
+  font-size: 17px;
+  font-weight: 800;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+.modalBody {
+  padding: 20px 24px;
+}
+
+.modalScoreRow {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.modalScoreItem {
+  flex: 1;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+
+.modalScoreLabel {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.modalScoreVal {
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.modalDesc {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.modalNote {
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.modalFooter {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px 22px;
+}
+
+.modalBtnCancel {
+  flex: 1;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.modalBtnCancel:hover {
+  border-color: #4a4a6a;
+}
+
+.modalBtnConfirm {
+  flex: 2;
+  background: linear-gradient(135deg, #7c6cfc, #6b5bf0);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.modalBtnConfirm:hover {
+  opacity: 0.88;
+}
+
 /* ─── Start button ───────────────────────────────────────────────────────── */
 
 .btnStart {
