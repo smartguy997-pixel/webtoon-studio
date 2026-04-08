@@ -8,7 +8,7 @@ import {
   RadialBarChart, RadialBar,
   ResponsiveContainer, Legend, Tooltip,
 } from "recharts";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-client";
 import styles from "./page.module.css";
@@ -888,22 +888,36 @@ export default function Phase1Page() {
 
   useEffect(() => {
     setMounted(true);
-    // Load saved result
+    if (!projectId) return;
+
+    // 1) Try localStorage first (instant)
     const raw = localStorage.getItem(`p1_result_${projectId}`);
     if (raw) {
       try {
-        const saved = JSON.parse(raw) as {
-          result: Phase1Result;
-          genre: string;
-          concept: string;
-          savedAt: string;
-        };
+        const saved = JSON.parse(raw) as { result: Phase1Result; genre: string; concept: string; savedAt: string; };
         setSavedAt(saved.savedAt);
         setSavedGenre(saved.genre);
         setSavedConcept(saved.concept);
         setShowPrevBanner(true);
+        return; // localStorage hit — skip Firestore
       } catch { /* ignore */ }
     }
+
+    // 2) Fallback: load from Firestore (if localStorage is empty / cleared)
+    getDoc(doc(db, "project_summary", projectId, "phase_1", "result"))
+      .then((snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as Phase1Result & { genre?: string; concept?: string; savedAt?: { toDate?: () => Date } };
+        const savedDate = data.savedAt?.toDate?.()?.toISOString() ?? new Date().toISOString();
+        // Re-populate localStorage so next load is instant
+        const payload = { result: data as Phase1Result, genre: data.genre ?? "", concept: data.concept ?? "", savedAt: savedDate };
+        localStorage.setItem(`p1_result_${projectId}`, JSON.stringify(payload));
+        setSavedAt(savedDate);
+        setSavedGenre(data.genre ?? null);
+        setSavedConcept(data.concept ?? null);
+        setShowPrevBanner(true);
+      })
+      .catch(() => {}); // Firestore unavailable — silently skip
   }, [projectId]);
 
   // Auto-scroll
