@@ -470,11 +470,11 @@ export default function Phase1Dashboard() {
         <div className={styles.reportBox}>
           {result.final_report.split("\n").map((line, i) => {
             if (!line.trim()) return <div key={i} className={styles.reportBlank} />;
-            if (line.startsWith("■") || line.startsWith("▶"))
+            if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━━"))
               return <div key={i} className={styles.reportHeading}>{line}</div>;
             if (line.startsWith("━"))
               return <hr key={i} className={styles.reportRule} />;
-            if (line.startsWith("- "))
+            if (line.startsWith("- ") || line.startsWith("• ") || line.startsWith("①") || line.startsWith("②") || line.startsWith("③"))
               return <div key={i} className={styles.reportBullet}>{line}</div>;
             return <div key={i} className={styles.reportLine}>{line}</div>;
           })}

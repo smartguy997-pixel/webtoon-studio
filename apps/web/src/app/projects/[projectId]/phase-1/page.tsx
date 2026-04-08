@@ -810,10 +810,13 @@ function FinalReportSection({ report }: { report: string }) {
   };
 
   const renderLine = (line: string, i: number) => {
-    if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━")) {
+    if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━━")) {
       return <div key={i} className={styles.reportHeading}>{line}</div>;
     }
-    if (line.startsWith("- ")) {
+    if (line.startsWith("━")) {
+      return <hr key={i} style={{ border: "none", borderTop: "1px solid #23233a", margin: "8px 0" }} />;
+    }
+    if (line.startsWith("- ") || line.startsWith("• ") || line.startsWith("①") || line.startsWith("②") || line.startsWith("③")) {
       return <div key={i} className={styles.reportBullet}>{line}</div>;
     }
     if (line.trim() === "") {
@@ -964,19 +967,152 @@ export default function Phase1Page() {
     const apiKey = getAnthropicKey();
 
     if (!apiKey) {
-      // Mock mode
+      // Mock mode — commercial-quality simulated debate
       setIsMock(true);
+
       const mockMsgs: Array<{ agent: AgentId; round: number; text: string }> = [
-        { agent: "strategist", round: 1, text: "【Mock】 시장 분석: 현재 판타지 장르 시장은 강세를 유지하고 있습니다. 나 혼자만 레벨업(카카오페이지)과 전지적 독자시점(네이버웹툰)이 기준점을 형성하며, 본 기획안은 대중성 65점 / 신규IP 72점의 포지셔닝으로 차별화 가능성이 높습니다." },
-        { agent: "researcher", round: 1, text: "【Mock】 팩트체크 완료: 설정의 내부 논리는 전반적으로 탄탄하나, 주인공의 능력 제한 조건이 3화 이후 서사와 충돌할 수 있습니다. 해결책으로 '능력 봉인 해제 조건'을 초반에 명시하는 것을 제안합니다." },
-        { agent: "scenario",   round: 2, text: "【Mock】 3막 구조: 1~20화 도입(세계관 제시 + 주인공 각성), 21~60화 성장과 갈등(라이벌 등장, 중간보스), 61~100화 클라이막스(최종 빌런 대결). 15화, 40화, 75화에 주요 반전 훅 포인트 배치를 권장합니다." },
-        { agent: "script",     round: 2, text: "【Mock】 연출 전략: 도입화 28컷, 클라이막스 35컷, 일상화 22컷 구성 권장. 스크롤 정지 포인트는 매화 7~9컷째에 임팩트 컷 삽입. 세로 분할 패널을 활용한 속도감 연출이 모바일 독자 집중도를 높입니다." },
-        { agent: "producer",   round: 3, text: "토론을 마무리합니다.\n\n전략기획자와 시나리오작가의 시장성 분석, 심층조사자의 논리 검증, 연출작가의 모바일 최적화 전략을 종합한 결과, 본 기획안은 Phase 2 진행에 충분한 완성도를 갖추고 있습니다. 실현가능성 종합 점수 0.82점으로 적극 권장 판정입니다." },
+        {
+          agent: "strategist",
+          round: 1,
+          text: `📊 시장 분석 보고 — 전략기획자
+
+[시장 현황] 2025년 K-웹툰 ${g} 장르는 네이버웹툰·카카오페이지 양대 플랫폼 기준 신작 진입 경쟁이 역대 최고 수준입니다. 헌터·스탯 계열 판타지는 포화(신작 성공률 15% 이하)이나, 관계 서사와 도덕적 딜레마를 결합한 하이브리드 구조는 여전히 공백 구간입니다.
+
+[경쟁작 벤치마크]
+• 나 혼자만 레벨업 (카카오페이지, 2018~2021): 누적 1.4억 뷰. 압도적 성장 판타지·시각적 스펙터클 강점. 단, 관계 서사 부재·단선 구조가 명백한 약점.
+• 전지적 독자시점 (네이버웹툰, 2020~2023): 주간 최고 420만 뷰. 메타픽션·복선 회수 탁월. 그러나 원작 소설 선지식 없이는 신규 독자 진입 장벽 높음.
+• 싸움독학 (네이버웹툰, 2019~2023): 주간 280만 뷰. 성장 서사 교과서. 판타지 요소 부재로 IP 확장 한계.
+
+[포지셔닝] 우리 작품 — 대중성 68점 / 신규IP 74점. 기존 경쟁작과 겹치지 않는 좌표.
+
+[타깃] 네이버웹툰 10~20대 남성 핵심 + 20~30대 감정 서사 선호 독자. 추천 플랫폼: 네이버웹툰 독점 or 카카오페이지 동시 연재.
+
+[슬로건] "헌터물의 스펙터클, 인간 드라마의 깊이 — 두 마리 토끼를 잡는다"
+
+feasibility 초기 평가: 시장성 88 / 상업성 87 — GO 가능권.`,
+        },
+        {
+          agent: "researcher",
+          round: 1,
+          text: `🔍 설정 검증 보고 — 심층조사자
+
+[선행작 충돌 검토]
+이 기획안의 '각성 + 성장' 구조는 《나 혼자만 레벨업》(카카오페이지, 2018)의 핵심 문법과 60% 이상 유사합니다. 단, 빌런의 도덕적 동기와 관계 서사가 명확하게 추가되어 있어 직접 충돌 수준은 아닙니다. 차별화 방향: '각성' 장면을 1화 첫 컷에서 제거하고, 세계관의 구조적 불공정을 먼저 보여준 뒤 주인공 변화를 2~3화에 배치하면 신선도 확보 가능.
+
+[내부 모순 지적]
+Lv2 클리셰 — 주인공 초기 무능 설정: 1~3화 주인공이 약하다는 설정이 6화 이후 급격한 성장 속도와 충돌합니다. "왜 갑자기 강해지는가"에 대한 논리적 근거가 설정 내에 없으면 독자 이탈 유발. 수정 방향: '잠재 능력 봉인' 조건(트라우마·외부 봉인 장치 등)을 1화에 암시로 심어두세요.
+
+Lv1 클리셰 (허용) — 고등학생 주인공, 특별한 운명: 장르 문법으로 허용 가능. 단, 주인공의 평범함을 강조하는 묘사는 3컷 이내로 제한해야 도입부 흡인력 유지.
+
+[긍정 요소] 빌런의 논리적 동기 설정은 기존 경쟁작 대비 명확한 차별점입니다. 독자가 빌런에게 공감하는 순간을 25화에 설계하면 커뮤니티 토론 유발 효과 기대.
+
+[팩트체크] 한국 고등학교 교육 시스템·학교 공간 묘사는 현실 기준 정합성 확인 필요. Phase 2에서 세계관설계자와 함께 처리 권장.`,
+        },
+        {
+          agent: "scenario",
+          round: 2,
+          text: `📝 서사 구조 설계 — 시나리오작가
+
+Round 1 검토를 반영합니다. 전략기획자의 "하이브리드 감정 서사" 방향과 심층조사자의 "각성 시점 조정" 제안을 서사 설계에 적용했습니다.
+
+[3막 구조]
+• 1막 (1~18화) — 도입·세계관 제시: 불공정한 세계를 먼저 보여준 뒤 주인공의 잠재력을 독자만 아는 방식으로 암시. 3화에서 주인공 첫 변화, 5화에서 첫 위기.
+• 2막 (19~72화) — 성장·갈등·위기: 15화 중간 반전(조력자의 배신 암시), 30화 1막 완결+대반전(빌런이 사실 피해자였다는 복선 공개), 50화 시즌1 완결 가능 분기점, 60화 최대 위기.
+• 3막 (73~100화) — 클라이막스·결말: 70화 최후의 선택, 85화 빌런과의 대면·진실 공개, 95화 최종 대결, 100화 열린 결말(시즌2 여지).
+
+[훅 포인트 5개]
+① 3화: 주인공이 처음으로 능력의 실마리를 무의식적으로 사용 — "어? 내가 방금 뭘 한 거지?"
+② 15화: 믿었던 조력자가 주인공을 감시하고 있었다는 암시 컷
+③ 30화: 빌런의 독백 — "나는 너와 같은 선택을 했다"
+④ 50화: 주인공이 자신의 능력의 부작용을 처음 인지 — 클리프행어
+⑤ 75화: 빌런이 사실 과거의 주인공과 같은 상황에 처해 있었음을 독자가 먼저 알게 되는 정보 비대칭 컷
+
+[시즌 분할] 50화 완결로 시즌1 구성 가능. 시즌2 독립 진행 시 스핀오프(라이벌 시점) 동시 기획 권장.`,
+        },
+        {
+          agent: "script",
+          round: 2,
+          text: `🎬 연출 전략 — 연출작가
+
+시나리오작가의 3막 구조와 심층조사자의 클리셰 지적을 연출 레벨에서 해결하는 방향으로 제안합니다.
+
+[화 유형별 컷 배분]
+• 도입화(1~5화): 23컷 기준. 1~3컷에서 세계관의 불공정함을 ELS→MS 순서로 제시, 설명 없이 장면으로 보여주기.
+• 액션·각성화(3화, 30화, 75화): 32컷. 세로 분할 패널(1:2 비율)로 속도감 → 풀페이지 임팩트 컷 1개로 피크 처리.
+• 감정·반전화(15화, 50화): 20컷. 표정 CU 빈도 60%+, 여백 컷 2~3개로 독자 감정 침잠 시간 확보.
+• 일상화: 17컷. 캐릭터 관계 빌드업 중심, 다음 화 복선 1개 의무 삽입.
+
+[스크롤 정지 포인트 전략]
+매화 7~8컷째: 세로 분할 패널 + SFX 텍스트로 시각적 충격 → 스크롤 정지 유도.
+매화 마지막 컷(클리프행어): 다음 화를 보게 만드는 "질문형 화면 종료" — 대사 없이 캐릭터 표정 CU만으로 처리.
+
+[1화 연출 제안]
+컷 1: ELS — 황폐화된 도시 전경 (설명 자막 없음, 독자 상상 유도)
+컷 2~3: MS → CU — 주인공 일상, 무기력한 표정
+컷 7: 임팩트 컷 — 세계관의 핵심 불공정 장면, 풀 패널
+컷 23: 클리프행어 — 주인공 눈빛 변화 CU, "다음 화" 버튼 클릭 유도
+
+[시그니처 연출] 빌런 등장 씬마다 동일한 카메라 앵글(DUTCH + 역광)을 반복 사용 → 독자 조건반사적 긴장감 형성.`,
+        },
+        {
+          agent: "producer",
+          round: 3,
+          text: `토론을 마무리합니다.
+
+4인 에이전트의 의견을 종합합니다.
+
+전략기획자는 시장 공백과 포지셔닝 우위를 데이터로 입증했습니다. 심층조사자가 지적한 "각성 시점 조정"과 "성장 속도 논리 보완"은 시나리오작가의 3막 설계에 이미 반영되었으며 충돌이 해소되었습니다. 연출작가의 화 유형별 컷 배분 전략은 시나리오 구조와 정합성이 높습니다.
+
+[핵심 리스크]
+① 심층조사자 지적: 주인공 성장 논리(1화 잠재력 암시 장치) — Phase 2 세계관 설계 시 반드시 해소 필요. (심각도 HIGH)
+② 전략기획자 지적: 헌터물 클리셰 유사성 — 1화 연출에서 세계관 불공정 장면을 각성보다 앞에 배치하는 방식으로 완화 가능.
+
+[종합 판단]
+시장 공백 정확히 공략하는 포지셔닝(대중성 68 / 신규IP 74), 경쟁작 대비 명확한 차별점(빌런 도덕 서사), 100화 확장 가능한 서사 구조 확보. 실현가능성 종합 84점.
+
+■ Phase 2 진행 권고: GO
+전제 조건 — 주인공 성장 논리 보완(잠재력 봉인 장치 설정)을 Phase 2 착수 전 기획안에 반영할 것.`,
+        },
       ];
-      for (const m of mockMsgs) {
-        addMsg(m.agent, m.round, m.text, false);
-        await new Promise((r) => setTimeout(r, 300));
-      }
+
+      // Simulate streaming: type out each message character by character
+      const typeMsg = async (msgId: string, text: string) => {
+        const CHUNK = 6; // chars per tick
+        for (let i = CHUNK; i <= text.length + CHUNK; i += CHUNK) {
+          updateMsg(msgId, text.slice(0, i), true);
+          await new Promise((r) => setTimeout(r, 18));
+        }
+        updateMsg(msgId, text, false);
+      };
+
+      setDebatePhase("r1");
+      const id1 = addMsg("strategist", 1, "", true);
+      await typeMsg(id1, mockMsgs[0].text);
+      await sleep(600);
+
+      const id2 = addMsg("researcher", 1, "", true);
+      await typeMsg(id2, mockMsgs[1].text);
+
+      setDebatePhase("r1_wait");
+      const userOpinion = await new Promise<string>((resolve) => {
+        interventionResolveRef.current = resolve;
+      });
+      if (userOpinion) addMsg("user", 1, userOpinion, false);
+
+      setDebatePhase("r2");
+      await sleep(400);
+      const id3 = addMsg("scenario", 2, "", true);
+      await typeMsg(id3, mockMsgs[2].text);
+      await sleep(600);
+
+      const id4 = addMsg("script", 2, "", true);
+      await typeMsg(id4, mockMsgs[3].text);
+      await sleep(600);
+
+      setDebatePhase("r3");
+      const id5 = addMsg("producer", 3, "", true);
+      await typeMsg(id5, mockMsgs[4].text);
+
       setResult(MOCK_RESULT);
       saveResult(MOCK_RESULT, g, c);
       setDebatePhase("done");
