@@ -1,11 +1,48 @@
 import { Router, type Request, type Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { authMiddleware } from "../middleware/auth.js";
+import { SlidingWindow, saveSlidingWindowSummary } from "../utils/sliding-window.js";
 
 export const phasesRouter = Router();
 
 const MODEL = "claude-sonnet-4-6";
 const WEB_SEARCH_TOOL: Anthropic.Messages.WebSearchTool20260209 = { type: "web_search_20260209", name: "web_search" };
+
+// ─── Sliding-window registry (per project, in-process) ───────────────────────
+// Resets on server restart; Firestore holds the durable summary.
+
+const windows = new Map<string, SlidingWindow>();
+
+function getWindow(projectId: string): SlidingWindow {
+  if (!windows.has(projectId)) windows.set(projectId, new SlidingWindow());
+  return windows.get(projectId)!;
+}
+
+async function tickWindow(
+  res: Response,
+  client: Anthropic,
+  projectId: string,
+  phase: number,
+  context: string,
+): Promise<void> {
+  const win = getWindow(projectId);
+  const shouldCompress = win.increment();
+  if (!shouldCompress) return;
+
+  // Producer generates the sliding-window summary
+  const summaryText = await streamAgent(res, client, "producer",
+    `당신은 총괄 프로듀서입니다. 지금까지의 논의를 300자 이내 [프로젝트 요약]으로 압축하세요.
+형식: [프로젝트 요약 vN]\n- phase: ${phase}\n- 주요 결정:\n- 승인 에셋:\n- 다음 단계:`,
+    [{ role: "user", content: `컨텍스트:\n${context.slice(0, 800)}` }],
+    600, false,
+  );
+
+  // Persist to Firestore (fire-and-forget)
+  saveSlidingWindowSummary(projectId, phase, { key_decisions: [summaryText.slice(0, 300)] })
+    .catch(err => console.error("sliding-window save error:", err));
+
+  sendEvent(res, "window_summary", { phase, summary: summaryText });
+}
 
 // ─── SSE helpers ──────────────────────────────────────────────────────────────
 
@@ -137,6 +174,7 @@ phasesRouter.post("/:projectId/phase-1", authMiddleware, async (req: Request, re
       { role: "user", content: "총괄 프로듀서의 최종 평가를 부탁합니다." },
     ], 3000, true);
 
+    await tickWindow(res, client, req.params.projectId, 1, userPrompt);
     sendEvent(res, "done", { phase: 1 });
   } catch (err) {
     sendEvent(res, "error", { message: err instanceof Error ? err.message : String(err) });
@@ -211,6 +249,7 @@ phasesRouter.post("/:projectId/phase-2", authMiddleware, async (req: Request, re
     ], 2000, false);
 
     void char2Text; // used implicitly through pipeline
+    await tickWindow(res, client, req.params.projectId, 2, ctx);
     sendEvent(res, "done", { phase: 2 });
   } catch (err) {
     sendEvent(res, "error", { message: err instanceof Error ? err.message : String(err) });
@@ -274,6 +313,7 @@ phasesRouter.post("/:projectId/phase-3", authMiddleware, async (req: Request, re
       [{ role: "user", content: "로드맵 최종 검토를 부탁합니다." }],
       1000, false);
 
+    await tickWindow(res, client, req.params.projectId, 3, ctx);
     sendEvent(res, "done", { phase: 3 });
   } catch (err) {
     sendEvent(res, "error", { message: err instanceof Error ? err.message : String(err) });
@@ -323,6 +363,7 @@ phasesRouter.post("/:projectId/phase-4/:episode", authMiddleware, async (req: Re
       `당신은 총괄 프로듀서입니다. ${episode}화 대본 검토 및 다음 단계 안내를 100자로 해주세요.`,
       [{ role: "user", content: ctx }], 500, false);
 
+    await tickWindow(res, client, req.params.projectId, 4, ctx);
     sendEvent(res, "done", { phase: 4, episode });
   } catch (err) {
     sendEvent(res, "error", { message: err instanceof Error ? err.message : String(err) });

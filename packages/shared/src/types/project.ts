@@ -4,6 +4,7 @@ export type ProjectStatus =
   | "phase_2"
   | "phase_3"
   | "phase_4"
+  | "phase_5"
   | "completed";
 
 export type Platform = "naver" | "kakao" | "lezhin" | "other";
@@ -13,7 +14,7 @@ export interface Project {
   title: string;
   owner_uid: string;
   status: ProjectStatus;
-  current_phase: 1 | 2 | 3 | 4;
+  current_phase: 1 | 2 | 3 | 4 | 5;
   genre: string;
   platform: Platform;
   total_episodes: number;
