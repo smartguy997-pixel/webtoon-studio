@@ -698,7 +698,7 @@ function renderMsgLine(line: string, i: number, agentColor: string) {
 }
 
 function MsgBubble({ msg }: { msg: Msg; key?: string }) {
-  const agent = AGENTS[msg.agent];
+  const agent = AGENTS[msg.agent] ?? { label: msg.agent, emoji: "🤖", color: "#94a3b8", bg: "rgba(148,163,184,0.10)" };
   const isUser = msg.agent === "user";
   const displayText = msg.agent === "producer" ? stripResultBlock(msg.text) : msg.text;
 
