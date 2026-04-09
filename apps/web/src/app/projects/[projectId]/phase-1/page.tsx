@@ -1378,7 +1378,7 @@ export default function Phase1Page() {
     const MAX_TURNS = 18;
 
     while (turn < MAX_TURNS) {
-      await sleep(1200);
+      await sleep(2500);
 
       // User intervention window (10s auto-dismiss)
       const iv = await waitIntervention(turn);
@@ -1411,7 +1411,7 @@ export default function Phase1Page() {
 
       turn++;
       setTurnCount(turn);
-      await sleep(1500);
+      await sleep(3000);
 
       const agentReply = await streamAgent(
         apiKey, decision.next_agent, turn,

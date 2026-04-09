@@ -77,15 +77,24 @@ export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<s
     body.tools = tools;
   }
 
-  // 429 backoff schedule (ms): 12 s, 25 s, 50 s  → up to 3 retries
-  const BACKOFF = [12_000, 25_000, 50_000] as const;
+  // 429 backoff schedule (ms): 8 s, 20 s, 40 s  → up to 3 retries
+  const BACKOFF = [8_000, 20_000, 40_000] as const;
 
   for (let attempt = 0; attempt <= BACKOFF.length; attempt++) {
     // ── Wait on retry ──
     if (attempt > 0) {
       const wait = BACKOFF[attempt - 1];
-      yield `\n\n⏳ **레이트 리밋(429) — ${Math.round(wait / 1000)}초 대기 후 재시도 (${attempt}/${BACKOFF.length})...**\n\n`;
-      await new Promise<void>((r) => setTimeout(r, wait));
+      const secs = Math.round(wait / 1000);
+      yield `\n\n⏳ API 요청이 너무 많아요. ${secs}초 후 재시도합니다... (${attempt}/${BACKOFF.length})\n\n`;
+      // Countdown yield every 5s so UI doesn't look frozen
+      const steps = Math.floor(wait / 5000);
+      for (let s = 1; s <= steps; s++) {
+        await new Promise<void>((r) => setTimeout(r, 5000));
+        const remaining = secs - s * 5;
+        if (remaining > 0) yield `⏳ ${remaining}초...\n`;
+      }
+      const leftover = wait % 5000;
+      if (leftover > 0) await new Promise<void>((r) => setTimeout(r, leftover));
     }
 
     // ── Fetch ──
