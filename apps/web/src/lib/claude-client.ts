@@ -62,7 +62,7 @@ export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<s
     messages,
     maxTokens = 2048,
     tools = [],
-    model = "claude-sonnet-4-6",
+    model = "claude-haiku-4-5-20251001",
   } = opts;
 
   const body: Record<string, unknown> = {
