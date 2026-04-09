@@ -215,7 +215,7 @@ function RoadmapCardView({ card }: { card: RoadmapCard }) {
   );
 }
 
-function MsgBubble({ msg }: { msg: Msg }) {
+function MsgBubble({ msg }: { key?: string; msg: Msg }) {
   const cfg = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   if (msg.cardType === "roadmap" && msg.card) {
@@ -325,16 +325,16 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     apiKey: string,
   ): Promise<string> => {
     const id = uid();
-    setMessages(prev => [...prev, { id, agent, text: "", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent, text: "", streaming: true }]);
 
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 2000, tools: [WEB_SEARCH_TOOL] });
     for await (const chunk of gen) {
       fullText += chunk;
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText } : m));
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, streaming: false } : m));
+    setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, streaming: false } : m));
     return fullText;
   }, []);
 
@@ -349,7 +349,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   ): Promise<string> => {
     const id = uid();
     // Add a placeholder text bubble that becomes a card on completion
-    setMessages(prev => [...prev, { id, agent, text: "에피소드 생성 중...", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent, text: "에피소드 생성 중...", streaming: true }]);
 
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 8000, tools: [] });
@@ -358,7 +358,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       // Update progress text
       const lineCount = (fullText.match(/"ep":/g) || []).length;
       if (cardType === "episode" && lineCount > 0) {
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `에피소드 생성 중... (${lineCount}/25화)` } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: `에피소드 생성 중... (${lineCount}/25화)` } : m));
       }
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -371,12 +371,12 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       let card: RoadmapCard | null = null;
       try { if (match) card = JSON.parse(match[1]) as RoadmapCard; } catch { /* ignore */ }
       if (card) {
-        setMessages(prev => prev.map(m => m.id === id
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id
           ? { ...m, text: "", streaming: false, cardType: "roadmap", card }
           : m));
       } else {
         // Show raw text if parse fails
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText, streaming: false } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText, streaming: false } : m));
       }
     } else {
       const tag = `EPISODE_CARD_${arcNum ?? 1}`;
@@ -385,11 +385,11 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       let card: EpisodeCard | null = null;
       try { if (match) card = JSON.parse(match[1]) as EpisodeCard; } catch { /* ignore */ }
       if (card) {
-        setMessages(prev => prev.map(m => m.id === id
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id
           ? { ...m, text: "", streaming: false, cardType: "episode", card }
           : m));
       } else {
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: "에피소드 생성 완료 (파싱 오류)", streaming: false } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: "에피소드 생성 완료 (파싱 오류)", streaming: false } : m));
       }
     }
     return fullText;
@@ -512,7 +512,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
     setApiError(null);
     setInput("");
-    setMessages(prev => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
+    setMessages((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
     setBusy(true);
 
     try {
@@ -565,7 +565,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
           )}
 
           <div className={s.chatBody}>
-            {messages.map(msg => <MsgBubble key={msg.id} msg={msg} />)}
+            {messages.map((msg: Msg) => <MsgBubble key={msg.id} msg={msg} />)}
             <div ref={bottomRef} />
           </div>
 
@@ -634,10 +634,10 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
               className={s.chatInput}
               placeholder={`특정 화 수정: "N화 수정: 내용" / 전체 의견 자유롭게 입력`}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={(e: { target: HTMLTextAreaElement }) => setInput(e.target.value)}
               disabled={busy}
               rows={1}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             />
             <button className={s.btnSend} onClick={sendMessage} disabled={busy || !input.trim()}>
               전송

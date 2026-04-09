@@ -268,7 +268,7 @@ function StreamCursor() {
   return <span style={{ display: "inline-block", width: 2, height: 13, background: "#7c6cfc", marginLeft: 2, verticalAlign: "middle", borderRadius: 1, animation: "blink 0.9s step-start infinite" }} />;
 }
 
-function MsgBubble({ msg, onAbChoose }: { msg: Msg; onAbChoose: (id: string, label: string) => void }) {
+function MsgBubble({ msg, onAbChoose }: { key?: string; msg: Msg; onAbChoose: (id: string, label: string) => void }) {
   const ag = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   const displayText = stripBlocks(msg.text);
@@ -383,7 +383,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   const addStreamingMsg = useCallback((agent: AgentId, cardType?: CardType): string => {
     const id = uid();
-    setMessages(prev => [...prev, {
+    setMessages((prev: Msg[]) => [...prev, {
       id, agent, text: "", type: cardType ? "card" : "text",
       cardType, streaming: true,
     }]);
@@ -410,7 +410,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     for await (const chunk of gen) {
       fullText += chunk;
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText } : m));
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
 
@@ -430,7 +430,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       if (ab) update.ab = ab;
     }
 
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, ...update } : m));
+    setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, ...update } : m));
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     return fullText;
   }, [addStreamingMsg]);
@@ -566,7 +566,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   }, [genre, projectId, runStream]);
 
   const handleAbChoose = useCallback((msgId: string, label: string) => {
-    setMessages(prev => prev.map(m => {
+    setMessages((prev: Msg[]) => prev.map((m: Msg) => {
       if (m.id !== msgId || !m.ab) return m;
       return { ...m, ab: { ...m.ab, chosen: label } };
     }));
@@ -592,17 +592,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }).catch(() => { /* non-critical */ });
 
     const userMsgId = uid();
-    setMessages(prev => [...prev, { id: userMsgId, agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);
+    setMessages((prev: Msg[]) => [...prev, { id: userMsgId, agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);
 
     setTimeout(() => {
       const replyId = uid();
-      setMessages(prev => [...prev, {
+      setMessages((prev: Msg[]) => [...prev, {
         id: replyId, agent: "producer", text: "",
         type: "text", streaming: true,
       }]);
       setTimeout(() => {
         const replyText = `${label} 방향이 확정되었습니다. 세계관 설계, 캐릭터 시트 2종, MST, 디자인 방향이 모두 확정되었습니다.\n\nPhase 3에서 이 에셋을 기반으로 100화 시나리오 로드맵을 작성할 수 있습니다.`;
-        setMessages(prev => prev.map(m => m.id === replyId ? { ...m, text: replyText, streaming: false } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === replyId ? { ...m, text: replyText, streaming: false } : m));
       }, 600);
     }, 400);
   }, []);
@@ -615,7 +615,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     setApiError(null);
     setUserInput("");
-    setMessages(prev => [...prev, { id: uid(), agent: "user", text, type: "text", streaming: false }]);
+    setMessages((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text, type: "text", streaming: false }]);
     setRunning(true);
 
     try {
@@ -633,7 +633,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }, [userInput, running, runStream]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback((e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleUserSend(); }
   }, [handleUserSend]);
 
@@ -682,7 +682,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           )}
 
           <div className={s.chatBody}>
-            {messages.map(m => (
+            {messages.map((m: Msg) => (
               <MsgBubble key={m.id} msg={m} onAbChoose={handleAbChoose} />
             ))}
             <div ref={bottomRef} />
@@ -713,7 +713,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 rows={1}
                 placeholder="수정 요청 또는 의견을 입력하세요… (Enter 전송)"
                 value={userInput}
-                onChange={e => setUserInput(e.target.value)}
+                onChange={(e: { target: HTMLTextAreaElement }) => setUserInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={running}
               />

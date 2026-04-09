@@ -199,12 +199,12 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
     cardKey?: string,
   ): Promise<string> => {
     const msgId = uid();
-    setMsgs(prev => [...prev, { id: msgId, agent, text: "", streaming: true }]);
+    setMsgs((prev: Msg[]) => [...prev, { id: msgId, agent, text: "", streaming: true }]);
 
     let full = "";
     for await (const chunk of streamClaude({ systemPrompt: system, messages, apiKey, maxTokens: 4000 })) {
       full += chunk;
-      setMsgs(prev => prev.map(m => m.id === msgId ? { ...m, text: full } : m));
+      setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: full } : m));
     }
 
     const displayText = cardKey ? stripBlocks(full) : full;
@@ -213,14 +213,14 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
       const parsed = parseBlock<{ ep: number; prompts: ImagePrompt[] }>(full, `IMAGE_PROMPTS_${selectedEp}`);
       if (parsed?.prompts) {
         setImagePrompts(parsed.prompts);
-        setMsgs(prev => prev.map(m => m.id === msgId
+        setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId
           ? { ...m, text: displayText, streaming: false, cardType: "imagePrompts", imagePrompts: parsed.prompts }
           : m));
         return full;
       }
     }
 
-    setMsgs(prev => prev.map(m => m.id === msgId ? { ...m, text: displayText, streaming: false } : m));
+    setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: displayText, streaming: false } : m));
     return full;
   }, [selectedEp]);
 
@@ -298,7 +298,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
       );
 
       // Save completion
-      setDoneEps(prev => new Set([...prev, ep]));
+      setDoneEps((prev: Set<number>) => new Set([...prev, ep]));
       localStorage.setItem(`wts_phase5_ep_${projectId}_${ep}`, JSON.stringify({
         sccRate: overallRate,
         savedAt: new Date().toISOString(),
@@ -380,7 +380,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
             </div>
           </div>
           <div className={s.mstTags}>
-            {mst.style_keywords.map((kw, i) => (
+            {mst.style_keywords.map((kw: string, i: number) => (
               <span key={i} className={s.mstTag}>{kw}</span>
             ))}
           </div>
@@ -395,7 +395,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
       {/* ─── Characters ─── */}
       {characters.length > 0 && (
         <div className={s.charRow}>
-          {characters.map((c, i) => (
+          {characters.map((c: { role: string; name: string }, i: number) => (
             <div key={i} className={s.charChip}>
               <span className={s.charRole}>{c.role === "protagonist" ? "주인공" : c.role === "antagonist" ? "빌런" : c.role}</span>
               <span className={s.charName}>{c.name}</span>
@@ -411,7 +411,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
           <select
             className={s.epSelect}
             value={selectedEp}
-            onChange={e => setSelectedEp(Number(e.target.value))}
+            onChange={(e: { target: HTMLSelectElement }) => setSelectedEp(Number(e.target.value))}
             disabled={busy}
           >
             {Array.from({ length: 100 }, (_, i) => i + 1).map(n => (
@@ -443,7 +443,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
         <div className={s.promptsSection}>
           <div className={s.sectionTitle}>이미지 프롬프트 — {selectedEp}화 주요 컷</div>
           <div className={s.promptGrid}>
-            {imagePrompts.map((p, i) => (
+            {imagePrompts.map((p: ImagePrompt, i: number) => (
               <div key={i} className={s.promptCard}>
                 <div className={s.promptCardTop}>
                   <span className={s.promptCutNum}>컷 {p.cut}</span>
@@ -491,8 +491,8 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
       {msgs.length > 0 && (
         <div className={s.discussion}>
           <div className={s.discussionTitle}>에이전트 토론</div>
-          {msgs.map(msg => {
-            const agent = AGENTS[msg.agent];
+          {msgs.map((msg: Msg) => {
+            const agent = AGENTS[msg.agent as AgentId];
             return (
               <div key={msg.id} className={s.msg}>
                 <div className={s.msgHeader} style={{ color: agent.color }}>

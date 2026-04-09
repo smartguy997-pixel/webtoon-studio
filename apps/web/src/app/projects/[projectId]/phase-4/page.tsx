@@ -133,7 +133,7 @@ function SccBadge({ scc }: { scc: SccStatus }) {
   return <span className={`${s.sccBadge} ${cls}`}>{label}</span>;
 }
 
-function CutCard({ cut, onEditRequest }: { cut: Cut; onEditRequest: (cut: number) => void }) {
+function CutCard({ cut, onEditRequest }: { key?: number; cut: Cut; onEditRequest: (cut: number) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [jsonView, setJsonView] = useState(false);
   return (
@@ -172,7 +172,7 @@ function CutCard({ cut, onEditRequest }: { cut: Cut; onEditRequest: (cut: number
               <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>연출 의도</span><span className={s.cutDetailVal}>{cut.direction}</span></div>
             </div>
           )}
-          <button className={s.btnEdit} onClick={e => { e.stopPropagation(); onEditRequest(cut.cut); }}>
+          <button className={s.btnEdit} onClick={(e: { stopPropagation: () => void }) => { e.stopPropagation(); onEditRequest(cut.cut); }}>
             ✏ 이 컷 수정 요청
           </button>
         </div>
@@ -204,7 +204,7 @@ function ScriptCardView({ card, onEditRequest }: { card: CutScriptCard; onEditRe
   );
 }
 
-function MsgBubble({ msg, onEditRequest }: { msg: Msg; onEditRequest: (cut: number) => void }) {
+function MsgBubble({ msg, onEditRequest }: { key?: string; msg: Msg; onEditRequest: (cut: number) => void }) {
   const cfg = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   if (msg.cardType === "cutScript" && msg.card) {
@@ -310,15 +310,15 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     apiKey: string,
   ): Promise<string> => {
     const id = uid();
-    setMessages(prev => [...prev, { id, agent, text: "", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent, text: "", streaming: true }]);
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 1500, tools: [] });
     for await (const chunk of gen) {
       fullText += chunk;
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText } : m));
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, streaming: false } : m));
+    setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, streaming: false } : m));
     return fullText;
   }, []);
 
@@ -329,7 +329,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     apiKey: string,
   ): Promise<{ fullText: string; card: CutScriptCard | null }> => {
     const id = uid();
-    setMessages(prev => [...prev, { id, agent: "script", text: "30컷 대본 작성 중...", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent: "script", text: "30컷 대본 작성 중...", streaming: true }]);
 
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 8000, tools: [] });
@@ -337,7 +337,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
       fullText += chunk;
       const cutCount = (fullText.match(/"cut":/g) || []).length;
       if (cutCount > 0) {
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `30컷 대본 작성 중... (${cutCount}/30컷)` } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: `30컷 대본 작성 중... (${cutCount}/30컷)` } : m));
       }
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -352,11 +352,11 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     if (card && card.cuts.length > 0) {
       const passCount = card.cuts.filter(c => c.scc === "pass").length;
       card.sccRate = passCount / card.cuts.length;
-      setMessages(prev => prev.map(m => m.id === id
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id
         ? { ...m, text: "", streaming: false, cardType: "cutScript", card }
         : m));
     } else {
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: "대본 생성 완료 (파싱 오류)", streaming: false } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: "대본 생성 완료 (파싱 오류)", streaming: false } : m));
     }
     return { fullText, card };
   }, []);
@@ -410,7 +410,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
 
       const sccPct = card ? Math.round(card.sccRate * 100) : 90;
       const scriptSummary = card
-        ? `${card.cuts.length}컷 생성, SCC ${sccPct}%, pass:${card.cuts.filter(c => c.scc === "pass").length}`
+        ? `${card.cuts.length}컷 생성, SCC ${sccPct}%, pass:${card.cuts.filter((c: Cut) => c.scc === "pass").length}`
         : "30컷 생성 완료";
 
       // ── 4. Character SCC report ──
@@ -431,7 +431,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
       );
 
       setScriptDone(true);
-      setDoneEps(prev => new Set([...prev, selectedEp]));
+      setDoneEps((prev: Set<number>) => new Set([...prev, selectedEp]));
       if (card) {
         const savedAt = new Date().toISOString();
         localStorage.setItem(`wts_phase4_ep_${projectId}_${selectedEp}`, JSON.stringify({ sccRate: card.sccRate, savedAt }));
@@ -456,7 +456,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
 
     setApiError(null);
     if (!overrideText) setInput("");
-    setMessages(prev => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
+    setMessages((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
     setBusy(true);
 
     try {
@@ -525,7 +525,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
           )}
 
           <div className={s.chatBody}>
-            {messages.map(msg => <MsgBubble key={msg.id} msg={msg} onEditRequest={cut => sendMessage(`컷 ${cut} 수정: 개선 요청`)} />)}
+            {messages.map((msg: Msg) => <MsgBubble key={msg.id} msg={msg} onEditRequest={(cut: number) => sendMessage(`컷 ${cut} 수정: 개선 요청`)} />)}
             <div ref={bottomRef} />
           </div>
 
@@ -561,7 +561,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
                   }}>
                     재생성
                   </button>
-                  <button className={s.btnGating} onClick={() => setSelectedEp(prev => Math.min(prev + 1, 100))}>
+                  <button className={s.btnGating} onClick={() => setSelectedEp((prev: number) => Math.min(prev + 1, 100))}>
                     {selectedEp + 1}화 대본 →
                   </button>
                 </div>
@@ -574,10 +574,10 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
               className={s.chatInput}
               placeholder={`컷 수정: "컷 N 수정: 내용" / 전체 의견 자유롭게 입력`}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={(e: { target: HTMLTextAreaElement }) => setInput(e.target.value)}
               disabled={busy}
               rows={1}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             />
             <button className={s.btnSend} onClick={() => sendMessage()} disabled={busy || !input.trim()}>
               전송
