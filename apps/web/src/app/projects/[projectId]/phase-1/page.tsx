@@ -858,6 +858,13 @@ export default function Phase1Page() {
     }
   }, [msgs]);
 
+  // ── Save conversation whenever all streaming finishes ──
+  useEffect(() => {
+    if (!projectId || msgs.length === 0) return;
+    if (msgs.some(m => m.streaming)) return; // wait until round is fully done
+    localStorage.setItem(`p1_msgs_${projectId}`, JSON.stringify(msgs));
+  }, [msgs, projectId]);
+
   // ── Message helpers ──
   const addMsg = useCallback((agent: AgentId, round: number, text = "", streaming = false): string => {
     const id = `${agent}_${Date.now()}_${Math.random()}`;
@@ -871,13 +878,6 @@ export default function Phase1Page() {
 
   // ── Helper: sleep ──
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-  // ── Save conversation msgs ──
-  const saveMsgs = useCallback((currentMsgs: Msg[]) => {
-    // Only save finalized (non-streaming) messages
-    const toSave = currentMsgs.filter(m => !m.streaming);
-    localStorage.setItem(`p1_msgs_${projectId}`, JSON.stringify(toSave));
-  }, [projectId]);
 
   // ── Save result ──
   const saveResult = useCallback((res: Phase1Result, g: string, c: string) => {
@@ -996,9 +996,6 @@ export default function Phase1Page() {
 
       convHistory.push({ role: "assistant", content: roundText });
 
-      // ── Save conversation after each round ──
-      setMsgs((prev: Msg[]) => { saveMsgs(prev); return prev; });
-
       // ── Wait for user input (4 s pause — natural turn-taking) ──
       await sleep(4000);
 
@@ -1055,7 +1052,7 @@ export default function Phase1Page() {
     setDebatePhase("done");
     runningRef.current = false;
 
-  }, [addMsg, updateMsg, saveResult, saveMsgs]);
+  }, [addMsg, updateMsg, saveResult]);
 
   // ── Form submit ──
   const handleStart = useCallback(() => {
