@@ -791,9 +791,6 @@ export default function Phase1Page() {
   const [showGatingModal, setShowGatingModal] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [savedGenre, setSavedGenre] = useState<string | null>(null);
-  const [savedConcept, setSavedConcept] = useState<string | null>(null);
-  const [showPrevBanner, setShowPrevBanner] = useState(false);
   const [turnCount, setTurnCount] = useState(0);
   const [isWritingReport, setIsWritingReport] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -814,21 +811,21 @@ export default function Phase1Page() {
         const savedMsgs = JSON.parse(rawMsgs) as Msg[];
         if (savedMsgs.length > 0) {
           setMsgs(savedMsgs);
-          setStage("debate");
-          setDebatePhase("done");
         }
       } catch { /* ignore */ }
     }
 
-    // 1) Try localStorage first (instant)
+    // 1) Try localStorage first — auto-redirect to debate if result exists
     const raw = localStorage.getItem(`p1_result_${projectId}`);
     if (raw) {
       try {
         const saved = JSON.parse(raw) as { result: Phase1Result; genre: string; concept: string; savedAt: string; };
+        setGenre(saved.genre);
+        setConcept(saved.concept);
+        setResult(saved.result);
         setSavedAt(saved.savedAt);
-        setSavedGenre(saved.genre);
-        setSavedConcept(saved.concept);
-        setShowPrevBanner(true);
+        setStage("debate");
+        setDebatePhase("done");
         return; // localStorage hit — skip Firestore
       } catch { /* ignore */ }
     }
@@ -843,10 +840,12 @@ export default function Phase1Page() {
         // Re-populate localStorage so next load is instant
         const payload = { result: data as Phase1Result, genre: data.genre ?? "", concept: data.concept ?? "", savedAt: savedDate };
         localStorage.setItem(`p1_result_${projectId}`, JSON.stringify(payload));
+        setGenre(data.genre ?? "");
+        setConcept(data.concept ?? "");
+        setResult(data as Phase1Result);
         setSavedAt(savedDate);
-        setSavedGenre(data.genre ?? null);
-        setSavedConcept(data.concept ?? null);
-        setShowPrevBanner(true);
+        setStage("debate");
+        setDebatePhase("done");
       })
       .catch(() => {}); // Firestore unavailable — silently skip
   }, [projectId]);
@@ -1064,27 +1063,14 @@ export default function Phase1Page() {
     runDebate(genre, concept.trim(), platform, episodeCount);
   }, [concept, genre, platform, episodeCount, runDebate]);
 
-  // ── Load saved result ──
-  const handleResume = useCallback(() => {
-    const raw = localStorage.getItem(`p1_result_${projectId}`);
-    if (!raw) return;
-    try {
-      const saved = JSON.parse(raw) as { result: Phase1Result; genre: string; concept: string };
-      setGenre(saved.genre);
-      setConcept(saved.concept);
-      setResult(saved.result);
-      setDebatePhase("done");
-      setStage("debate");
-    } catch { /* ignore */ }
-  }, [projectId]);
-
   const handleRestartNew = useCallback(() => {
     localStorage.removeItem(`p1_result_${projectId}`);
     localStorage.removeItem(`p1_msgs_${projectId}`);
-    setShowPrevBanner(false);
     setSavedAt(null);
     setMsgs([]);
+    setResult(null);
     setStage("form");
+    setDebatePhase("idle");
   }, [projectId]);
 
 
@@ -1093,25 +1079,6 @@ export default function Phase1Page() {
     return (
       <div className={styles.page}>
         <div className={styles.formWrap}>
-          {showPrevBanner && savedAt && (
-            <div className={styles.prevBanner}>
-              <div className={styles.prevBannerTitle}>이전 분석 결과가 있습니다</div>
-              <div className={styles.prevBannerMeta}>
-                저장: {new Date(savedAt).toLocaleDateString("ko-KR", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-              </div>
-              {savedGenre && <span className={styles.prevBannerGenre}>{savedGenre}</span>}
-              {savedConcept && (
-                <p className={styles.prevBannerConcept}>
-                  {savedConcept.length > 80 ? savedConcept.slice(0, 80) + "..." : savedConcept}
-                </p>
-              )}
-              <div className={styles.prevBannerBtns}>
-                <button className={styles.btnResume} onClick={handleResume}>결과 보기</button>
-                <button className={styles.btnRestartNew} onClick={handleRestartNew}>새로 분석</button>
-              </div>
-            </div>
-          )}
-
           <div className={styles.formCard}>
             <h1 className={styles.formTitle}>Phase 1 · 기획 분석</h1>
             <p className={styles.formDesc}>
@@ -1212,7 +1179,7 @@ export default function Phase1Page() {
           </span>
           <button
             className={styles.btnRestart}
-            onClick={() => { setStage("form"); setDebatePhase("idle"); setMsgs([]); setResult(null); runningRef.current = false; }}
+            onClick={() => { handleRestartNew(); runningRef.current = false; }}
           >
             다시 분석
           </button>
@@ -1286,7 +1253,7 @@ export default function Phase1Page() {
                 )}
                 <button
                   className={styles.btnRestart}
-                  onClick={() => { setStage("form"); setDebatePhase("idle"); setMsgs([]); setResult(null); runningRef.current = false; }}
+                  onClick={() => { handleRestartNew(); runningRef.current = false; }}
                 >
                   재분석
                 </button>
