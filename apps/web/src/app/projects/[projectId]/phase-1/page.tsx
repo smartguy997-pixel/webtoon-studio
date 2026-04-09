@@ -1340,13 +1340,6 @@ export default function Phase1Page() {
         await typeMsg(id, m.text);
         await sleep(500);
 
-        // User intervention window after turns 2 and 3
-        if (m.turn === 2 || m.turn === 3) {
-          const iv = await waitIntervention(m.turn);
-          if (iv) {
-            addMsg("user", m.turn, `[${iv.type}] ${iv.text}`, false);
-          }
-        }
       }
 
       setResult(MOCK_RESULT);
@@ -1380,16 +1373,9 @@ export default function Phase1Page() {
     while (turn < MAX_TURNS) {
       await sleep(2500);
 
-      // User intervention window (10s auto-dismiss)
-      const iv = await waitIntervention(turn);
-      if (iv) {
-        addMsg("user", turn, `[${iv.type}] ${iv.text}`, false);
-        addToHistory("사용자", `[${iv.type}] ${iv.text}`);
-      }
-
       // Orchestrator decides next speaker
       const histText = history.join("\n\n");
-      const decision = await fetchOrchestrator(apiKey, histText, iv?.text);
+      const decision = await fetchOrchestrator(apiKey, histText, undefined);
 
       if (!decision) break;
 
@@ -1651,14 +1637,6 @@ export default function Phase1Page() {
             <MsgBubble key={msg.id} msg={msg} />
           ))}
 
-          {/* V2 Intervention */}
-          {debatePhase === "user_wait" && (
-            <InterventionV2
-              turnCount={turnCount}
-              onSubmit={handleInterventionSubmit}
-              onSkip={handleInterventionSkip}
-            />
-          )}
 
           {/* 보고서 작성 중 */}
           {isWritingReport && (
