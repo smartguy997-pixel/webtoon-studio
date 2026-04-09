@@ -1128,10 +1128,6 @@ export default function Phase1Page() {
     setResult(parsed ?? MOCK_RESULT);
     saveResult(parsed ?? MOCK_RESULT, g, c);
 
-    // Debate finished — no longer need to resume, clear conv history
-    localStorage.removeItem(`p1_conv_${projectId}`);
-    savedConvRef.current = [];
-
     setDebatePhase("done");
     runningRef.current = false;
 
