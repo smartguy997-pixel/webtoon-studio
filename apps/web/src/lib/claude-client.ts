@@ -15,6 +15,7 @@ const ANTHROPIC_VERSION = "2023-06-01";
 export const WEB_SEARCH_TOOL = {
   type: "web_search_20260209",
   name: "web_search",
+  allowed_callers: ["direct"],  // required for models without programmatic tool calling (e.g. haiku)
 } as const;
 
 // ─── API key helper ───────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ export interface StreamClaudeOptions {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   maxTokens?: number;
   /** Tools to enable. Pass [] to disable all tools. */
-  tools?: Array<{ type: string; name: string }>;
+  tools?: Array<{ type: string; name: string; allowed_callers?: string[] }>;
   model?: string;
 }
 
