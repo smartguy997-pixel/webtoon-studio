@@ -61,7 +61,7 @@ interface Phase1Result {
   final_report: string;
 }
 type Stage = "form" | "debate";
-type DebatePhase = "idle" | "running" | "done";
+type DebatePhase = "idle" | "running" | "paused" | "done";
 
 // ─── Single system prompt (all 7 agents, one conversation) ───────────────────
 
@@ -799,19 +799,38 @@ export default function Phase1Page() {
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
+  const savedConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   useEffect(() => {
     setMounted(true);
     if (!projectId) return;
 
     // 0) Restore saved conversation messages
+    let hasSavedMsgs = false;
     const rawMsgs = localStorage.getItem(`p1_msgs_${projectId}`);
     if (rawMsgs) {
       try {
         const savedMsgs = JSON.parse(rawMsgs) as Msg[];
         if (savedMsgs.length > 0) {
           setMsgs(savedMsgs);
+          hasSavedMsgs = true;
         }
+      } catch { /* ignore */ }
+    }
+
+    // 0b) Restore saved conv history (for resume)
+    const rawConv = localStorage.getItem(`p1_conv_${projectId}`);
+    if (rawConv) {
+      try {
+        const saved = JSON.parse(rawConv) as {
+          conv: Array<{ role: "user" | "assistant"; content: string }>;
+          genre: string; concept: string; platform: string; episodeCount: string;
+        };
+        savedConvRef.current = saved.conv ?? [];
+        if (saved.genre) setGenre(saved.genre);
+        if (saved.concept) setConcept(saved.concept);
+        if (saved.platform) setPlatform(saved.platform as PlatformValue);
+        if (saved.episodeCount) setEpisodeCount(saved.episodeCount as EpisodeCount);
       } catch { /* ignore */ }
     }
 
@@ -828,6 +847,13 @@ export default function Phase1Page() {
         setDebatePhase("done");
         return; // localStorage hit — skip Firestore
       } catch { /* ignore */ }
+    }
+
+    // 1b) No result yet but have saved messages → debate was interrupted (paused)
+    if (hasSavedMsgs) {
+      setStage("debate");
+      setDebatePhase("paused");
+      return;
     }
 
     // 2) Fallback: load from Firestore (if localStorage is empty / cleared)
@@ -860,7 +886,7 @@ export default function Phase1Page() {
   // ── Save conversation whenever all streaming finishes ──
   useEffect(() => {
     if (!projectId || msgs.length === 0) return;
-    if (msgs.some(m => m.streaming)) return; // wait until round is fully done
+    if (msgs.some((m: Msg) => m.streaming)) return; // wait until round is fully done
     localStorage.setItem(`p1_msgs_${projectId}`, JSON.stringify(msgs));
   }, [msgs, projectId]);
 
@@ -896,7 +922,10 @@ export default function Phase1Page() {
   }, [projectId]);
 
   // ── Run debate (single system prompt, all 7 agents in one conversation) ──
-  const runDebate = useCallback(async (g: string, c: string, plat: string, ep: string) => {
+  const runDebate = useCallback(async (
+    g: string, c: string, plat: string, ep: string,
+    resumeConv?: Array<{ role: "user" | "assistant"; content: string }>
+  ) => {
     if (runningRef.current) return;
     runningRef.current = true;
 
@@ -947,15 +976,55 @@ export default function Phase1Page() {
     }
 
     // ── REAL API MODE ──
-    // Ends ONLY when user types "끝내자" or "결론 내자" (hard cap: 30 rounds)
     setDebatePhase("running");
     setTurnCount(1);
 
-    const convHistory: Array<{ role: "user" | "assistant"; content: string }> = [];
-    convHistory.push({
-      role: "user",
-      content: `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`,
-    });
+    const convHistory: Array<{ role: "user" | "assistant"; content: string }> =
+      resumeConv ? [...resumeConv] : [];
+
+    if (!resumeConv || resumeConv.length === 0) {
+      convHistory.push({
+        role: "user",
+        content: `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`,
+      });
+    } else {
+      // Resuming after reload — tell agents to continue
+      convHistory.push({
+        role: "user",
+        content: "페이지를 다시 열었어. 이전 논의를 기억하고 토론을 계속해줘.",
+      });
+    }
+
+    // ── Helper: silent sliding-window compression ──
+    const compressHistory = async () => {
+      if (convHistory.length < 14) return; // not enough to compress
+      const initial = convHistory[0]; // keep original topic prompt
+      const recent = convHistory.slice(-8); // keep last 4 pairs
+      const oldAssistant = convHistory.slice(1, -8).filter(m => m.role === "assistant");
+      if (oldAssistant.length === 0) return;
+
+      let summaryText = "";
+      for await (const chunk of streamClaude({
+        apiKey,
+        systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
+        messages: [{
+          role: "user",
+          content: `다음 토론 내용을 핵심 이슈 중심으로 10줄 이내로 요약해줘:\n\n${oldAssistant.map(m => m.content).join("\n\n").slice(0, 3000)}`,
+        }],
+        maxTokens: 400,
+        tools: [],
+      })) {
+        summaryText += chunk;
+      }
+
+      convHistory.length = 0;
+      convHistory.push(
+        initial,
+        { role: "assistant", content: `[이전 토론 요약]\n${summaryText}` },
+        { role: "user", content: "위 요약을 참고하여 토론을 계속해줘." },
+        ...recent,
+      );
+    };
 
     const END_TRIGGERS = ["끝내자", "결론 내자", "마무리해", "결론내자"];
     const MAX_ROUNDS = 120;
@@ -994,6 +1063,17 @@ export default function Phase1Page() {
       }
 
       convHistory.push({ role: "assistant", content: roundText });
+
+      // ── Sliding window: compress every 10 rounds (silent, user won't see this) ──
+      if (round % 10 === 0) {
+        await compressHistory();
+      }
+
+      // ── Save conv history for resume after reload ──
+      localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
+        conv: convHistory,
+        genre: g, concept: c, platform: plat, episodeCount: ep,
+      }));
 
       // ── Wait for user input (4 s pause — natural turn-taking) ──
       await sleep(4000);
@@ -1048,30 +1128,44 @@ export default function Phase1Page() {
     setResult(parsed ?? MOCK_RESULT);
     saveResult(parsed ?? MOCK_RESULT, g, c);
 
+    // Debate finished — no longer need to resume, clear conv history
+    localStorage.removeItem(`p1_conv_${projectId}`);
+    savedConvRef.current = [];
+
     setDebatePhase("done");
     runningRef.current = false;
 
-  }, [addMsg, updateMsg, saveResult]);
+  }, [addMsg, updateMsg, saveResult, projectId]);
 
   // ── Form submit ──
   const handleStart = useCallback(() => {
     if (!concept.trim()) return;
+    localStorage.removeItem(`p1_conv_${projectId}`);
+    savedConvRef.current = [];
     setMsgs([]);
     setResult(null);
     setIsMock(false);
     setStage("debate");
     runDebate(genre, concept.trim(), platform, episodeCount);
-  }, [concept, genre, platform, episodeCount, runDebate]);
+  }, [concept, genre, platform, episodeCount, projectId, runDebate]);
 
   const handleRestartNew = useCallback(() => {
     localStorage.removeItem(`p1_result_${projectId}`);
     localStorage.removeItem(`p1_msgs_${projectId}`);
+    localStorage.removeItem(`p1_conv_${projectId}`);
+    savedConvRef.current = [];
     setSavedAt(null);
     setMsgs([]);
     setResult(null);
     setStage("form");
     setDebatePhase("idle");
   }, [projectId]);
+
+  // ── Continue interrupted debate ──
+  const handleContinue = useCallback(() => {
+    setMsgs((prev: Msg[]) => prev.filter((m: Msg) => !m.streaming));
+    runDebate(genre, concept, platform, episodeCount, savedConvRef.current);
+  }, [genre, concept, platform, episodeCount, runDebate]);
 
 
   // ── Render form ──
@@ -1189,7 +1283,7 @@ export default function Phase1Page() {
         <div className={styles.progressBar}>
           <div className={styles.turnCounterWrap}>
             <span className={styles.turnLabel}>
-              {debatePhase === "done" ? "✅ 토론 완료" : `Turn ${turnCount}`}
+              {debatePhase === "done" ? "✅ 토론 완료" : debatePhase === "paused" ? "⏸ 토론 일시중지" : `Turn ${turnCount}`}
             </span>
             <div className={styles.turnDots}>
               {Array.from({ length: Math.max(turnCount, 1) }).map((_, i) => (
@@ -1206,6 +1300,25 @@ export default function Phase1Page() {
             <MsgBubble key={msg.id} msg={msg} />
           ))}
 
+          {/* Paused — offer resume */}
+          {debatePhase === "paused" && (
+            <div style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              gap: 10, padding: "24px 16px", marginTop: 8,
+            }}>
+              <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", margin: 0 }}>
+                이전 토론이 저장되어 있습니다. 이어서 진행할 수 있어요.
+              </p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className={styles.btnGating} onClick={handleContinue}>
+                  토론 계속하기 →
+                </button>
+                <button className={styles.btnRestart} onClick={() => { handleRestartNew(); runningRef.current = false; }}>
+                  새로 시작
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 보고서 작성 중 */}
           {isWritingReport && (
