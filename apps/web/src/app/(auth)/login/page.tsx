@@ -77,8 +77,17 @@ export default function LoginPage() {
     }
   }
 
-  function handleLocalMode() {
-    // Skip auth — use localStorage-based local mode
+  async function handleLocalMode() {
+    // Firebase가 있으면 익명 로그인, 없으면 localStorage 전용 모드
+    try {
+      const { signInAnonymously } = await import("firebase/auth");
+      const { auth } = await import("@/lib/firebase");
+      if (auth) {
+        await signInAnonymously(auth);
+        router.push("/projects");
+        return;
+      }
+    } catch { /* Firebase 없음 — 아래 로컬 모드로 진행 */ }
     localStorage.setItem("wts_local_mode", "true");
     router.push("/projects");
   }
@@ -224,7 +233,7 @@ export default function LoginPage() {
                   background: "none", border: "none", cursor: "pointer",
                   fontSize: 12, color: "#475569", textDecoration: "underline",
                 }}>
-                  로그인 없이 로컬 모드로 사용
+                  로그인 없이 바로 시작하기
                 </button>
               </div>
             </>
