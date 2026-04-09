@@ -1665,3 +1665,48 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.chatInputRow {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.chatInputBox {
+  flex: 1;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.chatInputBox:focus {
+  border-color: var(--primary);
+}
+
+.chatInputBox::placeholder {
+  color: var(--text-dim);
+}
+
+.chatSendBtn {
+  padding: 10px 20px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.chatSendBtn:hover {
+  background: var(--primary-hover);
+}

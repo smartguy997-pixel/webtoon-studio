@@ -1136,12 +1136,14 @@ export default function Phase1Page() {
   const [turnCount, setTurnCount] = useState(0);
   const [voteOptions, setVoteOptions] = useState<string[] | null>(null);
   const [isWritingReport, setIsWritingReport] = useState(false);
+  const [chatInput, setChatInput] = useState("");
 
   // ── Refs ──
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const interventionResolveRef = useRef<((v: string, type?: UserInterventionType) => void) | null>(null);
   const voteResolveRef = useRef<((choice: string) => void) | null>(null);
   const runningRef = useRef(false);
+  const pendingUserMsgRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -1373,9 +1375,17 @@ export default function Phase1Page() {
     while (turn < MAX_TURNS) {
       await sleep(2500);
 
+      // Pick up any user message typed during this turn
+      const userMsg = pendingUserMsgRef.current ?? undefined;
+      if (userMsg) {
+        addMsg("user", turn, userMsg, false);
+        addToHistory("사용자", userMsg);
+        pendingUserMsgRef.current = null;
+      }
+
       // Orchestrator decides next speaker
       const histText = history.join("\n\n");
-      const decision = await fetchOrchestrator(apiKey, histText, undefined);
+      const decision = await fetchOrchestrator(apiKey, histText, userMsg);
 
       if (!decision) break;
 
@@ -1693,6 +1703,36 @@ export default function Phase1Page() {
           )}
         </div>
       </div>
+
+      {/* ── User chat input (during debate) ── */}
+      {(debatePhase === "running" || debatePhase === "user_wait") && (
+        <div className={styles.chatInputRow}>
+          <input
+            className={styles.chatInputBox}
+            value={chatInput}
+            onChange={(e: { target: HTMLInputElement }) => setChatInput(e.target.value)}
+            onKeyDown={(e: { key: string; preventDefault: () => void }) => {
+              if (e.key === "Enter" && chatInput.trim()) {
+                e.preventDefault();
+                pendingUserMsgRef.current = chatInput.trim();
+                setChatInput("");
+              }
+            }}
+            placeholder="토론 중 의견을 입력하세요... (Enter)"
+          />
+          <button
+            className={styles.chatSendBtn}
+            onClick={() => {
+              if (chatInput.trim()) {
+                pendingUserMsgRef.current = chatInput.trim();
+                setChatInput("");
+              }
+            }}
+          >
+            전송
+          </button>
+        </div>
+      )}
 
       {/* ── Vote Modal ── */}
       {debatePhase === "vote" && voteOptions && (
