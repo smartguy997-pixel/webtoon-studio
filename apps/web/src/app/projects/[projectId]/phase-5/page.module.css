@@ -375,3 +375,15 @@
   animation: blink 0.9s step-end infinite;
 }
 @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* ── Step progress bar ───────────────────────────── */
+.stepBar { display:flex; align-items:center; gap:0; padding:8px 24px; background:rgba(124,108,252,0.04); border:1px solid rgba(124,108,252,0.12); border-radius:10px; margin:0 0 16px; overflow-x:auto; }
+.stepItem { display:flex; align-items:center; gap:6px; position:relative; flex-shrink:0; }
+.stepItem:not(:last-child)::after { content:""; display:block; width:48px; height:1px; background:#2a2a3d; margin:0 4px; }
+.stepDot { width:8px; height:8px; border-radius:50%; background:#2a2a3d; transition:background 0.3s, box-shadow 0.3s; }
+.stepLabel { font-size:11px; color:#4a4a6a; font-weight:600; transition:color 0.3s; white-space:nowrap; }
+.stepDone .stepDot { background:#34d399; }
+.stepDone .stepLabel { color:#34d399; }
+.stepActive .stepDot { background:#a78bfa; box-shadow:0 0 0 3px rgba(167,139,250,0.25); animation:stepPulse 1s ease-in-out infinite; }
+.stepActive .stepLabel { color:#a78bfa; }
+@keyframes stepPulse { 0%,100%{box-shadow:0 0 0 3px rgba(167,139,250,0.25)} 50%{box-shadow:0 0 0 5px rgba(167,139,250,0.1)} }

@@ -112,10 +112,12 @@ function buildSccReviewPrompt(ep: number, mst: MstCard, prompts: ImagePrompt[]):
 
   return `당신은 AI Webtoon Studio 세계관 설계자(agent_worldbuilder)입니다. ${ep}화 SCC 최종 검토를 합니다.
 
+캐릭터 디자이너(agent_character)가 생성한 이미지 프롬프트의 SCC 결과:
 MST 스타일: ${mst.style_keywords.join(", ")}
 컷별 SCC: ${promptSummary}
 
 역할:
+- 캐릭터 디자이너의 프롬프트를 세계관 설계자 관점에서 화풍 일관성 검토합니다
 - SCC 점수 패턴을 분석하여 화풍 일관성 위험 요소를 파악합니다
 - fail/warn 컷의 구체적 개선 방향을 제시합니다
 - Phase 5 완료 조건(전체 SCC ≥ 0.82)을 판단합니다
@@ -166,6 +168,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
   const [apiError, setApiError] = useState<string | null>(null);
   const [imagePrompts, setImagePrompts] = useState<ImagePrompt[]>([]);
   const [sccReport, setSccReport] = useState<SccReport | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Load Phase 2 MST + characters
@@ -237,6 +240,7 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
     setMsgs([]);
     setImagePrompts([]);
     setSccReport(null);
+    setCurrentStep(0);
 
     try {
       const ep = selectedEp;
@@ -249,7 +253,8 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
         p3 ? "Phase 3 로드맵 완료" : "",
       ].filter(Boolean).join("\n");
 
-      // ── 1. Character designer: generate image prompts ──
+      // ── Step 1. Character designer: generate image prompts ──
+      setCurrentStep(1);
       const promptText = await streamText(
         "character",
         buildImagePromptGenPrompt(ep, mst, characters, context),
@@ -261,13 +266,14 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
       const parsed = parseBlock<{ ep: number; prompts: ImagePrompt[] }>(promptText, `IMAGE_PROMPTS_${ep}`);
       const prompts = parsed?.prompts ?? [];
 
-      // ── 2. Worldbuilder: SCC review ──
+      // ── Step 2. Worldbuilder: SCC review (citing character agent) ──
+      setCurrentStep(2);
       await streamText(
         "worldbuilder",
         buildSccReviewPrompt(ep, mst, prompts.length > 0 ? prompts : [
           { cut: 1, scene: "주요 장면", angle: "MS", prompt: "", negativePrompt: "", sccScore: 0.85, sccStatus: "pass" },
         ]),
-        [{ role: "user", content: "SCC 검토 결과를 알려주세요." }],
+        [{ role: "user", content: "캐릭터 디자이너의 이미지 프롬프트 SCC 검토 결과를 알려주세요." }],
         apiKey,
       );
 
@@ -289,11 +295,12 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
       };
       setSccReport(report);
 
-      // ── 4. Producer sign-off ──
+      // ── Step 3. Producer sign-off ──
+      setCurrentStep(3);
       await streamText(
         "producer",
         buildProducerPhase5Prompt(ep, overallRate, context),
-        [{ role: "user", content: "Phase 5 최종 검토를 해주세요." }],
+        [{ role: "user", content: "캐릭터 디자이너·세계관 설계자의 SCC 검토를 종합하여 Phase 5 최종 검토를 해주세요." }],
         apiKey,
       );
 
@@ -353,6 +360,22 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
           </div>
         )}
       </div>
+
+      {/* ─── Step progress bar ─── */}
+      {busy && (
+        <div className={s.stepBar}>
+          {[
+            { step: 1, label: "이미지 프롬프트" },
+            { step: 2, label: "SCC 검증" },
+            { step: 3, label: "총괄 검토" },
+          ].map(({ step, label }) => (
+            <div key={step} className={`${s.stepItem} ${currentStep >= step ? s.stepDone : ""} ${currentStep === step ? s.stepActive : ""}`}>
+              <div className={s.stepDot} />
+              <span className={s.stepLabel}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ─── MST Panel ─── */}
       {noMst ? (
