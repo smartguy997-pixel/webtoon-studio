@@ -864,10 +864,16 @@ export default function Phase1Page() {
         const data = snap.data() as Phase1Result & { genre?: string; concept?: string; savedAt?: { toDate?: () => Date } };
         const savedDate = data.savedAt?.toDate?.()?.toISOString() ?? new Date().toISOString();
         // Re-populate localStorage so next load is instant
-        const payload = { result: data as Phase1Result, genre: data.genre ?? "", concept: data.concept ?? "", savedAt: savedDate };
+        const g = data.genre ?? "";
+        const c = data.concept ?? "";
+        const payload = { result: data as Phase1Result, genre: g, concept: c, savedAt: savedDate };
         localStorage.setItem(`p1_result_${projectId}`, JSON.stringify(payload));
-        setGenre(data.genre ?? "");
-        setConcept(data.concept ?? "");
+        localStorage.setItem(`wts_phase1_${projectId}`, JSON.stringify({
+          input: { genre: g, concept: c, savedAt: savedDate },
+          data: { ...(data as Phase1Result), genre: g, concept: c, savedAt: savedDate },
+        }));
+        setGenre(g);
+        setConcept(c);
         setResult(data as Phase1Result);
         setSavedAt(savedDate);
         setStage("debate");
@@ -906,9 +912,20 @@ export default function Phase1Page() {
 
   // ── Save result ──
   const saveResult = useCallback((res: Phase1Result, g: string, c: string) => {
-    const payload = { result: res, genre: g, concept: c, savedAt: new Date().toISOString() };
+    const savedAt = new Date().toISOString();
+    const payload = { result: res, genre: g, concept: c, savedAt };
     localStorage.setItem(`p1_result_${projectId}`, JSON.stringify(payload));
-    setSavedAt(payload.savedAt);
+    setSavedAt(savedAt);
+
+    // Write cross-phase canonical key so Phase 2/3/4/5 can read Phase 1 data.
+    // Structure covers all access patterns used across the codebase:
+    //   p1?.input?.genre  (Phase 2, 3, 4)
+    //   p1?.data?.genre   (Phase 5)
+    //   p1?.data?.feasibility_score  (Projects list)
+    localStorage.setItem(`wts_phase1_${projectId}`, JSON.stringify({
+      input: { genre: g, concept: c, savedAt },
+      data: { ...res, genre: g, concept: c, savedAt },
+    }));
 
     // Best-effort Firestore save
     if (db) {
@@ -1149,6 +1166,7 @@ export default function Phase1Page() {
     localStorage.removeItem(`p1_result_${projectId}`);
     localStorage.removeItem(`p1_msgs_${projectId}`);
     localStorage.removeItem(`p1_conv_${projectId}`);
+    localStorage.removeItem(`wts_phase1_${projectId}`);
     savedConvRef.current = [];
     setSavedAt(null);
     setMsgs([]);
