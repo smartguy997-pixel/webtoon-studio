@@ -1139,6 +1139,7 @@ export default function Phase1Page() {
   const [showPrevBanner, setShowPrevBanner] = useState(false);
   const [turnCount, setTurnCount] = useState(0);
   const [voteOptions, setVoteOptions] = useState<string[] | null>(null);
+  const [isWritingReport, setIsWritingReport] = useState(false);
 
   // ── Refs ──
   const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -1430,12 +1431,14 @@ export default function Phase1Page() {
     // Producer final
     turn++;
     setTurnCount(turn);
+    setIsWritingReport(true);
     const producerFinal = await streamAgent(
       apiKey, "producer", turn,
       buildProducerFinalPrompt(history.join("\n\n")),
       `장르: ${g}\n기획: ${c.slice(0, 200)}`,
       false, 2500,
     );
+    setIsWritingReport(false);
 
     const parsed = parsePhase1Result(producerFinal);
     setResult(parsed ?? MOCK_RESULT);
@@ -1661,6 +1664,14 @@ export default function Phase1Page() {
             />
           )}
 
+          {/* 보고서 작성 중 */}
+          {isWritingReport && (
+            <div className={styles.reportWriting}>
+              <span className={styles.spin} />
+              <span>보고서 작성 중...</span>
+            </div>
+          )}
+
           {/* Results */}
           {result && debatePhase === "done" && (
             <div className={styles.resultWrap}>
@@ -1681,8 +1692,9 @@ export default function Phase1Page() {
                 <button
                   className={styles.btnDashboard}
                   onClick={() => router.push(`/projects/${projectId}/phase-1/dashboard`)}
+                  style={{ background: "linear-gradient(135deg,#7c6cfc,#a78bfa)", color: "#fff", fontWeight: 800, fontSize: 15, padding: "12px 28px" }}
                 >
-                  📊 대시보드 보기
+                  📊 보고서 전체 보기 →
                 </button>
                 {result.verdict !== "reject" ? (
                   <button

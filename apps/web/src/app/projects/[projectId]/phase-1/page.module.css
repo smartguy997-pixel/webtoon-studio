@@ -1636,3 +1636,32 @@
   color: #cbd5e1;
   font-weight: 600;
 }
+
+.reportWriting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  margin: 12px 0;
+  background: rgba(124,108,252,0.08);
+  border: 1px solid rgba(124,108,252,0.2);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #a78bfa;
+}
+
+.spin {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(167,139,250,0.3);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
