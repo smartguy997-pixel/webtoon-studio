@@ -1179,7 +1179,7 @@ export default function Phase1Page() {
           </span>
           <button
             className={styles.btnRestart}
-            onClick={() => { setStage("form"); setDebatePhase("r1"); setMsgs([]); setResult(null); runningRef.current = false; }}
+            onClick={() => { setStage("form"); setDebatePhase("idle"); setMsgs([]); setResult(null); runningRef.current = false; }}
           >
             다시 분석
           </button>
@@ -1189,7 +1189,7 @@ export default function Phase1Page() {
         <div className={styles.progressBar}>
           <div className={styles.turnCounterWrap}>
             <span className={styles.turnLabel}>
-              {debatePhase === "done" ? "✅ 토론 완료" : debatePhase === "vote" ? "🗳️ 투표 중" : debatePhase === "user_wait" ? "💡 의견 입력 가능" : `Turn ${turnCount}`}
+              {debatePhase === "done" ? "✅ 토론 완료" : `Turn ${turnCount}`}
             </span>
             <div className={styles.turnDots}>
               {Array.from({ length: Math.max(turnCount, 1) }).map((_, i) => (
@@ -1253,7 +1253,7 @@ export default function Phase1Page() {
                 )}
                 <button
                   className={styles.btnRestart}
-                  onClick={() => { setStage("form"); setDebatePhase("r1"); setMsgs([]); setResult(null); runningRef.current = false; }}
+                  onClick={() => { setStage("form"); setDebatePhase("idle"); setMsgs([]); setResult(null); runningRef.current = false; }}
                 >
                   재분석
                 </button>
