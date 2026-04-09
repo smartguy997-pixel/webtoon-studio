@@ -8,12 +8,25 @@ import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-cli
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
 const AGENTS = {
-  worldbuilder: { label: "세계관 설계자",   color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  ini: "세" },
-  character:    { label: "캐릭터 디자이너", color: "#fb923c", bg: "rgba(251,146,60,0.12)",  ini: "캐" },
-  producer:     { label: "총괄 프로듀서",   color: "#f1f5f9", bg: "rgba(241,245,249,0.12)", ini: "총" },
-  user:         { label: "나",              color: "#7c6cfc", bg: "rgba(124,108,252,0.12)", ini: "나" },
+  worldbuilder: { label: "세계관설계자",   color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  ini: "세" },
+  character:    { label: "캐릭터디자이너", color: "#fb923c", bg: "rgba(251,146,60,0.12)",  ini: "캐" },
+  scenario:     { label: "시나리오작가",   color: "#fbbf24", bg: "rgba(251,191,36,0.12)",  ini: "시" },
+  script:       { label: "연출작가",       color: "#f87171", bg: "rgba(248,113,113,0.12)", ini: "연" },
+  producer:     { label: "총괄프로듀서",   color: "#f1f5f9", bg: "rgba(241,245,249,0.12)", ini: "총" },
+  editor:       { label: "편집자",         color: "#fb923c", bg: "rgba(251,146,60,0.10)",  ini: "편" },
+  user:         { label: "나",             color: "#7c6cfc", bg: "rgba(124,108,252,0.12)", ini: "나" },
 } as const;
 type AgentId = keyof typeof AGENTS;
+
+const NAME_TO_AGENT: Record<string, AgentId> = {
+  "세계관설계자": "worldbuilder",
+  "캐릭터디자이너": "character",
+  "시나리오작가": "scenario",
+  "연출작가": "script",
+  "총괄프로듀서": "producer",
+  "편집자": "editor",
+  "사용자": "user",
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +55,10 @@ interface Msg {
   mst?: MstCard;
   ab?: AbCard;
   streaming: boolean;
+  round?: number;
 }
+
+type DebatePhase = "idle" | "running" | "paused" | "generating" | "done";
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
@@ -64,7 +80,58 @@ function stripBlocks(text: string): string {
     .trim();
 }
 
-// ─── System prompts ───────────────────────────────────────────────────────────
+// ─── Debate system prompt ─────────────────────────────────────────────────────
+
+const DEBATE_SYSTEM_PROMPT = `너는 웹툰 기획팀 전문가 6명이 참여하는 Phase 2 세계관·에셋 설계 회의를 진행한다.
+Phase 1에서 확정된 기획안을 바탕으로 세계관, 캐릭터, 화풍을 함께 설계한다.
+
+### 참여자와 성격
+- [세계관설계자]: 설정 규칙 집착. "이 세계에서 그게 가능하려면 근거가 있어야 해요." 스타일.
+- [캐릭터디자이너]: 외형과 감정 우선. "독자가 처음 봤을 때 어떤 인상이어야 하는지가 먼저예요." 스타일.
+- [시나리오작가]: 서사 연결. "그 설정이 실제 이야기에서 어떻게 쓰일지가 더 중요해요." 스타일.
+- [연출작가]: 시각적 구현. "이 분위기, 화면에 담으려면 화풍부터 결정해야 해요." 스타일.
+- [총괄프로듀서]: 중재자. 갈등 정리, 합의 유도만 담당.
+- [편집자]: 베테랑 편집자. 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 마무리를 유도한다.
+
+### 출력 형식
+[이름]: 대사
+
+### 출력 규칙 (반드시 준수)
+- 매 응답마다 직전 발언을 읽고, 그 내용에 직접 반응하는 사람 1명만 말한다.
+- 반드시 앞 발언을 인식했음을 드러내야 한다. ("방금 말씀하신..." "그건 맞는데...")
+- 각 대사는 1~2문장. 마크다운(#, *, >, -) 절대 금지.
+- 카카오톡 메시지처럼 짧고 자연스러운 한국어.
+- 침묵 표현, 말 끊기 표현, 불완전한 문장 허용.
+- [사용자]: 가 발언하면 반드시 그 내용에 직접 반응한다.
+- JSON 블록, [WORLD_CARD] 같은 출력 절대 금지. 오직 대화만.
+
+### 편집자 등장 조건
+- [시스템: 마무리 단계] 신호가 오면 편집자가 앞 대화의 실제 발언을 언급하며 정리를 유도한다.`;
+
+// ─── Parse [이름]: 대사 format ────────────────────────────────────────────────
+
+function parseAgentMessages(text: string): Array<{ agentId: AgentId; text: string }> {
+  const lines = text.split(/\n/);
+  const results: Array<{ agentId: AgentId; text: string }> = [];
+  let current: { agentId: AgentId; lines: string[] } | null = null;
+  for (const line of lines) {
+    const match = line.match(/^\[([^\]]+)\]:\s*([\s\S]*)/);
+    if (match) {
+      if (current && current.lines.join(" ").trim())
+        results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
+      const name = match[1].trim();
+      const agentId = NAME_TO_AGENT[name] ?? "producer";
+      current = { agentId, lines: [match[2]] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  if (current && current.lines.join(" ").trim())
+    results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
+  return results;
+}
+
+// ─── Card generation prompts (run AFTER conversation ends) ────────────────────
 
 function buildWorldbuilderPrompt(genre: string, phase1Summary: string): string {
   return `당신은 AI Webtoon Studio 세계관 설계자(agent_worldbuilder)입니다. Phase 2 세계관 설계를 담당합니다.
@@ -360,16 +427,18 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const router = useRouter();
 
   const [genre, setGenre] = useState("판타지");
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [userInput, setUserInput] = useState("");
-  const [running, setRunning] = useState(false);
-  const [started, setStarted] = useState(false);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
   const [abChosen, setAbChosen] = useState(false);
   const [mstDone, setMstDone] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [turnCount, setTurnCount] = useState(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const runningRef = useRef(false);
+  const pendingUserMsgRef = useRef<string | null>(null);
+  const savedConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const contextRef = useRef<string>("");
 
   useEffect(() => {
@@ -377,42 +446,58 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
 
-      // Restore saved Phase 2 data
+      // Restore saved conversation messages
+      let hasMsgs = false;
+      const rawMsgs = localStorage.getItem(`p2_msgs_${projectId}`);
+      if (rawMsgs) {
+        const savedMsgs = JSON.parse(rawMsgs) as Msg[];
+        if (savedMsgs.length > 0) { setMsgs(savedMsgs); hasMsgs = true; }
+      }
+
+      // Restore conv history for resume
+      const rawConv = localStorage.getItem(`p2_conv_${projectId}`);
+      if (rawConv) {
+        const saved = JSON.parse(rawConv) as { conv: Array<{ role: "user"|"assistant"; content: string }> };
+        savedConvRef.current = saved.conv ?? [];
+      }
+
+      // Restore saved Phase 2 cards
       const saved = localStorage.getItem(`wts_phase2_${projectId}`);
       if (saved) {
         const { data } = JSON.parse(saved) as {
           data: { world?: WorldCard; characters?: (CharSheet | null)[]; mst?: MstCard; ab?: AbCard };
         };
         if (data) {
-          const restored: Msg[] = [];
-          if (data.world) {
-            restored.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "world", world: data.world, streaming: false });
-          }
-          if (data.characters) {
-            data.characters.filter(Boolean).forEach(c => {
-              if (c) restored.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "character", character: c, streaming: false });
-            });
-          }
-          if (data.mst) {
-            restored.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "mst", mst: data.mst, streaming: false });
-            setMstDone(true);
-          }
-          if (data.ab) {
-            restored.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "ab", ab: data.ab, streaming: false });
-          }
-          if (restored.length > 0) {
-            setMessages(restored);
-            setStarted(true);
+          const cards: Msg[] = [];
+          if (data.world) cards.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "world", world: data.world, streaming: false });
+          data.characters?.filter(Boolean).forEach(c => {
+            if (c) cards.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "character", character: c, streaming: false });
+          });
+          if (data.mst) { cards.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "mst", mst: data.mst, streaming: false }); setMstDone(true); }
+          if (data.ab) cards.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "ab", ab: data.ab, streaming: false });
+          if (cards.length > 0) {
+            setMsgs((prev: Msg[]) => [...prev, ...cards]);
+            setDebatePhase("done");
             setAbChosen(!!data.ab);
+            return;
           }
         }
       }
+      if (hasMsgs) setDebatePhase("paused");
     } catch { /* ignore */ }
   }, [projectId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [msgs]);
+
+  // Auto-save conversation (text msgs only) when streaming is done
+  useEffect(() => {
+    if (!projectId || msgs.length === 0) return;
+    if (msgs.some((m: Msg) => m.streaming)) return;
+    const textOnly = msgs.filter((m: Msg) => m.type === "text");
+    if (textOnly.length > 0) localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs));
+  }, [msgs, projectId]);
 
   // Inject blink keyframe for stream cursor
   useEffect(() => {
@@ -425,231 +510,179 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }, []);
 
-  const addStreamingMsg = useCallback((agent: AgentId, cardType?: CardType): string => {
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+  const addMsg = useCallback((agent: AgentId, round: number, text = "", streaming = false, type: "text"|"card" = "text", cardType?: CardType): string => {
     const id = uid();
-    setMessages((prev: Msg[]) => [...prev, {
-      id, agent, text: "", type: cardType ? "card" : "text",
-      cardType, streaming: true,
-    }]);
+    setMsgs((prev: Msg[]) => [...prev, { id, agent, text, type, cardType, streaming, round }]);
     return id;
   }, []);
 
-  const runStream = useCallback(async (
-    agent: AgentId,
-    systemPrompt: string,
-    msgs: Array<{ role: "user" | "assistant"; content: string }>,
-    apiKey: string,
-    cardType?: CardType,
-  ): Promise<string> => {
-    const id = addStreamingMsg(agent, cardType);
-    let fullText = "";
+  const updateMsg = useCallback((id: string, text: string, streaming: boolean, extra?: Partial<Msg>) => {
+    setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text, streaming, ...extra } : m));
+  }, []);
 
-    const gen = streamClaude({
-      apiKey,
-      systemPrompt,
-      messages: msgs,
-      maxTokens: 3000,
-      tools: [WEB_SEARCH_TOOL],
-    });
+  // ── Card generation helper (runs AFTER debate ends) ──
+  const generateCards = useCallback(async (apiKey: string, debateContext: string) => {
+    setDebatePhase("generating");
 
-    for await (const chunk of gen) {
-      fullText += chunk;
-      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText } : m));
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-
-    // Parse card data at end of stream
-    const update: Partial<Msg> = { streaming: false, text: fullText };
-    if (cardType === "world") {
-      const world = parseBlock<WorldCard>(fullText, "WORLD_CARD");
-      if (world) update.world = world;
-    } else if (cardType === "character") {
-      const character = parseBlock<CharSheet>(fullText, "CHAR_CARD");
-      if (character) update.character = character;
-    } else if (cardType === "mst") {
-      const mst = parseBlock<MstCard>(fullText, "MST_CARD");
-      if (mst) update.mst = mst;
-    } else if (cardType === "ab") {
-      const ab = parseBlock<AbCard>(fullText, "AB_CARD");
-      if (ab) update.ab = ab;
-    }
-
-    setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, ...update } : m));
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    return fullText;
-  }, [addStreamingMsg]);
-
-  const startChat = useCallback(async () => {
-    const apiKey = getAnthropicKey();
-    if (!apiKey) {
-      setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다. 설정 페이지에서 API 키를 입력해주세요.");
-      return;
-    }
-    setApiError(null);
-    setStarted(true);
-    setRunning(true);
-    setMessages([]);
-    setAbChosen(false);
-    setMstDone(false);
-    setCurrentStep(0);
-
-    // Load Phase 1 data
     let phase1Summary = `장르: ${genre}`;
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
-      if (p1?.data?.summary) phase1Summary = `장르: ${genre}\nPhase 1 요약: ${p1.data.summary}`;
+      if (p1?.data?.summary) phase1Summary += `\nPhase 1 요약: ${p1.data.summary}`;
       if (p1?.input?.concept) phase1Summary += `\n아이디어: ${p1.input.concept}`;
     } catch { /* ignore */ }
 
+    const context = `${phase1Summary}\n\n[토론 내용 요약]\n${debateContext.slice(0, 2000)}`;
+
+    const runCard = async (agent: AgentId, systemPrompt: string, userMsg: string, cardType: CardType): Promise<string> => {
+      const id = addMsg(agent, 0, "", true, "card", cardType);
+      let fullText = "";
+      for await (const chunk of streamClaude({ apiKey, systemPrompt, messages: [{ role: "user", content: userMsg }], maxTokens: 3000, tools: [{ ...WEB_SEARCH_TOOL, allowed_callers: ["direct"] }] })) {
+        fullText += chunk;
+        updateMsg(id, fullText, true);
+      }
+      const extra: Partial<Msg> = { streaming: false };
+      if (cardType === "world") { const w = parseBlock<WorldCard>(fullText, "WORLD_CARD"); if (w) extra.world = w; }
+      if (cardType === "character") { const c = parseBlock<CharSheet>(fullText, "CHAR_CARD"); if (c) extra.character = c; }
+      if (cardType === "mst") { const m = parseBlock<MstCard>(fullText, "MST_CARD"); if (m) extra.mst = m; }
+      if (cardType === "ab") { const a = parseBlock<AbCard>(fullText, "AB_CARD"); if (a) extra.ab = a; }
+      updateMsg(id, fullText, false, extra);
+      return fullText;
+    };
+
     try {
-      // ── Step 1. Worldbuilder: world design ──
-      setCurrentStep(1);
-      const worldText = await runStream(
-        "worldbuilder",
-        buildWorldbuilderPrompt(genre, phase1Summary),
-        [{ role: "user", content: `${genre} 장르 웹툰의 세계관을 설계해주세요.\n\n${phase1Summary}` }],
-        apiKey,
-        "world",
-      );
+      const worldText = await runCard("worldbuilder", buildWorldbuilderPrompt(genre, context), `${genre} 장르 웹툰의 세계관을 설계해주세요.\n\n${context}`, "world");
       const worldData = parseBlock<WorldCard>(worldText, "WORLD_CARD");
-      const worldSummary = worldData
-        ? `시대: ${worldData.era} / 분위기: ${worldData.atmosphere} / 규칙: ${worldData.rules.join(", ")}`
-        : stripBlocks(worldText).slice(0, 200);
+      const worldSummary = worldData ? `시대: ${worldData.era} / 분위기: ${worldData.atmosphere} / 규칙: ${worldData.rules.join(", ")}` : stripBlocks(worldText).slice(0, 200);
+      await sleep(800);
 
-      // ── Cross-check: character reviews world ──
-      setCurrentStep(2);
-      await runStream(
-        "character",
-        buildCharacterCrossCheckPrompt(genre, worldSummary),
-        [{ role: "user", content: `세계관 설계자가 완성한 세계관: ${worldSummary}` }],
-        apiKey,
-      );
-
-      // ── Step 2. Character: protagonist ──
-      const char1Text = await runStream(
-        "character",
-        buildCharacterPrompt("protagonist", genre, worldSummary, phase1Summary),
-        [
-          { role: "user", content: phase1Summary },
-          { role: "assistant", content: `[세계관]\n${worldSummary}` },
-          { role: "user", content: "주인공 캐릭터 시트를 작성해주세요." },
-        ],
-        apiKey,
-        "character",
-      );
+      const char1Text = await runCard("character", buildCharacterPrompt("protagonist", genre, worldSummary, context), `세계관: ${worldSummary}\n주인공 캐릭터 시트를 작성해주세요.`, "character");
       const char1Data = parseBlock<CharSheet>(char1Text, "CHAR_CARD");
       const char1Summary = char1Data ? `${char1Data.name} (주인공): ${char1Data.personality}` : "주인공 설계 완료";
+      await sleep(800);
 
-      // ── Step 3. Character: antagonist ──
-      setCurrentStep(3);
-      const char2Text = await runStream(
-        "character",
-        buildCharacterPrompt("antagonist", genre, worldSummary, phase1Summary),
-        [
-          { role: "user", content: phase1Summary },
-          { role: "assistant", content: `[세계관]\n${worldSummary}\n[주인공]\n${char1Summary}` },
-          { role: "user", content: "빌런/대립 캐릭터 시트를 작성해주세요." },
-        ],
-        apiKey,
-        "character",
-      );
+      const char2Text = await runCard("character", buildCharacterPrompt("antagonist", genre, worldSummary, context), `세계관: ${worldSummary}\n주인공: ${char1Summary}\n빌런 캐릭터 시트를 작성해주세요.`, "character");
       const char2Data = parseBlock<CharSheet>(char2Text, "CHAR_CARD");
       const char2Summary = char2Data ? `${char2Data.name} (빌런): ${char2Data.personality}` : "빌런 설계 완료";
-      const charsSummary = `${char1Summary}\n${char2Summary}`;
+      await sleep(800);
 
-      // ── Cross-check: producer bridges to MST ──
-      await runStream(
-        "producer",
-        buildProducerMidpointPrompt(char1Summary, char2Summary),
-        [{ role: "user", content: `주인공: ${char1Summary}\n빌런: ${char2Summary}` }],
-        apiKey,
-      );
-
-      // ── Step 4. Character: MST ──
-      setCurrentStep(4);
-      const mstText = await runStream(
-        "character",
-        buildMstPrompt(genre, worldSummary, charsSummary),
-        [
-          { role: "user", content: `장르: ${genre}\n세계관: ${worldSummary}\n캐릭터: ${charsSummary}` },
-          { role: "user", content: "MST(마스터 스타일 토큰)를 설계해주세요." },
-        ],
-        apiKey,
-        "mst",
-      );
+      const mstText = await runCard("character", buildMstPrompt(genre, worldSummary, `${char1Summary}\n${char2Summary}`), `장르: ${genre}\n세계관: ${worldSummary}\nMST를 설계해주세요.`, "mst");
       const mstData = parseBlock<MstCard>(mstText, "MST_CARD");
-      const mstSummary = mstData
-        ? `선: ${mstData.line_weight} / 채색: ${mstData.coloring} / 키워드: ${mstData.style_keywords.join(", ")}`
-        : "MST 설계 완료";
+      const mstSummary = mstData ? `선: ${mstData.line_weight} / 채색: ${mstData.coloring} / 키워드: ${mstData.style_keywords.join(", ")}` : "MST 설계 완료";
       setMstDone(true);
+      await sleep(800);
 
-      // ── Cross-check: worldbuilder validates MST ──
-      await runStream(
-        "worldbuilder",
-        buildWorldbuilderCrossCheckPrompt(mstSummary, worldSummary),
-        [{ role: "user", content: `MST: ${mstSummary}` }],
-        apiKey,
-      );
-
-      // ── Step 5. Worldbuilder: A/B options ──
-      setCurrentStep(5);
-      const abText = await runStream(
-        "worldbuilder",
-        buildAbPrompt(genre, worldSummary, mstSummary),
-        [
-          { role: "user", content: `장르: ${genre}\n세계관: ${worldSummary}\nMST: ${mstSummary}` },
-          { role: "user", content: "디자인 방향 A/B안을 제안해주세요." },
-        ],
-        apiKey,
-        "ab",
-      );
-
-      // Build context for follow-ups
-      contextRef.current = [
-        `[세계관]\n${worldSummary}`,
-        `[캐릭터]\n${charsSummary}`,
-        `[MST]\n${mstSummary}`,
-        `[A/B 제안]\n${stripBlocks(abText).slice(0, 200)}`,
-      ].join("\n\n");
-
-      // ── Producer final summary + A/B prompt ──
-      setCurrentStep(6);
-      await runStream(
-        "producer",
-        buildProducerFinalPrompt(contextRef.current),
-        [{ role: "user", content: "Phase 2 설계를 마무리해주세요." }],
-        apiKey,
-      );
-
-      // Save to localStorage (include AB card for restore)
+      const abText = await runCard("worldbuilder", buildAbPrompt(genre, worldSummary, mstSummary), `장르: ${genre}\n세계관: ${worldSummary}\nMST: ${mstSummary}\nA/B 디자인 방향을 제안해주세요.`, "ab");
       const abData = parseBlock<AbCard>(abText, "AB_CARD");
+
+      contextRef.current = [`[세계관]\n${worldSummary}`, `[캐릭터]\n${char1Summary}\n${char2Summary}`, `[MST]\n${mstSummary}`].join("\n\n");
+
       localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
         data: { world: worldData, characters: [char1Data, char2Data], mst: mstData, ab: abData },
         savedAt: new Date().toISOString(),
       }));
 
-      // Sync MST to style_registry API (fire-and-forget)
       if (mstData) {
         const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-        fetch(`${API_BASE}/api/style/${projectId}/registry`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", Authorization: "Bearer local" },
-          body: JSON.stringify({ mst: mstData }),
-        }).catch(() => { /* non-critical: localStorage is source of truth */ });
+        fetch(`${API_BASE}/api/style/${projectId}/registry`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer local" }, body: JSON.stringify({ mst: mstData }) }).catch(() => {});
       }
+      setDebatePhase("done");
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
-      const msg = raw.includes("401") || raw.includes("authentication")
-        ? "API 키가 유효하지 않습니다. 설정 페이지에서 sk-ant-api03-... 형식의 키를 다시 확인해주세요."
-        : `API 오류: ${raw}`;
-      setApiError(msg);
-    } finally {
-      setRunning(false);
+      setApiError(raw.includes("401") ? "API 키가 유효하지 않습니다." : `API 오류: ${raw}`);
+      setDebatePhase("done");
     }
-  }, [genre, projectId, runStream]);
+  }, [genre, projectId, addMsg, updateMsg]);
+
+  // ── Main debate loop (Phase 1 style) ──
+  const runDebate = useCallback(async (resumeConv?: Array<{ role: "user"|"assistant"; content: string }>) => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    const apiKey = getAnthropicKey();
+    if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); runningRef.current = false; return; }
+
+    setApiError(null);
+    setDebatePhase("running");
+    setTurnCount(1);
+
+    let phase1Summary = `장르: ${genre}`;
+    try {
+      const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
+      if (p1?.data?.summary) phase1Summary += `\nPhase 1 요약: ${p1.data.summary}`;
+      if (p1?.input?.concept) phase1Summary += `\n아이디어: ${p1.input.concept}`;
+    } catch { /* ignore */ }
+
+    const convHistory: Array<{ role: "user"|"assistant"; content: string }> = resumeConv ? [...resumeConv] : [];
+    if (!resumeConv || resumeConv.length === 0) {
+      convHistory.push({ role: "user", content: `Phase 2 세계관·에셋 설계를 시작해줘.\n${phase1Summary}` });
+    } else {
+      convHistory.push({ role: "user", content: "이전 논의를 이어서 계속해줘." });
+    }
+
+    const END_TRIGGERS = ["정리하자", "확정하자", "결정하자", "끝내자", "카드 만들어"];
+    const MAX_ROUNDS = 120;
+    let round = 0;
+
+    const compressHistory = async () => {
+      if (convHistory.length < 14) return;
+      const initial = convHistory[0];
+      const recent = convHistory.slice(-8);
+      const old = convHistory.slice(1, -8).filter(m => m.role === "assistant");
+      if (!old.length) return;
+      let summary = "";
+      for await (const chunk of streamClaude({ apiKey, systemPrompt: "토론 요약 전문가. 핵심 쟁점만 간결하게.", messages: [{ role: "user", content: `요약:\n\n${old.map(m => m.content).join("\n\n").slice(0, 3000)}` }], maxTokens: 400, tools: [] })) summary += chunk;
+      convHistory.length = 0;
+      convHistory.push(initial, { role: "assistant", content: `[이전 토론 요약]\n${summary}` }, { role: "user", content: "위 요약을 참고해서 계속해줘." }, ...recent);
+    };
+
+    debateLoop: for (round = 1; round <= MAX_ROUNDS; round++) {
+      setTurnCount(round);
+      let roundText = "";
+      const roundMsgIds = new Map<AgentId, string>();
+
+      for await (const chunk of streamClaude({ apiKey, systemPrompt: DEBATE_SYSTEM_PROMPT, messages: convHistory, maxTokens: 150, tools: [] })) {
+        roundText += chunk;
+        for (const { agentId, text } of parseAgentMessages(roundText)) {
+          if (!roundMsgIds.has(agentId)) roundMsgIds.set(agentId, addMsg(agentId, round, text, true));
+          else updateMsg(roundMsgIds.get(agentId)!, text, true);
+        }
+      }
+      const finalParsed = parseAgentMessages(roundText);
+      for (const [agentId, id] of roundMsgIds) updateMsg(id, finalParsed.find(m => m.agentId === agentId)?.text ?? "", false);
+
+      convHistory.push({ role: "assistant", content: roundText });
+
+      if (round % 10 === 0) await compressHistory();
+
+      localStorage.setItem(`p2_conv_${projectId}`, JSON.stringify({ conv: convHistory }));
+
+      await sleep(4000);
+
+      const pendingMsg = pendingUserMsgRef.current;
+      if (pendingMsg) {
+        pendingUserMsgRef.current = null;
+        addMsg("user", round, pendingMsg, false);
+        if (END_TRIGGERS.some(t => pendingMsg.includes(t))) break debateLoop;
+        convHistory.push({ role: "user", content: `[사용자]: ${pendingMsg}\n위 내용에 에이전트들이 즉시 반응해줘.` });
+      } else if (round === 80) {
+        convHistory.push({ role: "user", content: "[시스템: 마무리 단계] 편집자가 앞 대화를 인용하며 마무리를 유도하고, 에이전트들이 핵심 결론을 정리해줘." });
+      } else if (round > 80) {
+        convHistory.push({ role: "user", content: "에이전트들이 하나씩 최종 입장을 정리해줘." });
+      } else {
+        convHistory.push({ role: "user", content: "계속 토론해줘." });
+      }
+    }
+
+    const debateContext = convHistory.filter(m => m.role === "assistant").map(m => m.content).join("\n\n");
+    runningRef.current = false;
+    await generateCards(apiKey, debateContext);
+    localStorage.removeItem(`p2_conv_${projectId}`);
+    savedConvRef.current = [];
+  }, [genre, projectId, addMsg, updateMsg, generateCards]);
 
   const handleAbChoose = useCallback((msgId: string, label: string) => {
-    setMessages((prev: Msg[]) => prev.map((m: Msg) => {
+    setMsgs((prev: Msg[]) => prev.map((m: Msg) => {
       if (m.id !== msgId || !m.ab) return m;
       return { ...m, ab: { ...m.ab, chosen: label } };
     }));
@@ -674,153 +707,108 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       body: JSON.stringify({ mst: {}, ab_choice: label }),
     }).catch(() => { /* non-critical */ });
 
-    const userMsgId = uid();
-    setMessages((prev: Msg[]) => [...prev, { id: userMsgId, agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);
-
+    setMsgs((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);
+    const replyId = uid();
+    setMsgs((prev: Msg[]) => [...prev, { id: replyId, agent: "producer", text: "", type: "text", streaming: true }]);
     setTimeout(() => {
-      const replyId = uid();
-      setMessages((prev: Msg[]) => [...prev, {
-        id: replyId, agent: "producer", text: "",
-        type: "text", streaming: true,
-      }]);
-      setTimeout(() => {
-        const replyText = `${label} 방향이 확정되었습니다. 세계관 설계, 캐릭터 시트 2종, MST, 디자인 방향이 모두 확정되었습니다.\n\nPhase 3에서 이 에셋을 기반으로 100화 시나리오 로드맵을 작성할 수 있습니다.`;
-        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === replyId ? { ...m, text: replyText, streaming: false } : m));
-      }, 600);
-    }, 400);
+      setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === replyId ? { ...m, text: `${label} 방향이 확정되었습니다. 세계관·캐릭터·MST·디자인 방향 모두 확정. Phase 3에서 100화 시나리오 로드맵을 작성할 수 있습니다.`, streaming: false } : m));
+    }, 600);
   }, []);
 
-  const handleUserSend = useCallback(async () => {
-    const text = userInput.trim();
-    if (!text || running) return;
-    const apiKey = getAnthropicKey();
-    if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); return; }
+  const handleRestartNew = useCallback(() => {
+    localStorage.removeItem(`p2_msgs_${projectId}`);
+    localStorage.removeItem(`p2_conv_${projectId}`);
+    localStorage.removeItem(`wts_phase2_${projectId}`);
+    savedConvRef.current = [];
+    setMsgs([]); setAbChosen(false); setMstDone(false); setApiError(null);
+    setDebatePhase("idle"); setTurnCount(0);
+    runningRef.current = false;
+  }, [projectId]);
 
-    setApiError(null);
-    setUserInput("");
-    setMessages((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text, type: "text", streaming: false }]);
-    setRunning(true);
+  const canProceed = mstDone && abChosen && debatePhase === "done";
 
-    try {
-      await runStream(
-        "producer",
-        buildProducerFollowupPrompt(contextRef.current),
-        [{ role: "user", content: text }],
-        apiKey,
-      );
-    } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err);
-      setApiError(raw.includes("401") ? "API 키가 유효하지 않습니다." : `API 오류: ${raw}`);
-    } finally {
-      setRunning(false);
-    }
-  }, [userInput, running, runStream]);
-
-  const handleKeyDown = useCallback((e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleUserSend(); }
-  }, [handleUserSend]);
-
-  const canProceed = mstDone && abChosen && !running;
+  if (debatePhase === "idle") {
+    return (
+      <div className={s.page}>
+        <div className={s.formWrap}>
+          <h1 className={s.formTitle}>Phase 2 — 세계관 & 에셋 설계</h1>
+          <p className={s.formDesc}>에이전트들이 자유 토론으로 세계관·캐릭터·화풍을 함께 설계합니다. 의견을 입력하거나 &quot;정리하자&quot;로 카드를 확정할 수 있습니다.</p>
+          {apiError && <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#f87171" }}>⚠ {apiError}</div>}
+          <div className={s.formCard}>
+            <div className={s.prereqNote}>Phase 1 기획 데이터를 자동으로 불러옵니다.</div>
+            <button className={s.btnStart} onClick={() => runDebate()}>✦ 세계관/에셋 설계 토론 시작</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={s.page}>
-      {!started ? (
-        <div className={s.formWrap}>
-          <h1 className={s.formTitle}>Phase 2 — 세계관 & 에셋 설계</h1>
-          <p className={s.formDesc}>세계관 규칙, 캐릭터 초정밀 외형, MST(마스터 스타일 토큰)를 AI 에이전트들이 실시간으로 설계합니다.</p>
-
-          {apiError && (
-            <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#f87171" }}>
-              ⚠ {apiError}
-            </div>
-          )}
-
-          <div className={s.formCard}>
-            <div className={s.prereqNote}>
-              Phase 1 데이터를 자동으로 불러옵니다. 바로 세계관 설계를 시작합니다.
-            </div>
-            <button className={s.btnStart} onClick={startChat}>✦ 세계관/에셋 설계 시작</button>
-          </div>
+      <div className={s.chatLayout}>
+        <div className={s.chatHeader}>
+          <span className={s.chatHeaderGenre}>{genre}</span>
+          <span style={{ fontSize: 12, color: "#475569" }}>
+            {debatePhase === "running" ? `Turn ${turnCount}` : debatePhase === "generating" ? "카드 생성 중..." : debatePhase === "paused" ? "⏸ 일시중지" : "✅ 완료"}
+          </span>
+          {debatePhase === "running" && <ThinkingDots />}
+          <button className={s.btnRestart} onClick={handleRestartNew}>↺ 다시 시작</button>
         </div>
-      ) : (
-        <div className={s.chatLayout}>
-          {running && (
-            <div className={s.stepBar}>
-              {[
-                { step: 1, label: "세계관" },
-                { step: 3, label: "캐릭터" },
-                { step: 4, label: "MST" },
-                { step: 5, label: "디자인 방향" },
-                { step: 6, label: "총괄" },
-              ].map(({ step, label }) => (
-                <div key={step} className={`${s.stepItem} ${currentStep >= step ? s.stepDone : ""} ${currentStep === step ? s.stepActive : ""}`}>
-                  <div className={s.stepDot} />
-                  <span className={s.stepLabel}>{label}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className={s.chatHeader}>
-            <span className={s.chatHeaderGenre}>{genre}</span>
-            <span style={{ fontSize: 13, color: "#7878a0" }}>세계관 · 캐릭터 시트 · MST · 디자인 방향</span>
-            {running && (
-              <span style={{ marginLeft: "auto", fontSize: 12, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
-                에이전트 작업 중 <ThinkingDots />
-              </span>
-            )}
-            <button className={s.btnRestart} onClick={() => { setStarted(false); setMessages([]); setAbChosen(false); setMstDone(false); setApiError(null); }}>
-              ↺ 다시 시작
-            </button>
+
+        {apiError && (
+          <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", margin: "12px 20px 0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>⚠</span><span>{apiError}</span>
+            <a href="/settings" style={{ marginLeft: "auto", color: "#f87171", textDecoration: "underline", whiteSpace: "nowrap" }}>설정으로 이동</a>
           </div>
+        )}
 
-          {apiError && (
-            <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", margin: "12px 20px 0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
-              <span>⚠</span><span>{apiError}</span>
-              <a href="/settings" style={{ marginLeft: "auto", color: "#f87171", textDecoration: "underline", whiteSpace: "nowrap" }}>설정으로 이동</a>
-            </div>
-          )}
+        <div className={s.chatBody}>
+          {msgs.map((m: Msg) => (
+            <MsgBubble key={m.id} msg={m} onAbChoose={handleAbChoose} />
+          ))}
 
-          <div className={s.chatBody}>
-            {messages.map((m: Msg) => (
-              <MsgBubble key={m.id} msg={m} onAbChoose={handleAbChoose} />
-            ))}
-            <div ref={bottomRef} />
-          </div>
-
-          <div className={s.chatBottom}>
-            {canProceed && (
-              <div className={s.gatingRow}>
-                <span className={s.gatingMsg}>✓ 세계관 · 캐릭터 · MST · 디자인 방향 확정 — Phase 3 진행 가능</span>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button style={{
-                    background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)",
-                    borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600,
-                    padding: "10px 14px", cursor: "pointer", whiteSpace: "nowrap",
-                  }} onClick={() => {
-                    localStorage.removeItem(`wts_phase2_${projectId}`);
-                    setMessages([]); setStarted(false); setMstDone(false); setAbChosen(false);
-                  }}>
-                    재생성
-                  </button>
-                  <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-3`)}>Phase 3 시작 →</button>
-                </div>
+          {debatePhase === "paused" && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "24px 16px" }}>
+              <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", margin: 0 }}>이전 토론이 저장되어 있습니다.</p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className={s.btnGating} onClick={() => runDebate(savedConvRef.current)}>토론 계속하기 →</button>
+                <button className={s.btnRestart} onClick={handleRestartNew}>새로 시작</button>
               </div>
-            )}
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
+
+        <div className={s.chatBottom}>
+          {canProceed && (
+            <div className={s.gatingRow}>
+              <span className={s.gatingMsg}>✓ 세계관 · 캐릭터 · MST · 디자인 방향 확정 — Phase 3 진행 가능</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600, padding: "10px 14px", cursor: "pointer" }} onClick={handleRestartNew}>재생성</button>
+                <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-3`)}>Phase 3 시작 →</button>
+              </div>
+            </div>
+          )}
+          {debatePhase === "running" && (
             <div className={s.inputRow}>
               <textarea
-                className={s.chatInput}
-                rows={1}
-                placeholder="수정 요청 또는 의견을 입력하세요… (Enter 전송)"
-                value={userInput}
-                onChange={(e: { target: HTMLTextAreaElement }) => setUserInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={running}
+                className={s.chatInput} rows={1}
+                placeholder="의견 입력 (Enter) · &quot;정리하자&quot; 입력 시 카드 생성"
+                value={chatInput}
+                onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
+                onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (chatInput.trim()) { pendingUserMsgRef.current = chatInput.trim(); setChatInput(""); }
+                  }
+                }}
               />
-              <button className={s.btnSend} disabled={!userInput.trim() || running} onClick={handleUserSend}>전송</button>
+              <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => { if (chatInput.trim()) { pendingUserMsgRef.current = chatInput.trim(); setChatInput(""); } }}>전송</button>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
