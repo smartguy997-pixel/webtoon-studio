@@ -1164,6 +1164,7 @@ export default function Phase1Page() {
     }
 
     // 2) Fallback: load from Firestore (if localStorage is empty / cleared)
+    if (!db) return;
     getDoc(doc(db, "project_summary", projectId, "phase_1", "result"))
       .then((snap: import("firebase/firestore").DocumentSnapshot) => {
         if (!snap.exists()) return;
@@ -1259,12 +1260,14 @@ export default function Phase1Page() {
     setSavedAt(payload.savedAt);
 
     // Best-effort Firestore save
-    setDoc(doc(db, "project_summary", projectId, "phase_1", "result"), {
-      ...res,
-      genre: g,
-      concept: c,
-      savedAt: serverTimestamp(),
-    }).catch(() => {});
+    if (db) {
+      setDoc(doc(db, "project_summary", projectId, "phase_1", "result"), {
+        ...res,
+        genre: g,
+        concept: c,
+        savedAt: serverTimestamp(),
+      }).catch(() => {});
+    }
   }, [projectId]);
 
   // ── Run debate V2 (dynamic orchestrator loop) ──
