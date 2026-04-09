@@ -73,10 +73,10 @@ function buildCharacterCheckPrompt(ep: number, context: string, scriptSummary: s
   return `당신은 AI Webtoon Studio 캐릭터 디자이너(agent_character)입니다. ${ep}화 SCC 검증 리포트를 작성합니다.
 
 ${context}
-대본 요약: ${scriptSummary}
+대본/연출 작가(agent_script)가 작성한 대본 요약: ${scriptSummary}
 
 역할:
-- 30컷 대본에서 캐릭터 외형 일관성 위반 가능성이 높은 컷을 지적합니다
+- 대본/연출 작가의 30컷 연출 의도를 존중하면서, 캐릭터 외형 일관성 위반 가능성이 높은 컷을 지적합니다
 - 특히 표정, 의상, 체형 묘사가 캐릭터 시트와 충돌하는 컷을 경고합니다
 - 전체적인 MST 화풍 준수 여부를 평가합니다
 
@@ -133,7 +133,7 @@ function SccBadge({ scc }: { scc: SccStatus }) {
   return <span className={`${s.sccBadge} ${cls}`}>{label}</span>;
 }
 
-function CutCard({ cut, onEditRequest }: { cut: Cut; onEditRequest: (cut: number) => void }) {
+function CutCard({ cut, onEditRequest }: { key?: number; cut: Cut; onEditRequest: (cut: number) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [jsonView, setJsonView] = useState(false);
   return (
@@ -172,7 +172,7 @@ function CutCard({ cut, onEditRequest }: { cut: Cut; onEditRequest: (cut: number
               <div className={s.cutDetailRow}><span className={s.cutDetailLabel}>연출 의도</span><span className={s.cutDetailVal}>{cut.direction}</span></div>
             </div>
           )}
-          <button className={s.btnEdit} onClick={e => { e.stopPropagation(); onEditRequest(cut.cut); }}>
+          <button className={s.btnEdit} onClick={(e: { stopPropagation: () => void }) => { e.stopPropagation(); onEditRequest(cut.cut); }}>
             ✏ 이 컷 수정 요청
           </button>
         </div>
@@ -204,7 +204,7 @@ function ScriptCardView({ card, onEditRequest }: { card: CutScriptCard; onEditRe
   );
 }
 
-function MsgBubble({ msg, onEditRequest }: { msg: Msg; onEditRequest: (cut: number) => void }) {
+function MsgBubble({ msg, onEditRequest }: { key?: string; msg: Msg; onEditRequest: (cut: number) => void }) {
   const cfg = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   if (msg.cardType === "cutScript" && msg.card) {
@@ -252,6 +252,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
   const [scriptDone, setScriptDone] = useState(false);
   const [doneEps, setDoneEps] = useState<Set<number>>(new Set());
   const [apiError, setApiError] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
@@ -310,15 +311,15 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     apiKey: string,
   ): Promise<string> => {
     const id = uid();
-    setMessages(prev => [...prev, { id, agent, text: "", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent, text: "", streaming: true }]);
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 1500, tools: [] });
     for await (const chunk of gen) {
       fullText += chunk;
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText } : m));
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, streaming: false } : m));
+    setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, streaming: false } : m));
     return fullText;
   }, []);
 
@@ -329,7 +330,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     apiKey: string,
   ): Promise<{ fullText: string; card: CutScriptCard | null }> => {
     const id = uid();
-    setMessages(prev => [...prev, { id, agent: "script", text: "30컷 대본 작성 중...", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent: "script", text: "30컷 대본 작성 중...", streaming: true }]);
 
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 8000, tools: [] });
@@ -337,7 +338,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
       fullText += chunk;
       const cutCount = (fullText.match(/"cut":/g) || []).length;
       if (cutCount > 0) {
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `30컷 대본 작성 중... (${cutCount}/30컷)` } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: `30컷 대본 작성 중... (${cutCount}/30컷)` } : m));
       }
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -352,11 +353,11 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     if (card && card.cuts.length > 0) {
       const passCount = card.cuts.filter(c => c.scc === "pass").length;
       card.sccRate = passCount / card.cuts.length;
-      setMessages(prev => prev.map(m => m.id === id
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id
         ? { ...m, text: "", streaming: false, cardType: "cutScript", card }
         : m));
     } else {
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: "대본 생성 완료 (파싱 오류)", streaming: false } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: "대본 생성 완료 (파싱 오류)", streaming: false } : m));
     }
     return { fullText, card };
   }, []);
@@ -372,6 +373,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     setBusy(true);
     setMessages([]);
     setScriptDone(false);
+    setCurrentStep(0);
 
     let context = `장르: ${genre}\n화: ${selectedEp}화`;
     try {
@@ -384,23 +386,17 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
     } catch { /* ignore */ }
 
     try {
-      // ── 1. Script writer intro ──
+      // ── Step 1. Script writer: intro + 30-cut script ──
+      setCurrentStep(1);
       await streamText(
         "script",
-        `당신은 AI Webtoon Studio 대본/연출 작가입니다. ${selectedEp}화 대본 작성을 시작합니다. 간략히 이번 화의 핵심 서사 방향을 20~30자로 안내하세요.`,
+        `당신은 AI Webtoon Studio 대본/연출 작가(agent_script)입니다. ${selectedEp}화 대본 작성을 시작합니다.
+Phase 2 세계관·캐릭터 시트, Phase 3 로드맵을 기반으로 이번 화의 핵심 서사 방향을 25~35자로 예고하세요.
+말투: 창의적이고 간결하게.`,
         [{ role: "user", content: `${selectedEp}화 대본을 시작합니다.\n${context}` }],
         apiKey,
       );
 
-      // ── 2. Character designer SCC intro ──
-      await streamText(
-        "character",
-        `당신은 AI Webtoon Studio 캐릭터 디자이너입니다. ${selectedEp}화 대본 작성에 앞서 SCC 검증을 동시 진행함을 알립니다. 10~20자로 간략히 안내하세요.`,
-        [{ role: "user", content: context }],
-        apiKey,
-      );
-
-      // ── 3. Generate 30-cut script ──
       const { card } = await streamScript(
         selectedEp,
         buildScriptPrompt(selectedEp, genre, context),
@@ -410,18 +406,20 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
 
       const sccPct = card ? Math.round(card.sccRate * 100) : 90;
       const scriptSummary = card
-        ? `${card.cuts.length}컷 생성, SCC ${sccPct}%, pass:${card.cuts.filter(c => c.scc === "pass").length}`
+        ? `${card.cuts.length}컷 생성, SCC ${sccPct}%, pass:${card.cuts.filter((c: Cut) => c.scc === "pass").length}`
         : "30컷 생성 완료";
 
-      // ── 4. Character SCC report ──
+      // ── Step 2. Character: SCC verification ──
+      setCurrentStep(2);
       await streamText(
         "character",
         buildCharacterCheckPrompt(selectedEp, context, scriptSummary),
-        [{ role: "user", content: "SCC 검증 결과를 보고해주세요." }],
+        [{ role: "user", content: "대본/연출 작가의 30컷 대본 SCC 검증 결과를 보고해주세요." }],
         apiKey,
       );
 
-      // ── 5. Producer review ──
+      // ── Step 3. Producer review ──
+      setCurrentStep(3);
       contextRef.current = `${context}\n${scriptSummary}`;
       await streamText(
         "producer",
@@ -431,7 +429,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
       );
 
       setScriptDone(true);
-      setDoneEps(prev => new Set([...prev, selectedEp]));
+      setDoneEps((prev: Set<number>) => new Set([...prev, selectedEp]));
       if (card) {
         const savedAt = new Date().toISOString();
         localStorage.setItem(`wts_phase4_ep_${projectId}_${selectedEp}`, JSON.stringify({ sccRate: card.sccRate, savedAt }));
@@ -456,7 +454,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
 
     setApiError(null);
     if (!overrideText) setInput("");
-    setMessages(prev => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
+    setMessages((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
     setBusy(true);
 
     try {
@@ -517,6 +515,20 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
 
       {stage === "chat" && (
         <div className={s.chatLayout}>
+          {busy && (
+            <div className={s.stepBar}>
+              {[
+                { step: 1, label: "대본 작성" },
+                { step: 2, label: "SCC 검증" },
+                { step: 3, label: "총괄 검토" },
+              ].map(({ step, label }) => (
+                <div key={step} className={`${s.stepItem} ${currentStep >= step ? s.stepDone : ""} ${currentStep === step ? s.stepActive : ""}`}>
+                  <div className={s.stepDot} />
+                  <span className={s.stepLabel}>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {apiError && (
             <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", margin: "12px 20px 0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
               <span>⚠</span><span>{apiError}</span>
@@ -525,7 +537,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
           )}
 
           <div className={s.chatBody}>
-            {messages.map(msg => <MsgBubble key={msg.id} msg={msg} onEditRequest={cut => sendMessage(`컷 ${cut} 수정: 개선 요청`)} />)}
+            {messages.map((msg: Msg) => <MsgBubble key={msg.id} msg={msg} onEditRequest={(cut: number) => sendMessage(`컷 ${cut} 수정: 개선 요청`)} />)}
             <div ref={bottomRef} />
           </div>
 
@@ -561,7 +573,7 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
                   }}>
                     재생성
                   </button>
-                  <button className={s.btnGating} onClick={() => setSelectedEp(prev => Math.min(prev + 1, 100))}>
+                  <button className={s.btnGating} onClick={() => setSelectedEp((prev: number) => Math.min(prev + 1, 100))}>
                     {selectedEp + 1}화 대본 →
                   </button>
                 </div>
@@ -574,10 +586,10 @@ export default function Phase4Page({ params }: { params: { projectId: string } }
               className={s.chatInput}
               placeholder={`컷 수정: "컷 N 수정: 내용" / 전체 의견 자유롭게 입력`}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={(e: { target: HTMLTextAreaElement }) => setInput(e.target.value)}
               disabled={busy}
               rows={1}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             />
             <button className={s.btnSend} onClick={() => sendMessage()} disabled={busy || !input.trim()}>
               전송

@@ -33,7 +33,7 @@ export function useAuth(): AuthState {
     let unsub: (() => void) | undefined;
     import("firebase/auth").then(({ onAuthStateChanged }) =>
       import("@/lib/firebase").then(({ auth }) => {
-        unsub = onAuthStateChanged(auth, user => {
+        unsub = onAuthStateChanged(auth, (user: { uid: string; email: string | null; displayName: string | null; photoURL: string | null } | null) => {
           if (user) {
             setState({
               uid: user.uid, email: user.email, displayName: user.displayName,

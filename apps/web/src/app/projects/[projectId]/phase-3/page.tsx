@@ -116,6 +116,29 @@ ${context}
 말투: 권위 있고 명확. 자연스러운 한국어. 분량: 150~200자.`;
 }
 
+function buildScenarioCrossCheckPrompt(researchSummary: string, genre: string): string {
+  return `당신은 AI Webtoon Studio 시나리오 작가(agent_scenario)입니다.
+
+심층 조사자(agent_researcher)가 ${genre} 장르 연재 전략을 분석했습니다:
+${researchSummary}
+
+심층 조사자의 분석 중 가장 핵심적인 인사이트를 한 줄로 인정하고,
+이를 바탕으로 4막 로드맵 설계 방향을 예고하세요.
+말투: 창의적이고 자신감 있게. 자연스러운 한국어. 분량: 60~90자. JSON 없음.`;
+}
+
+function buildResearcherArcCheckPrompt(arcNum: number, arcName: string, arcSummary: string): string {
+  return `당신은 AI Webtoon Studio 심층 조사자(agent_researcher)입니다.
+
+시나리오 작가(agent_scenario)가 방금 ${arcNum}막 "${arcName}" 에피소드를 완성했습니다.
+
+로드맵 전체 맥락: ${arcSummary}
+
+${arcNum}막 에피소드들이 전체 100화 흐름에서 독자 유지에 충분한지,
+다음 막으로의 연결이 자연스러운지 한 줄로 검토하세요.
+말투: 분석적이고 간결하게. 자연스러운 한국어. 분량: 50~80자. JSON 없음.`;
+}
+
 function buildProducerFollowupPrompt(context: string): string {
   return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
 
@@ -215,7 +238,7 @@ function RoadmapCardView({ card }: { card: RoadmapCard }) {
   );
 }
 
-function MsgBubble({ msg }: { msg: Msg }) {
+function MsgBubble({ msg }: { key?: string; msg: Msg }) {
   const cfg = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   if (msg.cardType === "roadmap" && msg.card) {
@@ -266,6 +289,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   const [roadmapDone, setRoadmapDone] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
@@ -325,16 +349,16 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     apiKey: string,
   ): Promise<string> => {
     const id = uid();
-    setMessages(prev => [...prev, { id, agent, text: "", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent, text: "", streaming: true }]);
 
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 2000, tools: [WEB_SEARCH_TOOL] });
     for await (const chunk of gen) {
       fullText += chunk;
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText } : m));
+      setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText } : m));
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, streaming: false } : m));
+    setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, streaming: false } : m));
     return fullText;
   }, []);
 
@@ -349,7 +373,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   ): Promise<string> => {
     const id = uid();
     // Add a placeholder text bubble that becomes a card on completion
-    setMessages(prev => [...prev, { id, agent, text: "에피소드 생성 중...", streaming: true }]);
+    setMessages((prev: Msg[]) => [...prev, { id, agent, text: "에피소드 생성 중...", streaming: true }]);
 
     let fullText = "";
     const gen = streamClaude({ apiKey, systemPrompt, messages: msgs, maxTokens: 8000, tools: [] });
@@ -358,7 +382,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       // Update progress text
       const lineCount = (fullText.match(/"ep":/g) || []).length;
       if (cardType === "episode" && lineCount > 0) {
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: `에피소드 생성 중... (${lineCount}/25화)` } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: `에피소드 생성 중... (${lineCount}/25화)` } : m));
       }
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
@@ -371,12 +395,12 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       let card: RoadmapCard | null = null;
       try { if (match) card = JSON.parse(match[1]) as RoadmapCard; } catch { /* ignore */ }
       if (card) {
-        setMessages(prev => prev.map(m => m.id === id
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id
           ? { ...m, text: "", streaming: false, cardType: "roadmap", card }
           : m));
       } else {
         // Show raw text if parse fails
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: fullText, streaming: false } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: fullText, streaming: false } : m));
       }
     } else {
       const tag = `EPISODE_CARD_${arcNum ?? 1}`;
@@ -385,11 +409,11 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       let card: EpisodeCard | null = null;
       try { if (match) card = JSON.parse(match[1]) as EpisodeCard; } catch { /* ignore */ }
       if (card) {
-        setMessages(prev => prev.map(m => m.id === id
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id
           ? { ...m, text: "", streaming: false, cardType: "episode", card }
           : m));
       } else {
-        setMessages(prev => prev.map(m => m.id === id ? { ...m, text: "에피소드 생성 완료 (파싱 오류)", streaming: false } : m));
+        setMessages((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text: "에피소드 생성 완료 (파싱 오류)", streaming: false } : m));
       }
     }
     return fullText;
@@ -406,6 +430,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     setBusy(true);
     setMessages([]);
     setRoadmapDone(false);
+    setCurrentStep(0);
 
     // Build context from Phase 1+2
     let context = `장르: ${genre}`;
@@ -418,7 +443,8 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     } catch { /* ignore */ }
 
     try {
-      // ── 1. Researcher analysis ──
+      // ── Step 1. Researcher analysis ──
+      setCurrentStep(1);
       const researchText = await streamText(
         "researcher",
         buildResearcherPrompt(genre, context),
@@ -426,7 +452,16 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
         apiKey,
       );
 
-      // ── 2. Roadmap overview ──
+      // ── Cross-check: scenario reviews research ──
+      await streamText(
+        "scenario",
+        buildScenarioCrossCheckPrompt(researchText.slice(0, 300), genre),
+        [{ role: "user", content: "심층 조사자의 분석을 바탕으로 로드맵 방향을 잡아주세요." }],
+        apiKey,
+      );
+
+      // ── Step 2. Roadmap overview ──
+      setCurrentStep(2);
       const roadmapText = await streamCard(
         "scenario",
         buildRoadmapPrompt(genre, context, researchText.slice(0, 300)),
@@ -446,10 +481,11 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
         ? roadmapData.arcs.map(a => `${a.num}막: ${a.name} (${a.theme})`).join(", ")
         : "4막 구조 로드맵 완성";
 
-      // ── 3. Episodes per arc (4 calls) ──
+      // ── Steps 3-6. Episodes per arc (4 calls) + researcher cross-check ──
       const collectedEpisodeCards: EpisodeCard[] = [];
 
       for (let arcNum = 1; arcNum <= 4; arcNum++) {
+        setCurrentStep(2 + arcNum);
         const arc = roadmapData?.arcs[arcNum - 1];
         const arcName = arc?.name ?? `${arcNum}막`;
         const arcTheme = arc?.theme ?? "전개";
@@ -469,9 +505,20 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
           const em = arcText.match(new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`));
           if (em) collectedEpisodeCards.push(JSON.parse(em[1]) as EpisodeCard);
         } catch { /* ignore */ }
+
+        // Researcher cross-checks each arc (except last — producer wraps up instead)
+        if (arcNum < 4) {
+          await streamText(
+            "researcher",
+            buildResearcherArcCheckPrompt(arcNum, arcName, arcSummary),
+            [{ role: "user", content: `${arcNum}막 에피소드 완성. 검토 부탁합니다.` }],
+            apiKey,
+          );
+        }
       }
 
-      // ── 4. Producer sign-off ──
+      // ── Step 7. Producer sign-off ──
+      setCurrentStep(7);
       contextRef.current = `${context}\n로드맵: ${arcSummary}`;
       await streamText(
         "producer",
@@ -512,7 +559,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
     setApiError(null);
     setInput("");
-    setMessages(prev => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
+    setMessages((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text, streaming: false }]);
     setBusy(true);
 
     try {
@@ -557,6 +604,24 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
       {stage === "chat" && (
         <div className={s.chatLayout}>
+          {busy && (
+            <div className={s.stepBar}>
+              {[
+                { step: 1, label: "리서치" },
+                { step: 2, label: "로드맵" },
+                { step: 3, label: "1막" },
+                { step: 4, label: "2막" },
+                { step: 5, label: "3막" },
+                { step: 6, label: "4막" },
+                { step: 7, label: "총괄" },
+              ].map(({ step, label }) => (
+                <div key={step} className={`${s.stepItem} ${currentStep >= step ? s.stepDone : ""} ${currentStep === step ? s.stepActive : ""}`}>
+                  <div className={s.stepDot} />
+                  <span className={s.stepLabel}>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {apiError && (
             <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", margin: "12px 20px 0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
               <span>⚠</span><span>{apiError}</span>
@@ -565,7 +630,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
           )}
 
           <div className={s.chatBody}>
-            {messages.map(msg => <MsgBubble key={msg.id} msg={msg} />)}
+            {messages.map((msg: Msg) => <MsgBubble key={msg.id} msg={msg} />)}
             <div ref={bottomRef} />
           </div>
 
@@ -634,10 +699,10 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
               className={s.chatInput}
               placeholder={`특정 화 수정: "N화 수정: 내용" / 전체 의견 자유롭게 입력`}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={(e: { target: HTMLTextAreaElement }) => setInput(e.target.value)}
               disabled={busy}
               rows={1}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             />
             <button className={s.btnSend} onClick={sendMessage} disabled={busy || !input.trim()}>
               전송

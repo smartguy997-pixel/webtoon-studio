@@ -112,6 +112,307 @@
   color: #32324a;
 }
 
+/* ─── Form row / col ─────────────────────────────────────────────────────── */
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.formCol {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Platform cards ─────────────────────────────────────────────────────── */
+
+.platformGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.platformCard {
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.platformCard:hover {
+  border-color: #4a4a6a;
+  background: #1e1e2e;
+}
+
+.platformCardActive {
+  border-color: #7c6cfc;
+  background: rgba(124,108,252,0.08);
+}
+
+.platformCardLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.platformCardActive .platformCardLabel {
+  color: #a78bfa;
+}
+
+.platformCardDesc {
+  font-size: 11px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* ─── Form label row (label + char count) ───────────────────────────────── */
+
+.formLabelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.charCount {
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+
+/* ─── Round progress bar ─────────────────────────────────────────────────── */
+
+.progressBar {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: #0f0f1a;
+  border-bottom: 1px solid #1a1a27;
+  gap: 0;
+}
+
+.progressStep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.progressConnector {
+  height: 1px;
+  flex: 1;
+  background: #23233a;
+  margin-right: 8px;
+  transition: background 0.3s;
+}
+
+.progressConnectorActive {
+  background: #7c6cfc;
+}
+
+.progressDot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  flex-shrink: 0;
+  transition: all 0.25s;
+}
+
+.progressDotActive {
+  background: rgba(124,108,252,0.15);
+  border-color: #7c6cfc;
+  color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124,108,252,0.15);
+}
+
+.progressDotDone {
+  background: rgba(52,211,153,0.12);
+  border-color: #34d399;
+  color: #34d399;
+}
+
+.progressLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.progressTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  transition: color 0.2s;
+}
+
+.progressTitleActive {
+  color: #a78bfa;
+}
+
+.progressSub {
+  font-size: 9px;
+  color: #2a2a3d;
+}
+
+/* ─── Gating Modal ───────────────────────────────────────────────────────── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modalBox {
+  background: #13131d;
+  border: 1px solid #2a2a3d;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  overflow: hidden;
+  animation: modalIn 0.2s ease;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0); }
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid #1e1e2a;
+}
+
+.modalIcon {
+  font-size: 22px;
+}
+
+.modalTitle {
+  font-size: 17px;
+  font-weight: 800;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+.modalBody {
+  padding: 20px 24px;
+}
+
+.modalScoreRow {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.modalScoreItem {
+  flex: 1;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+
+.modalScoreLabel {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.modalScoreVal {
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.modalDesc {
+  font-size: 13px;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.modalNote {
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.modalFooter {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px 22px;
+}
+
+.modalBtnCancel {
+  flex: 1;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.modalBtnCancel:hover {
+  border-color: #4a4a6a;
+}
+
+.modalBtnConfirm {
+  flex: 2;
+  background: linear-gradient(135deg, #7c6cfc, #6b5bf0);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.modalBtnConfirm:hover {
+  opacity: 0.88;
+}
+
+/* ─── Start button ───────────────────────────────────────────────────────── */
+
 .btnStart {
   margin-top: 24px;
   width: 100%;
@@ -1063,4 +1364,275 @@
 
 .btnGatingConditional:hover {
   background: rgba(251,191,36,0.14);
+}
+
+/* ─── V2 Turn counter bar ────────────────────────────────────────────────── */
+
+.turnCounterWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.turnLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.turnDots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.turnDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1e1e2a;
+  border: 1px solid #23233a;
+  transition: all 0.2s;
+}
+
+.turnDotActive {
+  background: #7c6cfc;
+  border-color: #7c6cfc;
+  box-shadow: 0 0 0 2px rgba(124,108,252,0.2);
+}
+
+.turnDotDone {
+  background: #34d399;
+  border-color: #34d399;
+}
+
+.turnRunning {
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+}
+
+/* ─── V2 Intervention ────────────────────────────────────────────────────── */
+
+.interventionV2 {
+  margin: 12px 0;
+  background: #13131d;
+  border: 1px solid #23233a;
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: modalIn 0.18s ease;
+}
+
+.ivHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ivTurn {
+  font-size: 10px;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(52,211,153,0.08);
+  border: 1px solid rgba(52,211,153,0.2);
+  border-radius: 20px;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+}
+
+.ivTitle {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.ivTimer {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s;
+}
+
+.ivTypeBtns {
+  display: flex;
+  gap: 6px;
+}
+
+.ivTypeBtn {
+  flex: 1;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 8px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ivTypeBtn:hover {
+  border-color: #4a4a6a;
+  color: #94a3b8;
+}
+
+.ivTypeBtnActive {
+  font-weight: 700;
+}
+
+.ivInputRow {
+  display: flex;
+}
+
+.ivInput {
+  flex: 1;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 8px;
+  color: #f1f5f9;
+  font-size: 13px;
+  padding: 9px 12px;
+  outline: none;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.6;
+  transition: border-color 0.15s;
+}
+
+.ivInput:focus {
+  border-color: #7c6cfc;
+}
+
+.ivInput::placeholder {
+  color: #2a2a3d;
+}
+
+.ivBtns {
+  display: flex;
+  gap: 8px;
+}
+
+.ivBtnSkip {
+  background: transparent;
+  border: 1px solid #1e1e2a;
+  border-radius: 8px;
+  color: #2a2a3d;
+  font-size: 12px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ivBtnSkip:hover {
+  color: #475569;
+  border-color: #2a2a3d;
+}
+
+.ivBtnSubmit {
+  flex: 1;
+  background: rgba(124,108,252,0.08);
+  border: 1px solid rgba(124,108,252,0.2);
+  border-radius: 8px;
+  color: #a78bfa;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ivBtnSubmit:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.ivBtnSubmit:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+/* ─── Vote Modal ─────────────────────────────────────────────────────────── */
+
+.voteModal {
+  background: #13131d;
+  border: 1px solid #2a2a3d;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  overflow: hidden;
+  animation: modalIn 0.2s ease;
+}
+
+.voteHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid #1e1e2a;
+}
+
+.voteTitle {
+  font-size: 15px;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.voteSub {
+  font-size: 12px;
+  color: #475569;
+  margin-top: 3px;
+}
+
+.voteOptions {
+  padding: 14px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voteOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1a1a28;
+  border: 1px solid #23233a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.voteOption:hover {
+  border-color: #7c6cfc;
+  background: rgba(124,108,252,0.06);
+}
+
+.voteNum {
+  width: 22px;
+  height: 22px;
+  background: rgba(124,108,252,0.12);
+  border: 1px solid rgba(124,108,252,0.25);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a78bfa;
+  flex-shrink: 0;
+}
+
+.voteText {
+  font-size: 13px;
+  color: #cbd5e1;
+  font-weight: 600;
 }

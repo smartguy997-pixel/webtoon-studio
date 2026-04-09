@@ -8,7 +8,7 @@ import {
   RadialBarChart, RadialBar,
   ResponsiveContainer, Legend, Tooltip,
 } from "recharts";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-client";
 import styles from "./page.module.css";
@@ -46,168 +46,420 @@ interface Phase1Result {
   final_report: string;
 }
 type Stage = "form" | "debate";
-type DebatePhase = "r1" | "r1_wait" | "r2" | "r3" | "done";
+type DebatePhase = "idle" | "running" | "user_wait" | "vote" | "done";
+type UserInterventionType = "IDEA" | "QUESTION" | "OBJECTION";
+
+interface OrchestratorDecision {
+  next_agent: AgentId;
+  instruction: string;
+  consensus_reached: boolean;
+  deadlock: boolean;
+  vote_needed: boolean;
+  vote_options: string[] | null;
+}
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
 const MOCK_RESULT: Phase1Result = {
-  feasibility_score: 0.82,
-  feasibility_breakdown: { market: 85, originality: 80, producibility: 75, commercial: 88 },
+  feasibility_score: 0.84,
+  feasibility_breakdown: { market: 88, originality: 82, producibility: 78, commercial: 87 },
   verdict: "go",
-  summary: "강력한 시장성과 독창적 세계관을 갖춘 기획안으로 Phase 2 진행을 적극 권장합니다.",
+  summary: "헌터물 포화 시장에서 '관계 서사+도덕적 딜레마' 차별화로 네이버 10~20대 공략 가능. Phase 2 적극 권장.",
   usp: [
-    { icon: "⚡", title: "즉각적 몰입감", desc: "1화부터 주인공의 위기 상황으로\n독자를 끌어당기는 강렬한 훅", prediction: "1~3화 이탈률 30% 이하 예상" },
-    { icon: "🌍", title: "정교한 세계관", desc: "게임·판타지 문법을 현실 감각과\n융합한 신선한 설정", prediction: "2차 창작 커뮤니티 활성화 기대" },
-    { icon: "💪", title: "성장 서사", desc: "0에서 출발하는 주인공의 여정이\n독자 대리만족을 극대화", prediction: "장기 연재 시 충성 독자층 형성" },
-    { icon: "🎭", title: "입체적 빌런", desc: "단순 악역이 아닌 논리적 동기를\n가진 복합적 대립자 구도", prediction: "커뮤니티 토론 유발, 화제성 상승" },
+    {
+      icon: "⚡",
+      title: "1화 즉각 훅",
+      desc: "세계관 설명 없이 위기 한복판으로\n독자를 던지는 인미디어스 레스 오프닝",
+      prediction: "1→3화 이탈률 22% 이하 예상 (네이버 장르 평균 35% 대비 -13%p)",
+    },
+    {
+      icon: "🧩",
+      title: "다층적 도덕 갈등",
+      desc: "선악 이분법을 깨는 빌런의 논리적 동기가\n독자 토론을 자연 발생시키는 구조",
+      prediction: "네이버 베스트댓글·커뮤니티 화제성 상위 10% 진입 가능",
+    },
+    {
+      icon: "🌐",
+      title: "글로벌 IP 확장성",
+      desc: "K-판타지 문법 + 보편적 성장 서사 결합으로\n일본·북미 현지화 장벽 최소화",
+      prediction: "웹툰 완결 후 소설·애니 IP 전환 시 해외 매출 40%+ 예상",
+    },
+    {
+      icon: "🎭",
+      title: "캐릭터 관계망",
+      desc: "주인공·라이벌·멘토 삼각 구도에\n예측 불가 배신 서사로 독자 감정 장악",
+      prediction: "시즌1 완결 후 팬아트·2차 창작 활성화, 재방문율 60%+ 예상",
+    },
+    {
+      icon: "📱",
+      title: "모바일 최적 연출",
+      desc: "세로 스크롤 정지 포인트 컷 전략으로\n매화 '다음 화 보기' 클릭률 극대화",
+      prediction: "회차 완독률 72% 이상 예상 (플랫폼 평균 58% 대비 +14%p)",
+    },
   ],
   competitors: [
     {
       title: "나 혼자만 레벨업",
       platform: "카카오페이지",
       period: "2018~2021",
-      readers: "누적 1억 뷰+",
-      strengths: "압도적 주인공 성장, 시각적 스펙터클, 글로벌 팬덤",
-      weaknesses: "여성 캐릭터 비중 약함, 스토리 단선적",
-      differentiation: "관계 중심 서사와 복잡한 도덕적 갈등 추가",
+      readers: "누적 1억 4300만 뷰, 글로벌 14개국 서비스",
+      strengths: "압도적 주인공 성장 판타지, 시각적 스펙터클, 영상화 성공",
+      weaknesses: "여성 캐릭터 단순화, 관계 서사 부재, 스토리 단선적 구조",
+      differentiation: "관계 중심 도덕 서사 + 입체적 빌런으로 감정 깊이 차별화",
       genre_color: "#60a5fa",
     },
     {
       title: "전지적 독자시점",
       platform: "네이버웹툰",
       period: "2020~2023",
-      readers: "주간 최고 400만 뷰",
-      strengths: "메타픽션 구조, 촘촘한 복선 회수, 압도적 감정몰입",
-      weaknesses: "원작 소설 의존도, 진입장벽 높음",
-      differentiation: "오리지널 IP로 접근성 강화, 단독 완결 구조",
+      readers: "주간 최고 420만 뷰, 카카오 소설 원작 기반",
+      strengths: "메타픽션 구조, 촘촘한 복선 회수, 독자 감정 극한 몰입",
+      weaknesses: "원작 소설 선행 지식 필요, 신규 독자 진입 장벽 높음",
+      differentiation: "오리지널 IP로 접근성 강화, 1화부터 독자 독립 완주 구조",
       genre_color: "#a78bfa",
     },
     {
-      title: "신의 탑",
+      title: "싸움독학",
       platform: "네이버웹툰",
-      period: "2010~연재중",
-      readers: "글로벌 누적 5억 뷰+",
-      strengths: "독창적 세계관, 방대한 설정, 장기 연재 전략",
-      weaknesses: "초기 작화 진입장벽, 느린 전개",
-      differentiation: "빠른 템포와 모바일 최적화 연출로 현대 독자 공략",
+      period: "2019~2023",
+      readers: "주간 최고 280만 뷰, 남성 10~20대 압도적 점유",
+      strengths: "성장 서사의 교과서, 현실감 있는 싸움 묘사, 높은 재방문율",
+      weaknesses: "판타지 요소 부재로 세계관 확장 한계, 글로벌 IP 전환 어려움",
+      differentiation: "판타지 세계관 결합으로 확장성 확보, 영상화·게임화 IP 가치 상향",
       genre_color: "#34d399",
     },
   ],
   positioning: {
-    ours: { x: 65, y: 72, label: "우리 작품" },
+    ours: { x: 68, y: 74, label: "우리 작품" },
     competitors: [
-      { x: 82, y: 28, label: "나혼자만레벨업" },
-      { x: 55, y: 78, label: "전지적독자시점" },
-      { x: 40, y: 85, label: "신의탑" },
+      { x: 88, y: 24, label: "나혼자만레벨업" },
+      { x: 52, y: 80, label: "전지적독자시점" },
+      { x: 76, y: 18, label: "싸움독학" },
     ],
   },
   radar: {
-    ours: [80, 85, 70, 78, 88],
-    avg:  [65, 60, 72, 68, 70],
+    ours: [82, 88, 74, 80, 87],
+    avg:  [63, 62, 71, 66, 72],
     categories: ["신선도", "감정몰입", "세계관", "캐릭터", "상업성"],
   },
-  final_report: "■ Phase 1 최종 기획 분석 보고서\n\n▶ 시장 분석 요약\n현재 K-웹툰 시장은 헌터·게이트·스탯 시스템 기반 판타지 장르가 포화 상태이나,\n관계 중심 서사와 도덕적 딜레마를 결합한 서브 장르는 여전히 블루오션입니다.\n\n━ 경쟁 환경\n나 혼자만 레벨업, 전지적 독자시점, 신의 탑이 장르 기준점을 형성하고 있으며,\n본 기획안은 이들의 강점을 흡수하면서 차별화된 서사 구조를 제시합니다.\n\n▶ 독창성 평가\n기획안의 핵심 설정은 기존 이세계물과 명확히 구분되는 독창적 요소를 보유하고 있으며,\n장르 독자의 기대치를 충족하면서 새로운 경험을 제공할 수 있는 구조입니다.\n\n▶ 제작 가능성\n100화 장기 연재를 고려한 서사 구조의 확장성이 양호합니다.\n다만 세계관 설정의 내부 논리 정합성 강화 작업이 Phase 2에서 필요합니다.\n\n■ 최종 권고: GO\n실현가능성 종합 점수 0.82로 Phase 2 세계관 구축 진행을 적극 권장합니다.",
+  final_report: "━━ PHASE 1 최종 기획 분석 보고서 ━━\n\n▶ 시장 분석 요약\n2025년 K-웹툰 시장은 헌터·게이트·스탯 계열 판타지의 황금기가 종료되고, '관계 서사+도덕적 딜레마'를 결합한 차세대 하이브리드 판타지의 공백이 형성 중입니다. 네이버웹툰 기준 10~20대 남성 타깃 장르에서 단순 성장물의 신작 성공률은 15% 이하로 추락했으나, 감정·관계 중심 서사를 가미한 작품은 여전히 안정적 독자층을 확보합니다.\n\n▶ 경쟁 환경\n나 혼자만 레벨업(카카오, 1.4억 뷰)·전지적 독자시점(네이버, 420만 주간뷰)·싸움독학(네이버, 280만 주간뷰)이 장르 기준점을 형성합니다. 이들의 공통 약점인 '단선적 성장 서사'와 '신규 독자 진입 장벽'을 본 기획안은 구조적으로 해결하고 있습니다.\n\n▶ 독창성 평가\n핵심 설정은 Lv1(허용 가능) 클리셰 수준이며, 빌런의 도덕적 동기와 다층적 관계망이 기존 경쟁작과의 명확한 차별점입니다. 심층조사자가 지적한 설정 논리 보완은 Phase 2에서 세계관설계자와 함께 해결 가능합니다.\n\n▶ 제작 가능성\n100화 장기 연재 서사 확장성 양호. 시즌1(50화) 완결 구조로 플랫폼 계약 협상력 확보 가능. 캐릭터 IP 잠재력 높아 소설·굿즈·애니 전환 기대. 네이버웹툰 독점 계약 또는 카카오페이지 동시 연재 전략 권장.\n\n■ 최종 권고: GO\n실현가능성 종합 84점. 시장 공백 정확히 공략하는 포지셔닝으로 Phase 2 세계관 구축 즉시 진행 권장. 전제 조건: 심층조사자 지적 사항(설정 내부 모순 2건) Phase 2 착수 전 해소.",
 };
 
-// ─── System Prompts ───────────────────────────────────────────────────────────
+// ─── V2 Agent Personas ────────────────────────────────────────────────────────
 
-const P_STRATEGIST_R1 = (genre: string, concept: string) => `당신은 K-웹툰 시장 전문 전략 기획자(agent_strategist)입니다. Phase 1 기획 분석 Round 1 토론에 참여합니다.
+const AGENT_PERSONAS: Record<string, {
+  role: string; personality: string; objectionTrigger: string; agreeTrigger: string; voiceStyle: string;
+}> = {
+  strategist: {
+    role: "K-웹툰 시장 전문 전략기획자",
+    personality: "데이터 중심, 클리셰 혐오, 상업성 최우선. 냉정하고 논리적.",
+    objectionTrigger: "USP가 불분명하거나 기존 히트작과 차별점이 없을 때, 시장성 근거가 약할 때",
+    agreeTrigger: "명확한 USP와 시장성이 데이터로 증명됐을 때",
+    voiceStyle: '"이미 유사작품 3개 있습니다. 차별점이 뭔가요?" 스타일의 냉정한 시장 분석가 말투.',
+  },
+  researcher: {
+    role: "스토리 논리성·현실성 검증 전문 심층조사자",
+    personality: "논리 허점 탐지 전문가. '왜?'를 3번 이상 묻는다. 반박 시 반드시 대안 제시.",
+    objectionTrigger: "설정 내부 모순, 클리셰 Lv3 남용, 현실 팩트와 충돌할 때",
+    agreeTrigger: "논리적 일관성이 완벽하고 내부 모순이 0개일 때",
+    voiceStyle: '"그 설정, 논리적 모순이 있습니다. 대신 이렇게 하면 어떨까요?" 스타일의 집요한 팩트체커 말투.',
+  },
+  worldbuilder: {
+    role: "K-웹툰 세계관 설계 전문가",
+    personality: "규칙과 일관성 집착. 세계관 바이블 수호자. 능력 체계 수치화 고집.",
+    objectionTrigger: "세계관 규칙 위반, 능력 체계 모순, 설정 충돌이 발생했을 때",
+    agreeTrigger: "세계관 내부 논리가 완벽히 맞을 때",
+    voiceStyle: '"이 세계에서 그 능력이 가능하려면 물리 법칙을 먼저 정의해야 합니다." 스타일.',
+  },
+  character: {
+    role: "K-웹툰 캐릭터 디자이너",
+    personality: "캐릭터 감정선 집착. '이 캐릭터 왜 이런 행동을 하는가?' 질문. 트라우마 설계 전문.",
+    objectionTrigger: "캐릭터 동기가 불분명하거나 개성이 없을 때, 행동 개연성이 부족할 때",
+    agreeTrigger: "입체적 감정선과 명확한 트라우마가 설정됐을 때",
+    voiceStyle: '"독자가 이 캐릭터를 사랑하게 만들려면 트라우마가 필요합니다." 스타일.',
+  },
+  scenario: {
+    role: "K-웹툰 시나리오 전문 작가",
+    personality: "4막 구조 신봉자. 훅과 반전 집착. 100화 로드맵 관리자.",
+    objectionTrigger: "서사 리듬이 깨질 때, 클라이막스 타이밍이 틀릴 때, 독자 이탈 위험이 있을 때",
+    agreeTrigger: "완벽한 아크 구조와 훅 배치가 완성됐을 때",
+    voiceStyle: '"이 전개는 25화 즈음에 배치해야 독자 이탈을 막을 수 있습니다." 스타일.',
+  },
+  script: {
+    role: "K-웹툰 연출 전문 작가",
+    personality: "30컷 단위 집착. 카메라 앵글로 감정 표현. 세로 스크롤 UX 전문가.",
+    objectionTrigger: "연출이 텍스트 중심이거나 시각 임팩트가 부족할 때",
+    agreeTrigger: "컷 구성이 세로 스크롤에 최적화됐을 때",
+    voiceStyle: '"이 장면은 ECU(극단 클로즈업)로 가야 독자가 감정이입 합니다." 스타일.',
+  },
+};
 
-분석 대상:
-- 장르: ${genre}
-- 기획 개요: ${concept}
+// ─── V2 Dynamic Debate Prompts ────────────────────────────────────────────────
 
-역할:
-1. 웹 검색으로 네이버웹툰·카카오페이지·레진코믹스 최신 트렌드를 조사하세요.
-2. 실제 경쟁작 2~3종을 이름과 함께 구체적으로 인용하세요. (예: 나 혼자만 레벨업, 전지적 독자시점, 신의 탑)
-3. 포지셔닝 평가: 대중성(0~100) / 신규IP(0~100) 점수를 명시하세요.
-4. 핵심 타겟 독자층(연령·성별·소비 패턴)을 분석하세요.
-5. USP 3~5개를 "독자는 이 작품에서 [구체적 경험]을 얻습니다" 형식으로 작성하세요.
+/** 에이전트 한 턴 발언 프롬프트 — 이전 전체 토론 맥락 + 중재자 지시 포함 */
+const buildAgentTurnPrompt = (
+  agentId: string,
+  instruction: string,
+  debateHistory: string,
+  genre: string,
+  concept: string,
+  platform: string,
+  ep: string,
+) => {
+  const p = AGENT_PERSONAS[agentId] ?? AGENT_PERSONAS.strategist;
+  return `당신은 ${p.role}입니다.
 
-말투: 전문적이고 논리적. 실제 데이터 근거 필수. 자연스러운 한국어.
-분량: 450~650자.`;
+━━ 당신의 페르소나 ━━
+성격: ${p.personality}
+반박 조건: ${p.objectionTrigger}
+동의 조건: ${p.agreeTrigger}
+말투: ${p.voiceStyle}
 
-const P_RESEARCHER_R1 = (genre: string, concept: string) => `당신은 스토리 논리성·현실성 검토 전문 심층 조사자(agent_researcher)입니다. Phase 1 기획 분석 Round 1 토론에 참여합니다.
+━━ 기획 정보 ━━
+장르: ${genre} | 플랫폼: ${platform} | 목표화수: ${ep}
+기획: ${concept.slice(0, 300)}
 
-분석 대상:
-- 장르: ${genre}
-- 기획 개요: ${concept}
+━━ 지금까지의 토론 ━━
+${debateHistory}
 
-역할:
-1. 웹 검색으로 기획안 설정·배경의 현실성을 팩트체크하세요.
-2. 유사 선행 작품을 구체적으로 인용하세요: "이 [요소]는 《작품명》(플랫폼, 연도)의 [소재]와 유사합니다"
-3. 내부 논리 모순을 구체적으로 지적하세요: "X 능력이 Y 조건이면 Z 장면이 불가능해집니다"
-4. 각 문제점에 반드시 구체적 대안을 제시하세요. 순수 비판 금지.
+━━ 총괄프로듀서의 지시 ━━
+${instruction}
 
-말투: 분석적이고 날카롭지만 건설적. 자연스러운 한국어.
-분량: 400~600자.`;
+━━ 발언 규칙 (반드시 준수) ━━
+1. 이전 발언을 직접 인용하며 시작: "○○님 말씀처럼..." 또는 "앞서 ○○님이 말씀하신..."
+2. 반박 시 반드시 구체적 대안 포함. "이건 안 됩니다"만 하는 것 금지.
+3. 동의 시에도 추가 가치를 더하세요: "○○님 의견에 동의합니다. 추가로..."
+4. 250~450자 이내로 간결하게. 핵심만.
+5. 당신 전문 분야 외의 발언 금지 (연출작가가 시장 분석 하는 것 등).`;
+};
 
-const buildP_SCENARIO_R2 = (r1Context: string, userInput: string) => `당신은 K-웹툰 시나리오 전문 작가(agent_scenario)입니다. Phase 1 Round 2 토론에 참여합니다.
+/** 총괄프로듀서 오케스트레이터 — 다음 발언자 결정 + 합의 판단 */
+const buildOrchestratorPrompt = (debateHistory: string, userInput?: string) => `당신은 AI Webtoon Studio 토론 오케스트레이터입니다.
+지금까지의 토론을 분석하여 다음 행동을 결정합니다.
 
-Round 1 토론 내역:
----
-${r1Context}
----
-${userInput ? `\n사용자 추가 의견: "${userInput}"\n` : ""}
-역할:
-1. 3막 구조를 구체적 화수와 함께 제시하세요. (예: "1~20화: 도입, 21~60화: 갈등, 61~100화: 클라이막스")
-2. 독자 이탈 방지 훅 포인트를 화수와 함께 명시하세요.
-3. 웹 검색으로 장기 연재 성공 패턴을 조사하여 적용하세요.
-4. 시즌 분할 가능성을 평가하세요.
+━━ 지금까지의 토론 ━━
+${debateHistory}
+${userInput ? `\n━━ 사용자 개입 ━━\n유형: ${userInput}\n→ 이 개입을 고려하여 판단하세요.\n` : ""}
+━━ 판단 기준 ━━
+• 합의 조건: 전략기획자 + 심층조사자가 모두 동의했거나, 총 5턴 이상 진행됐고 주요 이슈가 해소됨
+• 교착 상태: 동일 주제로 3턴 이상 반박이 반복되고 진전이 없음 → 투표 트리거
+• 다음 발언자 선택: 현재 미해결 이슈를 가장 잘 다룰 수 있는 에이전트
 
-말투: 창의적이고 구조적. 자연스러운 한국어.
-분량: 350~500자.`;
+━━ 출력 형식 (JSON만, 다른 텍스트 절대 없음) ━━
+{
+  "next_agent": "strategist|researcher|worldbuilder|character|scenario|script|producer",
+  "instruction": "다음 에이전트에게 전달할 구체적 지시 (100자 이내)",
+  "consensus_reached": false,
+  "deadlock": false,
+  "vote_needed": false,
+  "vote_options": null
+}
 
-const buildP_SCRIPT_R2 = (r1Context: string, userInput: string) => `당신은 K-웹툰 연출 전문 작가(agent_script)입니다. Phase 1 Round 2 토론에 참여합니다.
+next_agent가 "producer"이면 최종 합의 결론 도출을 의미합니다.`;
 
-Round 1 토론 내역:
----
-${r1Context}
----
-${userInput ? `\n사용자 추가 의견: "${userInput}"\n` : ""}
-역할:
-1. 세로 스크롤 웹툰 특화 연출 전략을 구체적으로 제시하세요.
-2. "정지 포인트" 컷 배치 전략을 화수 유형별로 제안하세요.
-3. 모바일 최적 컷수를 구체적 숫자로 제시하세요. (회차 유형별 상이)
-4. 장르별 시각 문법 예시 (로맨스/액션/공포 중 해당 장르 중심)
-5. 도입부/클라이막스/일상화 컷 분배를 구체적 수치로 제시하세요.
+/** 총괄프로듀서 최종 결론 — JSON 결과 포함 */
+const buildProducerFinalPrompt = (allContext: string) => `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
+토론을 마무리하고 투자자·PD에게 바로 전달 가능한 최종 보고서를 작성합니다.
 
-말투: 시각적이고 실용적. 자연스러운 한국어.
-분량: 350~500자.`;
-
-const buildP_PRODUCER_R3 = (allContext: string) => `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다. Phase 1 기획 분석 Round 3 최종 종합을 진행합니다.
-
-전체 토론 내역:
----
+━━ 전체 토론 내역 ━━
 ${allContext}
----
 
-역할:
-1. "토론을 마무리합니다."로 시작하세요.
-2. 4명 에이전트의 의견을 종합하고, 명시적 갈등은 이름을 거론하며 중재하세요.
-3. 최종 실현가능성 평가를 내리세요.
-4. Phase 2 진행 여부를 명확히 권고하세요.
+━━ 중재 원칙 ━━
+• 에이전트 의견 충돌 시 이름을 직접 거론하여 명확히 중재하세요.
+  형식: "전략기획자는 [X]를 주장했으나, 심층조사자의 [Y] 우려가 더 타당합니다."
+• 사용자 의견이 반영됐다면 반드시 명시하세요.
+• feasibility_score: 0.70+ = go / 0.50~0.69 = conditional / 미만 = reject
 
-말투: 권위 있고 명확. 결론 지향. 자연스러운 한국어.
-분량: 300~450자.
+━━ 보고서 순서 ━━
+1. "토론을 마무리합니다."로 시작
+2. 종합 판단 (2~3문장, 결론 선행)
+3. 에이전트별 핵심 의견 요약 (각 1문장)
+4. 핵심 리스크 1~2개
+5. Phase 2 진행 권고
 
-⚠️ 응답 마지막에 다음 형식의 JSON을 정확히 출력하세요 (다른 텍스트 없이):
+말투: 권위 있고 결론 지향. 분량 (JSON 제외): 300~450자.
+
+보고서 직후 다음 JSON 출력 (다른 텍스트 없음):
 
 [PHASE1_RESULT]
 {
-  "feasibility_score": 0.82,
-  "feasibility_breakdown": {"market": 85, "originality": 80, "producibility": 75, "commercial": 88},
+  "feasibility_score": 0.00,
+  "feasibility_breakdown": {"market": 0, "originality": 0, "producibility": 0, "commercial": 0},
   "verdict": "go",
-  "summary": "80자 이내 요약",
+  "summary": "80자 이내 핵심 요약",
   "usp": [{"icon": "⚡", "title": "USP제목", "desc": "설명\\n2줄", "prediction": "독자반응 예측"}],
-  "competitors": [{"title": "작품명", "platform": "네이버웹툰", "period": "2022~연재중", "readers": "주간200만+", "strengths": "강점", "weaknesses": "약점", "differentiation": "차별점", "genre_color": "#60a5fa"}],
-  "positioning": {"ours": {"x": 65, "y": 72, "label": "우리 작품"}, "competitors": [{"x": 80, "y": 30, "label": "작품명"}]},
-  "radar": {"ours": [70,85,60,80,75], "avg": [65,60,70,65,70], "categories": ["신선도","감정몰입","세계관","캐릭터","상업성"]},
-  "final_report": "300자 이상 A4급 보고서"
+  "competitors": [{"title": "작품명", "platform": "네이버웹툰", "period": "YYYY~YYYY", "readers": "주간XXX만뷰", "strengths": "강점", "weaknesses": "약점", "differentiation": "차별점", "genre_color": "#60a5fa"}],
+  "positioning": {"ours": {"x": 0, "y": 0, "label": "우리 작품"}, "competitors": [{"x": 0, "y": 0, "label": "작품명"}]},
+  "radar": {"ours": [0,0,0,0,0], "avg": [0,0,0,0,0], "categories": ["신선도","감정몰입","세계관","캐릭터","상업성"]},
+  "final_report": "━━ PHASE 1 최종 기획 분석 보고서 ━━\\n\\n▶ 시장 분석 요약\\n[400자+ 플랫폼 포지셔닝·경쟁 환경·타깃 독자층 포함]\\n\\n▶ 독창성 평가\\n[핵심 차별점, 클리셰 리스크]\\n\\n▶ 제작 가능성\\n[100화 확장성, IP 잠재력]\\n\\n■ 최종 권고: GO\\n[한 줄 선언 + 전제 조건]"
 }
-[/PHASE1_RESULT]
+[/PHASE1_RESULT]`;
 
-verdict 기준: "go" ≥ 0.70, "conditional" 0.50~0.69, "reject" < 0.50`;
+/** 사용자 개입 분류 프롬프트 */
+const buildClassifyPrompt = (userMsg: string, debateContext: string) => `당신은 사용자 메시지를 분류합니다.
+
+토론 맥락: ${debateContext.slice(0, 400)}
+사용자 메시지: "${userMsg}"
+
+출력 (JSON만):
+{"type": "IDEA|QUESTION|OBJECTION|VOTE|OFF_TOPIC", "summary": "한 줄 요약"}`;
+
+
+
+
+// (old fixed-round prompts removed — V2 uses buildAgentTurnPrompt / buildOrchestratorPrompt)
+
+const P_RESEARCHER_R1 = (genre: string, concept: string) => `당신은 스토리 논리성·현실성 검증 전문 심층조사자(agent_researcher)입니다.
+K-웹툰 장르 클리셰 데이터베이스와 선행작 아카이브를 기반으로 기획안을 정밀 검증합니다.
+
+━━ 검증 대상 ━━
+장르: ${genre}
+기획 개요: ${concept}
+
+━━ 검증 프레임워크 ━━
+• [설정 내부 모순] 능력·규칙이 후반 서사와 충돌하는지 사전 탐지
+• [선행작 충돌] 핵심 소재·구조가 기존 히트작과 유사하면 차별화 필수 경보
+• [현실 팩트체크] 한국 사회·법제도·과학·역사 설정의 오류 검증
+• [클리셰 레벨] Lv1(장르 문법, 허용) / Lv2(과다 사용, 주의) / Lv3(독자 이탈 유발, 수정 필수)
+
+━━ 분석 지시 ━━
+1. 웹 검색으로 동일 소재를 다룬 K-웹툰 선행작을 조사하고 직접 인용하세요.
+   인용 형식: "이 [설정/소재]는 《작품명》(플랫폼, 연도)의 [해당 요소]와 구조적으로 유사합니다. 차별화 방향: [구체적 제안]."
+2. 기획안 설정의 내부 논리 모순을 1~3개 구체적으로 지적하세요.
+   지적 형식: "[X 요소]가 [Y 조건]이라면, [Z 화]의 [특정 장면/상황]이 논리적으로 불가능해집니다. 수정 방향: [대안]."
+3. 클리셰 레벨을 명시하세요.
+   클리셰 형식: "Lv[N] 클리셰 — [요소명]: [설명]. 차별화 제안: [구체적 방법]."
+4. 한국 사회 현실(직장문화·교육제도·법률·사회통념) 반영 여부를 검토하세요. 오류 발견 시 수정 방향 제시.
+5. 반드시 긍정 요소(독창성 있는 부분)를 1개 이상 포함하세요. 순수 비판만 하는 것은 금지.
+6. 각 문제점마다 즉시 실행 가능한 대안 1개 이상 반드시 제시하세요.
+
+말투: 분석적·건설적. 팩트 우선, 직설적이되 협력적. 전문 편집자 톤.
+분량: 500~700자.`;
+
+const buildP_SCENARIO_R2 = (r1Context: string, userInput: string) => `당신은 K-웹툰 시나리오 전문 작가(agent_scenario)입니다.
+네이버웹툰 평균 연재 기간 3.5년, 카카오페이지 평균 완결 화수 120화를 기준점으로 서사 구조를 설계합니다.
+
+━━ Round 1 토론 맥락 ━━
+${r1Context}
+${userInput ? `\n━━ 사용자 추가 의견 ━━\n"${userInput}"\n→ 이 의견을 서사 구조에 반드시 반영하고, 반영 방식을 명시하세요.\n` : ""}
+━━ 플랫폼별 서사 공식 ━━
+• 네이버: 1화 임팩트 최우선. 5화 내 세계관 확립. 10화 내 핵심 갈등 제시. 독자 이탈률 1→3화 35%, 3→10화 20%.
+• 카카오: 3화 무료 공개 후 유료 전환. 3화 훅이 첫 결제 유인. 아크 완결 시점(20~25화)이 재결제 타이밍.
+• 레진: 소아크 7~10화 완결 구조 선호. 회차 길이 제한 없음.
+
+━━ 서사 설계 공식 ━━
+• 3막: 1막(도입·각성, 전체 20%) / 2막(성장·갈등·위기, 60%) / 3막(클라이막스·결말, 20%)
+• 필수 훅 배치: 1화(세계관 훅), 3화(주인공 변화), 5화(첫 위기), 15화(중간 반전), 30화(1막 완결+대반전), 50화(시즌 분기점), 70화(최대 위기), 95~100화(클라이막스)
+• 감정 피크: 소아크(5화) 마지막화 + 중아크(25화) 마지막화
+
+━━ 분석 지시 ━━
+1. Round 1 에이전트 의견(전략기획자·심층조사자)을 직접 인용하며 서사 전략과 연결하세요.
+2. 3막 구조를 화수와 함께 제시하세요. (예: 1~18화 / 19~72화 / 73~100화)
+3. 독자 이탈 방지를 위한 훅 포인트를 5개 이상, 화수·내용·의도를 함께 명시하세요.
+4. 독자층(전략기획자 분석 기반) 맞춤 감정 코드를 서사에 어떻게 심을지 제안하세요.
+5. 시즌 분할(시즌1 완결 화수) 및 스핀오프 확장 가능성을 평가하세요.
+6. 웹 검색으로 동일 장르 장기 연재 성공 패턴을 1건 이상 조사하여 적용하세요.
+
+말투: 구조적·창의적. 현장 시나리오 작가 + 전략가의 시선.
+분량: 450~600자.`;
+
+const buildP_SCRIPT_R2 = (r1Context: string, userInput: string) => `당신은 K-웹툰 연출 전문 작가(agent_script)입니다.
+세로 스크롤 모바일 UX와 독자 시선 흐름을 전문으로 하며, 웹툰 플랫폼 데이터 기반 연출 전략을 수립합니다.
+
+━━ Round 1 토론 맥락 ━━
+${r1Context}
+${userInput ? `\n━━ 사용자 추가 의견 ━━\n"${userInput}"\n→ 이 의견을 연출 전략에 반드시 반영하세요.\n` : ""}
+━━ 웹툰 연출 데이터 ━━
+• 화당 컷수 기준: 도입화 20~25컷 / 액션화 28~35컷 / 감정화 18~22컷 / 일상화 15~20컷
+• 스크롤 정지 포인트: 화당 1/3 지점에 임팩트 컷 1개 배치 → 이탈률 40% 감소 (플랫폼 내부 데이터)
+• 세로 분할 패널: 긴장감·속도감 연출. 가로 분할: 시간 경과·장소 전환. 풀페이지: 화당 1~2개(과용 금지).
+• 말풍선 규칙: 컷당 최대 3개. 초과 시 가독성 급락.
+• 1화 황금률: 첫 3컷에서 세계관 또는 감정 훅 확립 필수.
+
+━━ 장르별 시각 문법 ━━
+• 액션·판타지: 분할 패널로 속도감 → 임팩트 풀컷 → SFX 텍스트 과감 사용. 30컷+ 권장.
+• 로맨스: 표정 CU(클로즈업) 빈도 높음. 풀페이지 1컷은 감정 클라이막스(고백·키스) 전용. 22컷 내외.
+• 스릴러·공포: 여백과 침묵 컷 활용으로 독자 상상 유발. 화면 분할 불규칙성으로 불안감 조성. 25컷 내외.
+• 현대판타지: ELS(원경)로 세계관 → MS(중경)로 캐릭터 감정 → CU(근경)로 클라이막스 흐름.
+
+━━ 분석 지시 ━━
+1. Round 1 에이전트 의견과 시나리오 작가 의견을 연결하여, 연출이 서사 전략을 어떻게 뒷받침할지 제시하세요.
+2. 해당 장르에 맞는 화 유형별 컷 배분 공식을 수치와 함께 제시하세요. (도입화·클라이막스화·일상화 각각)
+3. 세로 스크롤 스크롤 정지 포인트 전략을 화 유형별로 구체적으로 제안하세요.
+4. 1화 연출 시나리오를 제안하세요: 첫 컷 구성·훅 배치·페이지 엔딩 전략.
+5. 모바일(세로 720px 기준) 가독성 최적화 팁 2~3가지를 제시하세요.
+6. 이 기획안의 장르·세계관에 특화된 시각적 시그니처(반복 연출 패턴)를 1개 제안하세요.
+
+말투: 시각적·실용적. 현장 연출 PD + 아트디렉터의 시선.
+분량: 450~600자.`;
+
+const buildP_PRODUCER_R3 = (allContext: string) => `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
+4인 에이전트의 토론을 종합하여 투자자·PD에게 바로 전달 가능한 수준의 최종 판단을 내립니다.
+
+━━ 전체 토론 내역 ━━
+${allContext}
+
+━━ 중재 원칙 ━━
+• 에이전트 의견 충돌 시: 이름을 직접 거론하여 입장을 명확히 중재하세요.
+  형식: "전략기획자는 [X]를 주장했으나, 심층조사자의 [Y] 우려가 더 타당합니다. 따라서 [결론]."
+• 사용자 추가 의견이 있다면: 반영 여부와 이유를 반드시 명시하세요.
+• feasibility_score 판정 기준: 0.70 이상 = go / 0.50~0.69 = conditional / 0.50 미만 = reject
+
+━━ 보고서 구조 (이 순서로 작성) ━━
+1. "토론을 마무리합니다."로 시작
+2. 종합 판단 (2~3문장, 결론 선행)
+3. 에이전트별 핵심 의견 요약 및 중재 (각 1~2문장)
+4. 핵심 리스크 1~2개 (실명 지적)
+5. Phase 2 진행 권고 및 전제 조건 (있는 경우)
+
+말투: 권위 있고 결론 지향. 현장 PD 보고서 수준.
+분량 (JSON 제외): 350~500자.
+
+━━ JSON 출력 (보고서 직후, 다른 텍스트 없이) ━━
+
+[PHASE1_RESULT]
+{
+  "feasibility_score": 0.00,
+  "feasibility_breakdown": {
+    "market": 0,
+    "originality": 0,
+    "producibility": 0,
+    "commercial": 0
+  },
+  "verdict": "go",
+  "summary": "80자 이내 핵심 요약 — 이 기획안의 가장 강한 무기와 시장 포지션",
+  "usp": [
+    {
+      "icon": "⚡",
+      "title": "USP 제목 (10자 이내)",
+      "desc": "독자가 얻는 경험을 2줄로\\n구체적 감정 언어로 작성",
+      "prediction": "예: 1~3화 이탈률 25% 이하 예상 / 특정 커뮤니티 화제성 높음"
+    }
+  ],
+  "competitors": [
+    {
+      "title": "실제 작품명만 (약칭 금지)",
+      "platform": "네이버웹툰|카카오페이지|레진코믹스",
+      "period": "YYYY~YYYY or YYYY~연재중",
+      "readers": "주간 최고 XXX만 뷰 or 누적 X억 뷰",
+      "strengths": "핵심 강점 (50자 이내)",
+      "weaknesses": "핵심 약점 (50자 이내)",
+      "differentiation": "우리 작품의 차별화 포인트 (50자 이내)",
+      "genre_color": "#60a5fa"
+    }
+  ],
+  "positioning": {
+    "ours": {"x": 0, "y": 0, "label": "우리 작품"},
+    "competitors": [{"x": 0, "y": 0, "label": "작품명"}]
+  },
+  "radar": {
+    "ours": [0, 0, 0, 0, 0],
+    "avg":  [0, 0, 0, 0, 0],
+    "categories": ["신선도", "감정몰입", "세계관", "캐릭터", "상업성"]
+  },
+  "final_report": "━━ PHASE 1 최종 기획 분석 보고서 ━━\\n\\n▶ 시장 분석 요약\\n[400자 이상. 플랫폼 포지셔닝, 경쟁 환경, 타깃 독자층 포함]\\n\\n▶ 독창성 평가\\n[기획안 핵심 차별점, 클리셰 리스크 포함]\\n\\n▶ 제작 가능성\\n[100화 연재 확장성, 캐릭터 IP 잠재력, 영상화 가능성]\\n\\n■ 최종 권고: [GO|CONDITIONAL|REJECT]\\n[한 줄 선언 + 전제 조건]"
+}
+[/PHASE1_RESULT]`;
 
 // ─── Parse helpers ────────────────────────────────────────────────────────────
 
@@ -223,6 +475,16 @@ function parsePhase1Result(text: string): Phase1Result | null {
 
 function stripResultBlock(text: string): string {
   return text.replace(/\[PHASE1_RESULT\][\s\S]*?\[\/PHASE1_RESULT\]/g, "").trim();
+}
+
+function parseOrchestratorDecision(text: string): OrchestratorDecision | null {
+  const match = text.match(/\{[\s\S]*?"next_agent"[\s\S]*?\}/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[0]) as OrchestratorDecision;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Recharts helper types ────────────────────────────────────────────────────
@@ -350,7 +612,7 @@ function FeasibilityChart({ data }: { data: Phase1Result["feasibility_breakdown"
         <RadialBar background={{ fill: "#1a1a27" }} dataKey="value" />
         <Legend content={renderLegend} />
         <Tooltip
-          formatter={(v) => [`${Number(v)}점`, ""]}
+          formatter={(v: unknown) => [`${Number(v)}점`, ""]}
           contentStyle={{ background: "#16161f", border: "1px solid #2a2a3d", borderRadius: 8, fontSize: 12 }}
         />
       </RadialBarChart>
@@ -380,7 +642,62 @@ function RoundHeader({ round, label }: { round: number; label: string }) {
   );
 }
 
-function MsgBubble({ msg }: { msg: Msg }) {
+// ─── Message line renderer (supports agent formatting) ───────────────────────
+
+function renderMsgLine(line: string, i: number, agentColor: string) {
+  // 🔍 Web search indicator line
+  if (line.includes("🔍 **웹 검색**") || line.startsWith("🔍")) {
+    const query = line.replace(/.*🔍\s*\*\*웹 검색\*\*:\s*/, "").replace(/"/g, "");
+    return (
+      <div key={i} style={{
+        display: "flex", alignItems: "center", gap: 6,
+        background: "rgba(124,108,252,0.08)", border: "1px solid rgba(124,108,252,0.18)",
+        borderRadius: 6, padding: "4px 10px", margin: "6px 0", fontSize: 11, color: "#a78bfa",
+      }}>
+        <span>🔍</span>
+        <span style={{ color: "#64748b" }}>웹 검색:</span>
+        <span style={{ fontStyle: "italic" }}>{query}</span>
+      </div>
+    );
+  }
+  // ⏳ Rate-limit wait indicator
+  if (line.includes("⏳") && line.includes("레이트 리밋")) {
+    return (
+      <div key={i} style={{
+        background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)",
+        borderRadius: 6, padding: "4px 10px", margin: "4px 0", fontSize: 11, color: "#fbbf24",
+      }}>
+        {line.replace(/\*\*/g, "")}
+      </div>
+    );
+  }
+  // ━━ Section heading ━━
+  if (line.startsWith("━━") || (line.startsWith("[") && line.endsWith("]"))) {
+    return (
+      <div key={i} style={{ fontWeight: 700, color: agentColor, fontSize: 12, marginTop: i === 0 ? 0 : 10, marginBottom: 3, letterSpacing: "0.03em" }}>
+        {line}
+      </div>
+    );
+  }
+  // • or ① ② ③ bullets
+  if (/^[•①②③④⑤]/.test(line)) {
+    return (
+      <div key={i} style={{ paddingLeft: 12, color: "#cbd5e1", fontSize: 13, lineHeight: 1.6, marginBottom: 2 }}>
+        {line}
+      </div>
+    );
+  }
+  // Blank line → small gap
+  if (!line.trim()) return <div key={i} style={{ height: 6 }} />;
+  // Default
+  return (
+    <div key={i} style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.65 }}>
+      {line}
+    </div>
+  );
+}
+
+function MsgBubble({ msg }: { msg: Msg; key?: string }) {
   const agent = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   const displayText = msg.agent === "producer" ? stripResultBlock(msg.text) : msg.text;
@@ -402,12 +719,12 @@ function MsgBubble({ msg }: { msg: Msg }) {
           className={`${styles.bubble} ${isUser ? styles.bubbleUser : ""}`}
           style={!isUser ? { borderLeftColor: agent.color, background: agent.bg } : {}}
         >
-          {displayText.split("\n").map((line, i) => (
-            <span key={i}>
-              {line}
-              {i < displayText.split("\n").length - 1 && <br />}
-            </span>
-          ))}
+          {isUser
+            ? displayText.split("\n").map((line, i) => (
+                <span key={i}>{line}{i < displayText.split("\n").length - 1 && <br />}</span>
+              ))
+            : displayText.split("\n").map((line, i) => renderMsgLine(line, i, agent.color))
+          }
           {msg.streaming && <span className={styles.streamCursor} />}
           {msg.streaming && !displayText && <ThinkingDots />}
         </div>
@@ -421,55 +738,105 @@ function MsgBubble({ msg }: { msg: Msg }) {
   );
 }
 
-interface InterventionBoxProps {
-  onSubmit: (text: string) => void;
+// ─── V2 Intervention ──────────────────────────────────────────────────────────
+
+interface InterventionV2Props {
+  turnCount: number;
+  onSubmit: (text: string, type: UserInterventionType) => void;
   onSkip: () => void;
 }
 
-function InterventionBox({ onSubmit, onSkip }: InterventionBoxProps) {
+function InterventionV2({ turnCount, onSubmit, onSkip }: InterventionV2Props) {
   const [text, setText] = useState("");
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [type, setType] = useState<UserInterventionType>("IDEA");
+  const [timeLeft, setTimeLeft] = useState(10);
 
   useEffect(() => {
     if (timeLeft <= 0) { onSkip(); return; }
-    const t = setTimeout(() => setTimeLeft((p) => p - 1), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setTimeLeft((p: number) => p - 1), 1000);
+    return () => clearTimeout(timer);
   }, [timeLeft, onSkip]);
 
+  const TYPE_CONFIG: Record<UserInterventionType, { label: string; color: string; bg: string; placeholder: string }> = {
+    IDEA:      { label: "💡 아이디어", color: "#34d399", bg: "rgba(52,211,153,0.1)", placeholder: "새로운 설정 아이디어나 제안을 입력하세요..." },
+    QUESTION:  { label: "❓ 질문",    color: "#60a5fa", bg: "rgba(96,165,250,0.1)",  placeholder: "특정 에이전트에게 궁금한 점을 질문하세요..." },
+    OBJECTION: { label: "⚡ 반박",    color: "#f87171", bg: "rgba(248,113,113,0.1)", placeholder: "특정 의견에 반박하거나 수정을 요청하세요..." },
+  };
+
+  const cfg = TYPE_CONFIG[type as UserInterventionType];
+
   return (
-    <div className={styles.interventionBox}>
-      <div className={styles.interventionHeader}>
-        <span className={styles.interventionTitle}>💡 Round 1 검토 완료 — 의견을 추가하시겠어요?</span>
-        <span
-          className={styles.interventionTimer}
-          style={{ color: timeLeft <= 10 ? "#f87171" : "#94a3b8" }}
-        >
-          {timeLeft}초
+    <div className={styles.interventionV2}>
+      <div className={styles.ivHeader}>
+        <span className={styles.ivTurn}>Turn {turnCount} 완료</span>
+        <span className={styles.ivTitle}>의견을 추가하시겠어요?</span>
+        <span className={styles.ivTimer} style={{ color: timeLeft <= 4 ? "#f87171" : "#475569" }}>
+          {timeLeft}s
         </span>
       </div>
-      <p className={styles.interventionDesc}>
-        추가 의견이 없으면 건너뛰기를 눌러주세요. Round 2에서 에이전트들이 심화 분석을 이어갑니다.
-      </p>
-      <div className={styles.interventionInputRow}>
+      <div className={styles.ivTypeBtns}>
+        {(Object.keys(TYPE_CONFIG) as UserInterventionType[]).map((t) => (
+          <button
+            key={t}
+            className={`${styles.ivTypeBtn} ${type === t ? styles.ivTypeBtnActive : ""}`}
+            style={type === t ? { borderColor: TYPE_CONFIG[t].color, background: TYPE_CONFIG[t].bg, color: TYPE_CONFIG[t].color } : {}}
+            onClick={() => setType(t)}
+          >
+            {TYPE_CONFIG[t].label}
+          </button>
+        ))}
+      </div>
+      <div className={styles.ivInputRow}>
         <textarea
-          className={styles.interventionInput}
+          className={styles.ivInput}
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="예: 주인공이 마법을 쓰지 못하는 이유를 더 구체적으로 설정해야 할 것 같아요..."
-          rows={3}
+          onChange={(e: { target: HTMLTextAreaElement }) => setText(e.target.value)}
+          placeholder={cfg.placeholder}
+          rows={2}
+          style={{ borderColor: text ? cfg.color : undefined }}
         />
       </div>
-      <div className={styles.interventionBtns}>
+      <div className={styles.ivBtns}>
+        <button className={styles.ivBtnSkip} onClick={onSkip}>건너뛰기</button>
         <button
-          className={styles.btnIntervene}
+          className={styles.ivBtnSubmit}
           disabled={!text.trim()}
-          onClick={() => onSubmit(text.trim())}
+          onClick={() => onSubmit(text.trim(), type)}
+          style={text.trim() ? { background: cfg.bg, borderColor: cfg.color, color: cfg.color } : {}}
         >
-          의견 제출
+          {cfg.label} 제출
         </button>
-        <button className={styles.btnSkip} onClick={onSkip}>
-          건너뛰기 ({timeLeft}s)
-        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Vote Modal ───────────────────────────────────────────────────────────────
+
+interface VoteModalProps {
+  options: string[];
+  onVote: (choice: string) => void;
+}
+
+function VoteModal({ options, onVote }: VoteModalProps) {
+  return (
+    <div className={styles.modalOverlay}>
+      <div className={styles.voteModal}>
+        <div className={styles.voteHeader}>
+          <span style={{ fontSize: 22 }}>🗳️</span>
+          <div>
+            <div className={styles.voteTitle}>에이전트 의견이 갈렸습니다</div>
+            <div className={styles.voteSub}>방향을 선택해주세요 — 선택이 토론에 즉시 반영됩니다</div>
+          </div>
+        </div>
+        <div className={styles.voteOptions}>
+          {options.map((opt, i) => (
+            <button key={i} className={styles.voteOption} onClick={() => onVote(opt)}>
+              <span className={styles.voteNum}>{i + 1}</span>
+              <span className={styles.voteText}>{opt}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -701,10 +1068,13 @@ function FinalReportSection({ report }: { report: string }) {
   };
 
   const renderLine = (line: string, i: number) => {
-    if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━")) {
+    if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━━")) {
       return <div key={i} className={styles.reportHeading}>{line}</div>;
     }
-    if (line.startsWith("- ")) {
+    if (line.startsWith("━")) {
+      return <hr key={i} style={{ border: "none", borderTop: "1px solid #23233a", margin: "8px 0" }} />;
+    }
+    if (line.startsWith("- ") || line.startsWith("• ") || line.startsWith("①") || line.startsWith("②") || line.startsWith("③")) {
       return <div key={i} className={styles.reportBullet}>{line}</div>;
     }
     if (line.trim() === "") {
@@ -736,47 +1106,78 @@ function FinalReportSection({ report }: { report: string }) {
 
 const GENRES = ["판타지", "로맨스", "액션", "SF", "스릴러", "일상·힐링", "무협", "스포츠", "공포", "역사"];
 
+const PLATFORMS = [
+  { value: "naver",  label: "네이버웹툰",  desc: "10~20대 男 액션·판타지 강세, 글로벌 노출" },
+  { value: "kakao",  label: "카카오페이지", desc: "25~35세 女 로맨스·오피스 강세, 유료 결제율 1위" },
+  { value: "lezhin", label: "레진코믹스",   desc: "30대+ 마니아, 성인·BL·장르물 허용" },
+  { value: "undecided", label: "미정",      desc: "에이전트가 최적 플랫폼을 추천합니다" },
+] as const;
+type PlatformValue = typeof PLATFORMS[number]["value"];
+
+const EPISODE_COUNTS = ["50화", "100화", "150화", "200화", "미정"] as const;
+type EpisodeCount = typeof EPISODE_COUNTS[number];
+
 export default function Phase1Page() {
   const { projectId } = useParams<{ projectId: string }>();
   const router = useRouter();
 
   // ── State ──
   const [stage, setStage] = useState<Stage>("form");
-  const [debatePhase, setDebatePhase] = useState<DebatePhase>("r1");
+  const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
   const [genre, setGenre] = useState(GENRES[0]);
+  const [platform, setPlatform] = useState<PlatformValue>("undecided");
+  const [episodeCount, setEpisodeCount] = useState<EpisodeCount>("100화");
   const [concept, setConcept] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [result, setResult] = useState<Phase1Result | null>(null);
   const [isMock, setIsMock] = useState(false);
+  const [showGatingModal, setShowGatingModal] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [savedGenre, setSavedGenre] = useState<string | null>(null);
   const [savedConcept, setSavedConcept] = useState<string | null>(null);
   const [showPrevBanner, setShowPrevBanner] = useState(false);
+  const [turnCount, setTurnCount] = useState(0);
+  const [voteOptions, setVoteOptions] = useState<string[] | null>(null);
 
   // ── Refs ──
   const chatBodyRef = useRef<HTMLDivElement>(null);
-  const interventionResolveRef = useRef<((v: string) => void) | null>(null);
+  const interventionResolveRef = useRef<((v: string, type?: UserInterventionType) => void) | null>(null);
+  const voteResolveRef = useRef<((choice: string) => void) | null>(null);
   const runningRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
-    // Load saved result
+    if (!projectId) return;
+
+    // 1) Try localStorage first (instant)
     const raw = localStorage.getItem(`p1_result_${projectId}`);
     if (raw) {
       try {
-        const saved = JSON.parse(raw) as {
-          result: Phase1Result;
-          genre: string;
-          concept: string;
-          savedAt: string;
-        };
+        const saved = JSON.parse(raw) as { result: Phase1Result; genre: string; concept: string; savedAt: string; };
         setSavedAt(saved.savedAt);
         setSavedGenre(saved.genre);
         setSavedConcept(saved.concept);
         setShowPrevBanner(true);
+        return; // localStorage hit — skip Firestore
       } catch { /* ignore */ }
     }
+
+    // 2) Fallback: load from Firestore (if localStorage is empty / cleared)
+    getDoc(doc(db, "project_summary", projectId, "phase_1", "result"))
+      .then((snap: import("firebase/firestore").DocumentSnapshot) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as Phase1Result & { genre?: string; concept?: string; savedAt?: { toDate?: () => Date } };
+        const savedDate = data.savedAt?.toDate?.()?.toISOString() ?? new Date().toISOString();
+        // Re-populate localStorage so next load is instant
+        const payload = { result: data as Phase1Result, genre: data.genre ?? "", concept: data.concept ?? "", savedAt: savedDate };
+        localStorage.setItem(`p1_result_${projectId}`, JSON.stringify(payload));
+        setSavedAt(savedDate);
+        setSavedGenre(data.genre ?? null);
+        setSavedConcept(data.concept ?? null);
+        setShowPrevBanner(true);
+      })
+      .catch(() => {}); // Firestore unavailable — silently skip
   }, [projectId]);
 
   // Auto-scroll
@@ -789,12 +1190,12 @@ export default function Phase1Page() {
   // ── Message helpers ──
   const addMsg = useCallback((agent: AgentId, round: number, text = "", streaming = false): string => {
     const id = `${agent}_${Date.now()}_${Math.random()}`;
-    setMsgs((prev) => [...prev, { id, agent, round, text, streaming }]);
+    setMsgs((prev: Msg[]) => [...prev, { id, agent, round, text, streaming }]);
     return id;
   }, []);
 
   const updateMsg = useCallback((id: string, text: string, streaming: boolean) => {
-    setMsgs((prev) => prev.map((m) => m.id === id ? { ...m, text, streaming } : m));
+    setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text, streaming } : m));
   }, []);
 
   // ── Helpers: sleep + context trim ──
@@ -832,6 +1233,25 @@ export default function Phase1Page() {
     return full;
   }, [addMsg, updateMsg]);
 
+  // ── Fetch orchestrator decision (non-visible call) ──
+  const fetchOrchestrator = useCallback(async (
+    apiKey: string,
+    debateHistory: string,
+    userInput?: string,
+  ): Promise<OrchestratorDecision | null> => {
+    let full = "";
+    for await (const chunk of streamClaude({
+      apiKey,
+      systemPrompt: "당신은 토론 오케스트레이터입니다. 지시한 JSON만 출력합니다. 다른 텍스트는 절대 없음.",
+      messages: [{ role: "user", content: buildOrchestratorPrompt(debateHistory, userInput) }],
+      maxTokens: 250,
+      tools: [],
+    })) {
+      full += chunk;
+    }
+    return parseOrchestratorDecision(full);
+  }, []);
+
   // ── Save result ──
   const saveResult = useCallback((res: Phase1Result, g: string, c: string) => {
     const payload = { result: res, genre: g, concept: c, savedAt: new Date().toISOString() };
@@ -847,27 +1267,88 @@ export default function Phase1Page() {
     }).catch(() => {});
   }, [projectId]);
 
-  // ── Run debate ──
-  const runDebate = useCallback(async (g: string, c: string) => {
+  // ── Run debate V2 (dynamic orchestrator loop) ──
+  const runDebate = useCallback(async (g: string, c: string, plat: string, ep: string) => {
     if (runningRef.current) return;
     runningRef.current = true;
 
     const apiKey = getAnthropicKey();
+    const platLabel = PLATFORMS.find((p) => p.value === plat)?.label ?? plat;
+
+    // ── Helper: wait for user intervention with auto-dismiss ──
+    const waitIntervention = (turn: number): Promise<{ text: string; type: UserInterventionType } | null> => {
+      setDebatePhase("user_wait");
+      setTurnCount(turn);
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          interventionResolveRef.current = null;
+          setDebatePhase("running");
+          resolve(null);
+        }, 10000);
+        interventionResolveRef.current = (text: string, type?: UserInterventionType) => {
+          clearTimeout(timer);
+          setDebatePhase("running");
+          resolve(text ? { text, type: type ?? "IDEA" } : null);
+        };
+      });
+    };
+
+    // ── Helper: simulate typing for mock mode ──
+    const typeMsg = async (msgId: string, text: string) => {
+      const CHUNK = 6;
+      for (let i = CHUNK; i <= text.length + CHUNK; i += CHUNK) {
+        updateMsg(msgId, text.slice(0, i), true);
+        await new Promise((r) => setTimeout(r, 18));
+      }
+      updateMsg(msgId, text, false);
+    };
 
     if (!apiKey) {
-      // Mock mode
+      // ── MOCK MODE ──
       setIsMock(true);
-      const mockMsgs: Array<{ agent: AgentId; round: number; text: string }> = [
-        { agent: "strategist", round: 1, text: "【Mock】 시장 분석: 현재 판타지 장르 시장은 강세를 유지하고 있습니다. 나 혼자만 레벨업(카카오페이지)과 전지적 독자시점(네이버웹툰)이 기준점을 형성하며, 본 기획안은 대중성 65점 / 신규IP 72점의 포지셔닝으로 차별화 가능성이 높습니다." },
-        { agent: "researcher", round: 1, text: "【Mock】 팩트체크 완료: 설정의 내부 논리는 전반적으로 탄탄하나, 주인공의 능력 제한 조건이 3화 이후 서사와 충돌할 수 있습니다. 해결책으로 '능력 봉인 해제 조건'을 초반에 명시하는 것을 제안합니다." },
-        { agent: "scenario",   round: 2, text: "【Mock】 3막 구조: 1~20화 도입(세계관 제시 + 주인공 각성), 21~60화 성장과 갈등(라이벌 등장, 중간보스), 61~100화 클라이막스(최종 빌런 대결). 15화, 40화, 75화에 주요 반전 훅 포인트 배치를 권장합니다." },
-        { agent: "script",     round: 2, text: "【Mock】 연출 전략: 도입화 28컷, 클라이막스 35컷, 일상화 22컷 구성 권장. 스크롤 정지 포인트는 매화 7~9컷째에 임팩트 컷 삽입. 세로 분할 패널을 활용한 속도감 연출이 모바일 독자 집중도를 높입니다." },
-        { agent: "producer",   round: 3, text: "토론을 마무리합니다.\n\n전략기획자와 시나리오작가의 시장성 분석, 심층조사자의 논리 검증, 연출작가의 모바일 최적화 전략을 종합한 결과, 본 기획안은 Phase 2 진행에 충분한 완성도를 갖추고 있습니다. 실현가능성 종합 점수 0.82점으로 적극 권장 판정입니다." },
+
+      const MOCK_V2: Array<{ agent: AgentId; turn: number; text: string }> = [
+        {
+          agent: "strategist", turn: 1,
+          text: `📊 전략기획자 — 시장 분석 개시\n\n[시장 현황] 2025년 K-웹툰 ${g} 장르는 네이버웹툰·카카오페이지 양대 플랫폼 기준 신작 진입 경쟁이 역대 최고 수준입니다. 헌터·스탯 계열 판타지는 포화(신작 성공률 15% 이하)이나, 관계 서사와 도덕적 딜레마를 결합한 하이브리드 구조는 여전히 공백 구간입니다.\n\n[경쟁작 벤치마크]\n• 나 혼자만 레벨업 (카카오, 2018~2021): 1.4억 뷰. 성장 판타지 최강자. 단, 관계 서사 부재·단선 구조가 약점.\n• 전지적 독자시점 (네이버, 2020~2023): 420만 주간뷰. 메타픽션 탁월. 신규 독자 진입 장벽 높음.\n• 싸움독학 (네이버, 2019~2023): 280만 주간뷰. 성장 서사 교과서. IP 확장 한계.\n\n[포지셔닝] 우리 작품 — 대중성 68 / 신규IP 74. 경쟁작과 겹치지 않는 좌표.\n\n[슬로건] "헌터물의 스펙터클, 인간 드라마의 깊이" — GO 가능권. 시장성 88점.`,
+        },
+        {
+          agent: "researcher", turn: 2,
+          text: `🔍 심층조사자 — 전략기획자님께 반박합니다\n\n전략기획자님의 포지셔닝 분석은 탁월합니다. 그러나 "공백 구간"이라는 표현에는 동의하기 어렵습니다. 이 기획안의 '각성+성장' 구조는 《나 혼자만 레벨업》 문법과 60% 이상 유사합니다.\n\n[내부 모순 지적]\nLv2 클리셰 — 주인공 초기 무능: 1~3화 약함 설정이 6화 이후 급성장과 충돌합니다. "왜 갑자기 강해지는가"에 대한 논리 근거가 없으면 독자 이탈 유발. 수정 방향: '잠재 능력 봉인' 조건(트라우마·외부 봉인)을 1화에 암시로 심어두세요.\n\n[긍정 요소] 빌런의 논리적 동기 설정은 기존 경쟁작 대비 명확한 차별점입니다. 전략기획자님 슬로건을 지지하지만, 전제 조건이 해소되어야 합니다.`,
+        },
+        {
+          agent: "scenario", turn: 3,
+          text: `📝 시나리오작가 — 두 분 의견을 통합합니다\n\n앞서 전략기획자님과 심층조사자님 발언을 직접 인용하겠습니다. 전략기획자님 "하이브리드 서사"와 심층조사자님 "각성 시점 조정" 제안 모두 맞습니다. 서사 구조로 해결하겠습니다.\n\n[3막 구조]\n• 1막 (1~18화): 불공정한 세계를 먼저 보여준 뒤 주인공 잠재력을 독자만 아는 방식으로 암시. 3화 첫 변화, 5화 첫 위기.\n• 2막 (19~72화): 15화 중간 반전, 30화 대반전(빌런이 피해자였다는 복선), 50화 시즌 분기점.\n• 3막 (73~100화): 85화 진실 공개, 100화 열린 결말.\n\n심층조사자님 우려하신 성장 논리는 1화 '잠재력 봉인 암시' 컷으로 해결 가능합니다. 이것이면 충분하신가요?`,
+        },
+        {
+          agent: "researcher", turn: 4,
+          text: `🔍 심층조사자 — 시나리오작가님께 동의합니다\n\n시나리오작가님의 "1화 봉인 암시" 제안은 제가 지적한 논리 모순을 구조적으로 해결합니다. 추가로 한 가지 더: 30화 빌런 독백 "나는 너와 같은 선택을 했다" 장면이 커뮤니티 토론 폭발 포인트가 될 것입니다. 네이버 베스트댓글 점유 상위 10% 진입 가능.\n\n전략기획자님 포지셔닝 분석과 시나리오작가님 3막 구조 모두 데이터와 논리가 정합합니다. 내부 모순 2건 중 1건 해소. 나머지 1건(한국 사회 현실 반영 팩트체크)은 Phase 2에서 세계관설계자와 함께 처리하면 됩니다.\n\n합의 가능합니다.`,
+        },
+        {
+          agent: "producer", turn: 5,
+          text: `토론을 마무리합니다.\n\n전략기획자는 시장 공백과 포지셔닝 우위를 데이터로 입증했습니다. 심층조사자가 지적한 "성장 논리 모순"은 시나리오작가의 1화 봉인 암시 컷 제안으로 해소되었고, 심층조사자 본인도 합의를 표명했습니다.\n\n[핵심 리스크]\n① 한국 사회 현실 반영(팩트체크) — Phase 2 착수 전 해소 필요. (심각도 MEDIUM)\n② 헌터물 클리셰 유사성 — 1화 연출에서 각성 전에 세계관 불공정 장면 배치로 완화.\n\n[종합 판단]\n시장 공백 포지셔닝(대중성 68 / 신규IP 74), 명확한 USP(빌런 도덕 서사), 100화 확장 서사 구조 확보. 실현가능성 종합 84점.\n\n■ Phase 2 진행 권고: GO`,
+        },
       ];
-      for (const m of mockMsgs) {
-        addMsg(m.agent, m.round, m.text, false);
-        await new Promise((r) => setTimeout(r, 300));
+
+      setDebatePhase("running");
+      setTurnCount(0);
+
+      for (let i = 0; i < MOCK_V2.length; i++) {
+        const m = MOCK_V2[i];
+        setTurnCount(m.turn);
+        const id = addMsg(m.agent, m.turn, "", true);
+        await typeMsg(id, m.text);
+        await sleep(500);
+
+        // User intervention window after turns 2 and 3
+        if (m.turn === 2 || m.turn === 3) {
+          const iv = await waitIntervention(m.turn);
+          if (iv) {
+            addMsg("user", m.turn, `[${iv.type}] ${iv.text}`, false);
+          }
+        }
       }
+
       setResult(MOCK_RESULT);
       saveResult(MOCK_RESULT, g, c);
       setDebatePhase("done");
@@ -875,91 +1356,92 @@ export default function Phase1Page() {
       return;
     }
 
-    // ── Round 1 ──
-    // Web search only for strategist (first call). Researcher builds on that context.
-    // Each subsequent agent uses trimmed context to prevent token accumulation.
-    setDebatePhase("r1");
-    const userContent = `장르: ${g}\n기획 개요: ${c}`;
+    // ── REAL API MODE (V2 orchestrator loop) ──
+    setDebatePhase("running");
+    setTurnCount(1);
+    const history: string[] = [];
 
-    const strat1 = await streamAgent(
-      apiKey, "strategist", 1, P_STRATEGIST_R1(g, c),
-      userContent, /* useSearch */ true, /* maxTokens */ 1100,
+    const addToHistory = (agentLabel: string, text: string) => {
+      history.push(`[${agentLabel}] ${trimCtx(text, 350)}`);
+    };
+
+    // Turn 1: strategist opens with web search
+    const strat = await streamAgent(
+      apiKey, "strategist", 1,
+      buildAgentTurnPrompt("strategist", "시장 분석을 시작하세요. 웹 검색으로 실제 경쟁작 데이터를 조사하고 포지셔닝을 분석하세요.", "", g, c, platLabel, ep),
+      `장르: ${g}\n플랫폼: ${platLabel}\n화수: ${ep}\n기획: ${c.slice(0, 400)}`,
+      true, 1200,
     );
+    addToHistory(AGENTS.strategist.label, strat);
 
-    await sleep(2000); // spread requests to avoid hitting 30k TPM limit
+    let turn = 1;
+    const MAX_TURNS = 18;
 
-    const resrch1 = await streamAgent(
-      apiKey, "researcher", 1, P_RESEARCHER_R1(g, c),
-      // Pass only trimmed strategist text to keep input tokens low
-      `기획: ${c.slice(0, 300)}\n\n[전략기획자 요약]\n${trimCtx(strat1, 600)}`,
-      /* useSearch */ false, /* maxTokens */ 1000,
-    );
+    while (turn < MAX_TURNS) {
+      await sleep(1200);
 
-    // ── Intervention ──
-    setDebatePhase("r1_wait");
-    // Build trimmed r1 context for Round 2 prompts
-    const r1Context = `[전략기획자]\n${trimCtx(strat1, 500)}\n\n[심층조사자]\n${trimCtx(resrch1, 500)}`;
+      // User intervention window (10s auto-dismiss)
+      const iv = await waitIntervention(turn);
+      if (iv) {
+        addMsg("user", turn, `[${iv.type}] ${iv.text}`, false);
+        addToHistory("사용자", `[${iv.type}] ${iv.text}`);
+      }
 
-    const userOpinion = await new Promise<string>((resolve) => {
-      interventionResolveRef.current = resolve;
-    });
+      // Orchestrator decides next speaker
+      const histText = history.join("\n\n");
+      const decision = await fetchOrchestrator(apiKey, histText, iv?.text);
 
-    if (userOpinion) {
-      addMsg("user", 1, userOpinion, false);
+      if (!decision) break;
+
+      // Vote if deadlock
+      if (decision.vote_needed || decision.deadlock) {
+        const opts = decision.vote_options ?? ["현재 방향 유지", "수정 후 진행", "재기획 필요"];
+        setVoteOptions(opts);
+        setDebatePhase("vote");
+        const voteChoice = await new Promise<string>((res) => {
+          voteResolveRef.current = res;
+        });
+        setVoteOptions(null);
+        addToHistory("투표결과", voteChoice);
+        addMsg("producer", turn, `🗳️ 투표 결과: ${voteChoice}`, false);
+        setDebatePhase("running");
+      }
+
+      if (decision.consensus_reached || decision.next_agent === "producer") break;
+
+      turn++;
+      setTurnCount(turn);
+      await sleep(1500);
+
+      const agentReply = await streamAgent(
+        apiKey, decision.next_agent, turn,
+        buildAgentTurnPrompt(decision.next_agent, decision.instruction, history.join("\n\n"), g, c, platLabel, ep),
+        `장르: ${g}\n기획: ${c.slice(0, 200)}`,
+        false, 1000,
+      );
+      addToHistory(AGENTS[decision.next_agent as AgentId]?.label ?? decision.next_agent, agentReply);
     }
 
-    await sleep(2000);
+    await sleep(1500);
 
-    // ── Round 2 ──
-    // Neither scenario nor script uses web search — they synthesise R1 context
-    setDebatePhase("r2");
-    const scen2 = await streamAgent(
-      apiKey, "scenario", 2, buildP_SCENARIO_R2(r1Context, userOpinion),
+    // Producer final
+    turn++;
+    setTurnCount(turn);
+    const producerFinal = await streamAgent(
+      apiKey, "producer", turn,
+      buildProducerFinalPrompt(history.join("\n\n")),
       `장르: ${g}\n기획: ${c.slice(0, 200)}`,
-      /* useSearch */ false, /* maxTokens */ 1000,
+      false, 2500,
     );
 
-    await sleep(2000);
-
-    const scrpt2 = await streamAgent(
-      apiKey, "script", 2, buildP_SCRIPT_R2(r1Context, userOpinion),
-      `장르: ${g}\n기획: ${c.slice(0, 200)}\n\n[시나리오 요약]\n${trimCtx(scen2, 400)}`,
-      /* useSearch */ false, /* maxTokens */ 1000,
-    );
-
-    await sleep(2000);
-
-    // ── Round 3 ──
-    // Producer receives trimmed summaries of all 4 agents
-    setDebatePhase("r3");
-    const allContext = [
-      `[전략기획자]\n${trimCtx(strat1, 400)}`,
-      `[심층조사자]\n${trimCtx(resrch1, 400)}`,
-      userOpinion ? `[사용자 의견]\n${userOpinion}` : "",
-      `[시나리오작가]\n${trimCtx(scen2, 400)}`,
-      `[연출작가]\n${trimCtx(scrpt2, 400)}`,
-    ].filter(Boolean).join("\n\n");
-
-    const prod3 = await streamAgent(
-      apiKey, "producer", 3, buildP_PRODUCER_R3(allContext),
-      `장르: ${g}\n기획: ${c.slice(0, 200)}`,
-      /* useSearch */ false, /* maxTokens */ 2000, // needs room for JSON output
-    );
-
-    // Parse result
-    const parsed = parsePhase1Result(prod3);
-    if (parsed) {
-      setResult(parsed);
-      saveResult(parsed, g, c);
-    } else {
-      // Fallback: use mock
-      setResult(MOCK_RESULT);
-      saveResult(MOCK_RESULT, g, c);
-    }
+    const parsed = parsePhase1Result(producerFinal);
+    setResult(parsed ?? MOCK_RESULT);
+    saveResult(parsed ?? MOCK_RESULT, g, c);
 
     setDebatePhase("done");
     runningRef.current = false;
-  }, [addMsg, streamAgent, saveResult]);
+
+  }, [addMsg, updateMsg, streamAgent, fetchOrchestrator, saveResult]);
 
   // ── Form submit ──
   const handleStart = useCallback(() => {
@@ -968,21 +1450,28 @@ export default function Phase1Page() {
     setResult(null);
     setIsMock(false);
     setStage("debate");
-    runDebate(genre, concept.trim());
-  }, [concept, genre, runDebate]);
+    runDebate(genre, concept.trim(), platform, episodeCount);
+  }, [concept, genre, platform, episodeCount, runDebate]);
 
-  // ── Intervention callbacks ──
-  const handleInterventionSubmit = useCallback((text: string) => {
+  // ── V2 Intervention callbacks ──
+  const handleInterventionSubmit = useCallback((text: string, type: UserInterventionType) => {
     if (interventionResolveRef.current) {
-      interventionResolveRef.current(text);
+      interventionResolveRef.current(text, type);
       interventionResolveRef.current = null;
     }
   }, []);
 
   const handleInterventionSkip = useCallback(() => {
     if (interventionResolveRef.current) {
-      interventionResolveRef.current("");
+      interventionResolveRef.current("", "IDEA");
       interventionResolveRef.current = null;
+    }
+  }, []);
+
+  const handleVote = useCallback((choice: string) => {
+    if (voteResolveRef.current) {
+      voteResolveRef.current(choice);
+      voteResolveRef.current = null;
     }
   }, []);
 
@@ -1006,8 +1495,8 @@ export default function Phase1Page() {
     setSavedAt(null);
   }, [projectId]);
 
-  // ── Group messages by round ──
-  const rounds = Array.from(new Set(msgs.map((m) => m.round))).sort();
+  // ── Group messages by round (unused in V2 but kept for type safety) ──
+  const rounds = Array.from(new Set(msgs.map((m: Msg) => m.round))).sort();
 
   // ── Render form ──
   if (stage === "form") {
@@ -1036,28 +1525,66 @@ export default function Phase1Page() {
           <div className={styles.formCard}>
             <h1 className={styles.formTitle}>Phase 1 · 기획 분석</h1>
             <p className={styles.formDesc}>
-              7인 AI 에이전트가 장르·기획안을 다각도로 분석합니다.<br />
-              전략기획자·심층조사자·시나리오작가·연출작가·총괄프로듀서가 3라운드 토론 후 Phase 2 진행 여부를 판단합니다.
+              5인 AI 에이전트가 3라운드 토론으로 기획안을 분석합니다.<br />
+              시장 포지셔닝·설정 검증·서사 구조·연출 전략을 종합해 Phase 2 진행 여부를 판단합니다.
             </p>
 
-            <label className={styles.formLabel}>장르</label>
-            <select
-              className={styles.formSelect}
-              value={genre}
-              onChange={(e) => setGenre(e.target.value)}
-            >
-              {GENRES.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
+            {/* Row: 장르 + 플랫폼 */}
+            <div className={styles.formRow}>
+              <div className={styles.formCol}>
+                <label className={styles.formLabel}>장르</label>
+                <select
+                  className={styles.formSelect}
+                  value={genre}
+                  onChange={(e: { target: HTMLSelectElement }) => setGenre(e.target.value)}
+                >
+                  {GENRES.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.formCol}>
+                <label className={styles.formLabel}>목표 화수</label>
+                <select
+                  className={styles.formSelect}
+                  value={episodeCount}
+                  onChange={(e: { target: HTMLSelectElement }) => setEpisodeCount(e.target.value as EpisodeCount)}
+                >
+                  {EPISODE_COUNTS.map((ep) => (
+                    <option key={ep} value={ep}>{ep}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-            <label className={styles.formLabel}>기획 개요</label>
+            {/* 플랫폼 선택 — 카드형 */}
+            <label className={styles.formLabel} style={{ marginTop: 18 }}>목표 플랫폼</label>
+            <div className={styles.platformGrid}>
+              {PLATFORMS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  className={`${styles.platformCard} ${platform === p.value ? styles.platformCardActive : ""}`}
+                  onClick={() => setPlatform(p.value)}
+                >
+                  <span className={styles.platformCardLabel}>{p.label}</span>
+                  <span className={styles.platformCardDesc}>{p.desc}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className={styles.formLabelRow}>
+              <label className={styles.formLabel} style={{ marginTop: 18, marginBottom: 0 }}>기획 개요</label>
+              <span className={styles.charCount} style={{ color: concept.length >= 100 ? "#34d399" : concept.length >= 50 ? "#fbbf24" : "#475569" }}>
+                {concept.length}자 {concept.length >= 100 ? "✓ 충분" : concept.length >= 50 ? "· 조금 더" : "· 더 작성하세요"}
+              </span>
+            </div>
             <textarea
               className={styles.formTextarea}
               value={concept}
-              onChange={(e) => setConcept(e.target.value)}
-              placeholder={"예: 평범한 고등학생이 어느 날 눈을 떠보니 10년 후 멸망한 세계에 있다.\n자신이 죽인 것으로 알려진 '마왕'이 사실은 세계를 구하려 했다는 진실을 밝히기 위해\n과거로 거슬러 올라가는 타임루프 판타지."}
-              rows={6}
+              onChange={(e: { target: HTMLTextAreaElement }) => setConcept(e.target.value)}
+              placeholder={"예: 평범한 고등학생이 어느 날 눈을 떠보니 10년 후 멸망한 세계에 있다.\n자신이 죽인 것으로 알려진 '마왕'이 사실은 세계를 구하려 했다는 진실을 밝히기 위해\n과거로 거슬러 올라가는 타임루프 판타지.\n\nTip: 주인공·세계관·핵심 갈등·차별점을 포함할수록 분석 품질이 높아집니다."}
+              rows={7}
             />
 
             <button
@@ -1101,23 +1628,31 @@ export default function Phase1Page() {
           </button>
         </div>
 
-        {/* Chat body */}
-        <div className={styles.chatBody} ref={chatBodyRef}>
-          {rounds.map((round) => (
-            <div key={round}>
-              <RoundHeader
-                round={round}
-                label={round === 1 ? "시장 분석" : round === 2 ? "심화 분석" : "총괄 종합"}
-              />
-              {msgs.filter((m) => m.round === round).map((msg) => (
-                <MsgBubble key={msg.id} msg={msg} />
+        {/* V2 Turn counter bar */}
+        <div className={styles.progressBar}>
+          <div className={styles.turnCounterWrap}>
+            <span className={styles.turnLabel}>
+              {debatePhase === "done" ? "✅ 토론 완료" : debatePhase === "vote" ? "🗳️ 투표 중" : debatePhase === "user_wait" ? "💡 의견 입력 가능" : `Turn ${turnCount}`}
+            </span>
+            <div className={styles.turnDots}>
+              {Array.from({ length: Math.max(turnCount, 1) }).map((_, i) => (
+                <div key={i} className={`${styles.turnDot} ${i < turnCount - 1 ? styles.turnDotDone : i === turnCount - 1 ? styles.turnDotActive : ""}`} />
               ))}
             </div>
+          </div>
+          {debatePhase === "running" && <span className={styles.turnRunning}><ThinkingDots /></span>}
+        </div>
+
+        {/* Chat body */}
+        <div className={styles.chatBody} ref={chatBodyRef}>
+          {msgs.map((msg: Msg) => (
+            <MsgBubble key={msg.id} msg={msg} />
           ))}
 
-          {/* Intervention box */}
-          {debatePhase === "r1_wait" && (
-            <InterventionBox
+          {/* V2 Intervention */}
+          {debatePhase === "user_wait" && (
+            <InterventionV2
+              turnCount={turnCount}
               onSubmit={handleInterventionSubmit}
               onSkip={handleInterventionSkip}
             />
@@ -1149,7 +1684,7 @@ export default function Phase1Page() {
                 {result.verdict !== "reject" ? (
                   <button
                     className={styles.btnGating}
-                    onClick={() => router.push(`/projects/${projectId}/phase-2`)}
+                    onClick={() => setShowGatingModal(true)}
                   >
                     Phase 2 세계관 설계 시작 →
                   </button>
@@ -1169,6 +1704,60 @@ export default function Phase1Page() {
           )}
         </div>
       </div>
+
+      {/* ── Vote Modal ── */}
+      {debatePhase === "vote" && voteOptions && (
+        <VoteModal options={voteOptions} onVote={handleVote} />
+      )}
+
+      {/* ── Phase 2 Gating Modal ── */}
+      {showGatingModal && result && (
+        <div className={styles.modalOverlay} onClick={() => setShowGatingModal(false)}>
+          <div className={styles.modalBox} onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <span className={styles.modalIcon}>🚀</span>
+              <h2 className={styles.modalTitle}>Phase 2 진행 확인</h2>
+            </div>
+            <div className={styles.modalBody}>
+              <div className={styles.modalScoreRow}>
+                <div className={styles.modalScoreItem}>
+                  <span className={styles.modalScoreLabel}>실현가능성</span>
+                  <span className={styles.modalScoreVal} style={{ color: result.verdict === "go" ? "#34d399" : "#fbbf24" }}>
+                    {Math.round(result.feasibility_score * 100)}점
+                  </span>
+                </div>
+                <div className={styles.modalScoreItem}>
+                  <span className={styles.modalScoreLabel}>판정</span>
+                  <span className={styles.modalScoreVal} style={{ color: result.verdict === "go" ? "#34d399" : "#fbbf24", fontSize: 15 }}>
+                    {result.verdict === "go" ? "✅ GO" : "⚠️ 조건부 GO"}
+                  </span>
+                </div>
+              </div>
+              <p className={styles.modalDesc}>{result.summary}</p>
+              <div className={styles.modalNote}>
+                Phase 2에서는 <strong>세계관설계자</strong>와 <strong>캐릭터디자이너</strong>가 합류하여
+                능력 체계·사회 시스템·에셋 디자인을 설계합니다.
+                {result.verdict === "conditional" && (
+                  <span style={{ color: "#fbbf24", display: "block", marginTop: 8 }}>
+                    ⚠️ 조건부 판정 — 총괄프로듀서 지적 사항 해소 후 진행을 권장합니다.
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.modalBtnCancel} onClick={() => setShowGatingModal(false)}>
+                취소
+              </button>
+              <button
+                className={styles.modalBtnConfirm}
+                onClick={() => router.push(`/projects/${projectId}/phase-2`)}
+              >
+                Phase 2 시작 →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

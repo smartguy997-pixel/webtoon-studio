@@ -120,7 +120,7 @@ export default function ProjectPage({ params }: Props) {
               )}
               {p1.data.usp?.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {p1.data.usp.map((u, i) => (
+                  {p1.data.usp.map((u: string, i: number) => (
                     <span key={i} style={{ background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.25)", color: "#a78bfa", borderRadius: 8, padding: "3px 10px", fontSize: 12 }}>
                       {u}
                     </span>
@@ -145,7 +145,7 @@ export default function ProjectPage({ params }: Props) {
           {p2.data.characters && p2.data.characters.filter(Boolean).length > 0 && (
             <div style={{ flex: 1, minWidth: 160 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: "#fb923c", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>캐릭터</div>
-              {p2.data.characters.filter(Boolean).map((c, i) => c && (
+              {p2.data.characters.filter(Boolean).map((c: { name: string; role: string } | null, i: number) => c && (
                 <div key={i} style={{ fontSize: 13, color: "#f1f5f9", marginBottom: 4 }}>
                   <span style={{ color: c.role === "protagonist" ? "#a78bfa" : "#f87171", fontWeight: 600 }}>
                     {c.role === "protagonist" ? "주인공" : "빌런"}
@@ -195,7 +195,7 @@ export default function ProjectPage({ params }: Props) {
             <Link
               key={phase.num}
               href={isLocked ? "#" : `/projects/${projectId}/${phase.slug}`}
-              onClick={e => isLocked && e.preventDefault()}
+              onClick={(e: { preventDefault: () => void }) => isLocked && e.preventDefault()}
               style={{
                 background: isCurrent ? phase.bg : "#16161f",
                 border: `1px solid ${isCurrent ? phase.color + "50" : "#2a2a3d"}`,
