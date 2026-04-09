@@ -225,13 +225,13 @@ ${debateHistory}
 ━━ 총괄프로듀서의 지시 ━━
 ${instruction}
 
-━━ 발언 규칙 (절대 준수) ━━
-1. 한 번 발언에 2~3문장 이내. 절대 넘지 않는다.
-2. 번호 매기기, bullet point, "첫째/둘째/셋째" 금지.
-3. A4 용지 채우는 긴 설명 금지. 짧고 날카롭게.
-4. 사람처럼 말해라. AI 티 나는 정리형 말투 금지.
-5. 반박할 때는 바로 핵심 찌르기. "잠깐만요..." "근데..." "아니 그게..." 자연스럽게 시작.
-6. 당신 전문 분야 외의 발언 금지.`;
+━━ 출력 규칙 (위반 시 즉시 실패) ━━
+- 최대 2문장. 3문장 넘으면 안 됨.
+- #, ##, ###, >, **, __, --, |, 번호목록 전면 금지. 마크다운 없음.
+- "첫째/둘째/셋째", "모순 1:", "대안 제시:" 같은 정리형 표현 금지.
+- 일반 대화체 한국어만. 카카오톡 메시지처럼 짧게.
+- 틀린 예: "## 발견된 논리적 모순 3가지" → 이런 거 절대 금지.
+- 맞는 예: "잠깐, 그러면 흑막이 왜 모르는 척하는 거죠?"`;
 };
 
 /** 총괄프로듀서 오케스트레이터 — 다음 발언자 결정 + 합의 판단 */
@@ -1417,7 +1417,7 @@ export default function Phase1Page() {
         apiKey, decision.next_agent, turn,
         buildAgentTurnPrompt(decision.next_agent, decision.instruction, history.join("\n\n"), g, c, platLabel, ep),
         `장르: ${g}\n기획: ${c.slice(0, 200)}`,
-        false, 1000,
+        false, 300,
       );
       addToHistory(AGENTS[decision.next_agent as AgentId]?.label ?? decision.next_agent, agentReply);
     }
