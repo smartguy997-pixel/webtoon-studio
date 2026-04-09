@@ -61,7 +61,7 @@ interface Phase1Result {
   final_report: string;
 }
 type Stage = "form" | "debate";
-type DebatePhase = "idle" | "running" | "vote" | "done";
+type DebatePhase = "idle" | "running" | "done";
 
 // ─── Single system prompt (all 7 agents, one conversation) ───────────────────
 
