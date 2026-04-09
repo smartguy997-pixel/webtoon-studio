@@ -257,13 +257,134 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
   );
 }
 
+// ── Firebase config card ──────────────────────────────────
+const FIREBASE_FIELDS = [
+  { key: "wts_firebase_api_key",            label: "API Key",            placeholder: "AIzaSy..." },
+  { key: "wts_firebase_auth_domain",        label: "Auth Domain",        placeholder: "your-project.firebaseapp.com" },
+  { key: "wts_firebase_project_id",         label: "Project ID",         placeholder: "your-project-id" },
+  { key: "wts_firebase_storage_bucket",     label: "Storage Bucket",     placeholder: "your-project.appspot.com" },
+  { key: "wts_firebase_messaging_sender_id", label: "Messaging Sender ID", placeholder: "123456789012" },
+  { key: "wts_firebase_app_id",             label: "App ID",             placeholder: "1:123456789012:web:abc123..." },
+];
+
+function FirebaseCard({ onSaved }: { onSaved: () => void }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    const init: Record<string, string> = {};
+    FIREBASE_FIELDS.forEach((f) => {
+      init[f.key] = localStorage.getItem(f.key) ?? "";
+    });
+    setValues(init);
+    const hasAny = Object.values(init).some(Boolean);
+    setSaved(hasAny);
+  }, []);
+
+  function handleChange(key: string, val: string) {
+    setValues((prev) => ({ ...prev, [key]: val }));
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function handleSave() {
+    FIREBASE_FIELDS.forEach((f) => {
+      const v = values[f.key]?.trim() ?? "";
+      if (v) localStorage.setItem(f.key, v);
+      else localStorage.removeItem(f.key);
+    });
+    setSaved(true);
+    setDirty(false);
+    onSaved();
+  }
+
+  function handleClear() {
+    FIREBASE_FIELDS.forEach((f) => localStorage.removeItem(f.key));
+    const empty: Record<string, string> = {};
+    FIREBASE_FIELDS.forEach((f) => { empty[f.key] = ""; });
+    setValues(empty);
+    setSaved(false);
+    setDirty(false);
+    onSaved();
+  }
+
+  const isSaved = saved && !dirty;
+  const hasValues = FIREBASE_FIELDS.some((f) => (values[f.key] ?? "").trim());
+
+  return (
+    <div className={`${s.keyCard} ${isSaved ? s.hasKey : ""}`}>
+      <div className={s.keyHeader}>
+        <div className={s.keyMeta}>
+          <div className={s.keyLabel}>
+            Firebase 설정
+            <span className={s.keyOptional}>선택</span>
+          </div>
+          <div className={s.keyHint}>
+            Firestore 데이터 영속성 및 Firebase Auth에 사용됩니다. 없으면 localStorage 전용 모드로 동작합니다.
+            <br />
+            <strong style={{ color: "#fbbf24" }}>저장 후 페이지를 새로고침해야 적용됩니다.</strong>
+          </div>
+        </div>
+        {isSaved ? (
+          <div className={`${s.statusBadge} ${s.statusSaved}`}>✓ 설정됨</div>
+        ) : (
+          <div className={`${s.statusBadge} ${s.statusNone}`}>미설정</div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {FIREBASE_FIELDS.map((f) => (
+          <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 160, fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>{f.label}</span>
+            <input
+              className={s.keyInput}
+              type="text"
+              value={values[f.key] ?? ""}
+              onChange={(e: { target: HTMLInputElement }) => handleChange(f.key, e.target.value)}
+              placeholder={f.placeholder}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+        <div className={s.docsLink}>
+          발급처:&nbsp;
+          <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer">
+            console.firebase.google.com ↗
+          </a>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {hasValues && (
+            <button className={s.btnClear} onClick={handleClear} type="button" style={{ marginTop: 0 }}>
+              ✕ 초기화
+            </button>
+          )}
+          <button
+            className={s.btnSave}
+            onClick={handleSave}
+            disabled={!dirty && !hasValues}
+            type="button"
+          >
+            저장
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────
 export default function SettingsPage() {
   const [savedCount, setSavedCount] = useState(0);
 
   const countSaved = useCallback(() => {
-    const n = KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
-    setSavedCount(n);
+    const apiKeys = KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
+    const fbKeys = FIREBASE_FIELDS.filter((f) => !!localStorage.getItem(f.key)).length;
+    setSavedCount(apiKeys + (fbKeys > 0 ? 1 : 0));
   }, []);
 
   useEffect(() => {
@@ -283,17 +404,28 @@ export default function SettingsPage() {
         키가 없으면 Phase 페이지에서 <strong>mock 데이터</strong>로 미리보기 할 수 있습니다.
       </div>
 
-      <div className={s.sectionLabel}>API 키 관리 ({savedCount} / {KEYS.length} 설정됨)</div>
+      <div className={s.sectionLabel}>API 키 관리</div>
 
       {KEYS.map((cfg) => (
         <KeyCard key={cfg.id} cfg={cfg} onSaved={countSaved} />
       ))}
 
+      <div className={s.sectionLabel} style={{ marginTop: 32 }}>Firebase 설정</div>
+
+      <FirebaseCard onSaved={countSaved} />
+
       <div className={s.envTip}>
         <div className={s.envTipTitle}>💡 .env.local 파일로도 설정할 수 있습니다</div>
         <pre className={s.envTipCode}>{`ANTHROPIC_API_KEY=sk-ant-api03-...
 WHISK_API_KEY=whisk-...
-REPLICATE_API_KEY=r8_...`}</pre>
+REPLICATE_API_KEY=r8_...
+
+NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSy...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789012
+NEXT_PUBLIC_FIREBASE_APP_ID=1:123456789012:web:abc123...`}</pre>
         <div className={s.envTipDesc}>
           프로덕션 배포 시에는 환경변수를 직접 서버에 설정하세요. localStorage 키는 개발 편의용입니다.
         </div>
