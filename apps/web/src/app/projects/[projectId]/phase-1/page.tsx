@@ -1088,8 +1088,14 @@ export default function Phase1Page() {
 
       convHistory.push({ role: "assistant", content: roundText });
 
-      // ── Sliding window: compress every 10 rounds (silent, user won't see this) ──
-      if (round % 10 === 0) {
+      // ── Sliding window: compress every 10 rounds (silent background) ──
+      // At round 100 the editor appears and says the summary aloud — skip silent
+      // compression that round since the editor's spoken summary IS the context.
+      if (round % 10 === 0 && round !== 100) {
+        await compressHistory();
+      }
+      if (round === 100) {
+        // Editor just spoke — use that visible summary as the compressed context too
         await compressHistory();
       }
 
@@ -1117,11 +1123,17 @@ export default function Phase1Page() {
           role: "user",
           content: `[사용자]: ${pendingMsg}\n위 사용자 의견에 에이전트들이 즉시 반응해줘.`,
         });
-      } else if (round >= 100) {
-        // Approaching 120-turn limit — trigger editor to wrap up
+      } else if (round === 100) {
+        // Editor enters — speaks the wrap-up summary aloud (visible to user)
         convHistory.push({
           role: "user",
-          content: "[시스템: 마무리 단계] 토론이 충분히 진행됐습니다. [편집자]가 등장하여 마무리를 유도하고, 각 에이전트가 핵심 의견을 한 줄씩 정리해줘.",
+          content: "[시스템: 마무리 단계] [편집자]가 처음으로 발언한다. \"네, 제가 정리할게요.\"로 시작해서 지금까지 나온 핵심 쟁점들을 2~3줄로 요약한 뒤, 각 에이전트에게 최종 입장을 한 마디씩 정리하도록 유도해줘.",
+        });
+      } else if (round > 100) {
+        // After editor appeared — keep nudging toward conclusion
+        convHistory.push({
+          role: "user",
+          content: "편집자가 정리를 시작했으니, 에이전트들이 하나씩 최종 입장을 정리해줘.",
         });
       } else {
         convHistory.push({ role: "user", content: "계속 토론해줘." });
