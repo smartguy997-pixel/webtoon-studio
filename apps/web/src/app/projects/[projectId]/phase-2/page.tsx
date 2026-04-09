@@ -157,6 +157,49 @@ MST 요약: ${mstSummary}
 [/AB_CARD]`;
 }
 
+function buildCharacterCrossCheckPrompt(genre: string, worldSummary: string): string {
+  return `당신은 AI Webtoon Studio 캐릭터 디자이너(agent_character)입니다.
+
+세계관 설계자(agent_worldbuilder)가 방금 세계관을 완성했습니다:
+${worldSummary}
+
+세계관 설계자의 작업을 인정하며, 이 세계관에서 살아갈 캐릭터 설계 방향을 한 문장으로 예고하세요.
+예: "세계관 설계자의 [핵심 규칙]을 기반으로, 이 세계에 어울리는 [캐릭터 특성]을 가진 주인공을 설계하겠습니다."
+말투: 전문적이고 기대감 있게. 자연스러운 한국어. 분량: 50~80자. JSON 없음.`;
+}
+
+function buildProducerMidpointPrompt(char1Summary: string, char2Summary: string): string {
+  return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
+
+캐릭터 디자이너(agent_character)가 두 캐릭터를 완성했습니다:
+- ${char1Summary}
+- ${char2Summary}
+
+두 캐릭터의 대비와 서사적 긴장감을 짧게 평가하고, 다음 단계(MST 설계)를 예고하세요.
+말투: 권위 있고 간결하게. 자연스러운 한국어. 분량: 60~100자. JSON 없음.`;
+}
+
+function buildWorldbuilderCrossCheckPrompt(mstSummary: string, worldSummary: string): string {
+  return `당신은 AI Webtoon Studio 세계관 설계자(agent_worldbuilder)입니다.
+
+캐릭터 디자이너(agent_character)가 MST(마스터 스타일 토큰)를 완성했습니다:
+${mstSummary}
+
+이 MST가 당신이 설계한 세계관(${worldSummary})의 분위기와 일치하는지 한 문장으로 검토하고,
+디자인 방향 A/B 제안을 시작하겠다고 예고하세요.
+말투: 전문적이고 확신 있게. 자연스러운 한국어. 분량: 60~100자. JSON 없음.`;
+}
+
+function buildProducerFinalPrompt(context: string): string {
+  return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
+
+팀의 Phase 2 설계가 완료되었습니다:
+${context}
+
+전체 설계를 간결하게 총괄하고, 사용자에게 디자인 방향 A/B안 선택을 요청하세요.
+말투: 따뜻하고 자신감 있게. 자연스러운 한국어. 분량: 80~120자. JSON 없음.`;
+}
+
 function buildProducerFollowupPrompt(context: string): string {
   return `당신은 AI Webtoon Studio 총괄 프로듀서(agent_producer)입니다.
 
@@ -324,6 +367,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [abChosen, setAbChosen] = useState(false);
   const [mstDone, setMstDone] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
@@ -447,6 +491,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setMessages([]);
     setAbChosen(false);
     setMstDone(false);
+    setCurrentStep(0);
 
     // Load Phase 1 data
     let phase1Summary = `장르: ${genre}`;
@@ -457,7 +502,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     } catch { /* ignore */ }
 
     try {
-      // ── 1. Worldbuilder: world design ──
+      // ── Step 1. Worldbuilder: world design ──
+      setCurrentStep(1);
       const worldText = await runStream(
         "worldbuilder",
         buildWorldbuilderPrompt(genre, phase1Summary),
@@ -470,7 +516,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         ? `시대: ${worldData.era} / 분위기: ${worldData.atmosphere} / 규칙: ${worldData.rules.join(", ")}`
         : stripBlocks(worldText).slice(0, 200);
 
-      // ── 2. Character: protagonist ──
+      // ── Cross-check: character reviews world ──
+      setCurrentStep(2);
+      await runStream(
+        "character",
+        buildCharacterCrossCheckPrompt(genre, worldSummary),
+        [{ role: "user", content: `세계관 설계자가 완성한 세계관: ${worldSummary}` }],
+        apiKey,
+      );
+
+      // ── Step 2. Character: protagonist ──
       const char1Text = await runStream(
         "character",
         buildCharacterPrompt("protagonist", genre, worldSummary, phase1Summary),
@@ -485,7 +540,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const char1Data = parseBlock<CharSheet>(char1Text, "CHAR_CARD");
       const char1Summary = char1Data ? `${char1Data.name} (주인공): ${char1Data.personality}` : "주인공 설계 완료";
 
-      // ── 3. Character: antagonist ──
+      // ── Step 3. Character: antagonist ──
+      setCurrentStep(3);
       const char2Text = await runStream(
         "character",
         buildCharacterPrompt("antagonist", genre, worldSummary, phase1Summary),
@@ -501,7 +557,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const char2Summary = char2Data ? `${char2Data.name} (빌런): ${char2Data.personality}` : "빌런 설계 완료";
       const charsSummary = `${char1Summary}\n${char2Summary}`;
 
-      // ── 4. Character: MST ──
+      // ── Cross-check: producer bridges to MST ──
+      await runStream(
+        "producer",
+        buildProducerMidpointPrompt(char1Summary, char2Summary),
+        [{ role: "user", content: `주인공: ${char1Summary}\n빌런: ${char2Summary}` }],
+        apiKey,
+      );
+
+      // ── Step 4. Character: MST ──
+      setCurrentStep(4);
       const mstText = await runStream(
         "character",
         buildMstPrompt(genre, worldSummary, charsSummary),
@@ -518,7 +583,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         : "MST 설계 완료";
       setMstDone(true);
 
-      // ── 5. Worldbuilder: A/B options ──
+      // ── Cross-check: worldbuilder validates MST ──
+      await runStream(
+        "worldbuilder",
+        buildWorldbuilderCrossCheckPrompt(mstSummary, worldSummary),
+        [{ role: "user", content: `MST: ${mstSummary}` }],
+        apiKey,
+      );
+
+      // ── Step 5. Worldbuilder: A/B options ──
+      setCurrentStep(5);
       const abText = await runStream(
         "worldbuilder",
         buildAbPrompt(genre, worldSummary, mstSummary),
@@ -537,6 +611,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         `[MST]\n${mstSummary}`,
         `[A/B 제안]\n${stripBlocks(abText).slice(0, 200)}`,
       ].join("\n\n");
+
+      // ── Producer final summary + A/B prompt ──
+      setCurrentStep(6);
+      await runStream(
+        "producer",
+        buildProducerFinalPrompt(contextRef.current),
+        [{ role: "user", content: "Phase 2 설계를 마무리해주세요." }],
+        apiKey,
+      );
 
       // Save to localStorage (include AB card for restore)
       const abData = parseBlock<AbCard>(abText, "AB_CARD");
@@ -661,6 +744,22 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         </div>
       ) : (
         <div className={s.chatLayout}>
+          {running && (
+            <div className={s.stepBar}>
+              {[
+                { step: 1, label: "세계관" },
+                { step: 3, label: "캐릭터" },
+                { step: 4, label: "MST" },
+                { step: 5, label: "디자인 방향" },
+                { step: 6, label: "총괄" },
+              ].map(({ step, label }) => (
+                <div key={step} className={`${s.stepItem} ${currentStep >= step ? s.stepDone : ""} ${currentStep === step ? s.stepActive : ""}`}>
+                  <div className={s.stepDot} />
+                  <span className={s.stepLabel}>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className={s.chatHeader}>
             <span className={s.chatHeaderGenre}>{genre}</span>
             <span style={{ fontSize: 13, color: "#7878a0" }}>세계관 · 캐릭터 시트 · MST · 디자인 방향</span>
