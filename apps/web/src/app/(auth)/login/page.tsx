@@ -16,13 +16,17 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [firebaseReady, setFirebaseReady] = useState<boolean | null>(null); // null = checking
 
-  // Check if Firebase is configured
+  // Check if Firebase is configured (env vars OR localStorage fallback)
   useEffect(() => {
-    const hasConfig = !!(
+    const hasEnv = !!(
       process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
       process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
     );
-    setFirebaseReady(hasConfig);
+    const hasLS = !!(
+      localStorage.getItem("wts_firebase_api_key") &&
+      localStorage.getItem("wts_firebase_project_id")
+    );
+    setFirebaseReady(hasEnv || hasLS);
   }, []);
 
   async function handleGoogle() {
