@@ -11,17 +11,19 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Only initialize if Firebase config is present
-const hasConfig = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
-
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
 
-if (hasConfig) {
-  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-  auth = getAuth(app);
-  db = getFirestore(app);
+try {
+  if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (e) {
+  // Firebase not configured — app runs in localStorage-only mode
+  console.warn("[firebase] init skipped:", e instanceof Error ? e.message : e);
 }
 
 export { app, auth, db };
