@@ -79,8 +79,8 @@ function PhaseStepper({ current }: { current: Phase }) {
   );
 }
 
-function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: string) => void }) {
-  function handleDelete(e: React.MouseEvent) {
+function ProjectCard({ project, onDelete }: { key?: string; project: Project; onDelete: (id: string) => void }) {
+  function handleDelete(e: { preventDefault: () => void; stopPropagation: () => void }) {
     e.preventDefault();
     e.stopPropagation();
     if (window.confirm(`"${project.title}" 프로젝트를 삭제하시겠습니까?\n\n모든 Phase 데이터가 함께 삭제됩니다.`)) {
@@ -129,7 +129,7 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   const [target, setTarget] = useState("");
   const [concept, setConcept] = useState("");
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!title.trim()) return;
     const id = uid();
@@ -142,17 +142,17 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   }
 
   return (
-    <div className={s.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={s.overlay} onClick={(e: { target: EventTarget | null; currentTarget: EventTarget | null }) => e.target === e.currentTarget && onClose()}>
       <div className={s.modal}>
         <div className={s.modalHeader}>
           <span className={s.modalTitle}>새 프로젝트 만들기</span>
           <button className={s.modalClose} onClick={onClose}>✕</button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div className={s.formGroup}><label className={s.formLabel}>웹툰 제목 *</label><input className={s.formInput} placeholder="예) 별을 삼킨 소녀" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus required /></div>
-          <div className={s.formGroup}><label className={s.formLabel}>장르</label><select className={s.formSelect} value={genre} onChange={(e) => setGenre(e.target.value)}>{GENRES.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
-          <div className={s.formGroup}><label className={s.formLabel}>타겟 독자</label><input className={s.formInput} placeholder="예) 20~30대 직장인" value={target} onChange={(e) => setTarget(e.target.value)} /></div>
-          <div className={s.formGroup}><label className={s.formLabel}>초기 아이디어 (선택)</label><textarea className={s.formTextarea} placeholder="주인공, 핵심 갈등, 세계관 등 자유롭게 적어주세요" value={concept} onChange={(e) => setConcept(e.target.value)} /></div>
+          <div className={s.formGroup}><label className={s.formLabel}>웹툰 제목 *</label><input className={s.formInput} placeholder="예) 별을 삼킨 소녀" value={title} onChange={(e: { target: HTMLInputElement }) => setTitle(e.target.value)} autoFocus required /></div>
+          <div className={s.formGroup}><label className={s.formLabel}>장르</label><select className={s.formSelect} value={genre} onChange={(e: { target: HTMLSelectElement }) => setGenre(e.target.value)}>{GENRES.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+          <div className={s.formGroup}><label className={s.formLabel}>타겟 독자</label><input className={s.formInput} placeholder="예) 20~30대 직장인" value={target} onChange={(e: { target: HTMLInputElement }) => setTarget(e.target.value)} /></div>
+          <div className={s.formGroup}><label className={s.formLabel}>초기 아이디어 (선택)</label><textarea className={s.formTextarea} placeholder="주인공, 핵심 갈등, 세계관 등 자유롭게 적어주세요" value={concept} onChange={(e: { target: HTMLTextAreaElement }) => setConcept(e.target.value)} /></div>
           <div className={s.formActions}><button type="button" className={s.btnGhost} onClick={onClose}>취소</button><button type="submit" className={s.btnPrimary}>✦ Phase 1 시작</button></div>
         </form>
       </div>
@@ -205,10 +205,10 @@ export default function ProjectsPage() {
 
   const loadAndSync = useCallback(() => {
     const raw = loadProjects();
-    const synced = raw.map(syncProjectProgress);
+    const synced = raw.map((p: Project) => syncProjectProgress(p));
     setProjects(synced);
     // Save synced state back only if something changed
-    const changed = synced.some((p, i) =>
+    const changed = synced.some((p: Project, i: number) =>
       p.feasibilityScore !== raw[i].feasibilityScore ||
       p.currentPhase !== raw[i].currentPhase ||
       p.episodeProgress !== raw[i].episodeProgress
@@ -227,7 +227,7 @@ export default function ProjectsPage() {
   }
 
   function handleDelete(id: string) {
-    const next = projects.filter(p => p.id !== id);
+    const next = projects.filter((p: Project) => p.id !== id);
     setProjects(next);
     saveProjects(next);
     // Clean up all phase data for the project
@@ -245,9 +245,9 @@ export default function ProjectsPage() {
     keysToRemove.forEach(k => localStorage.removeItem(k));
   }
 
-  const active = projects.filter((p) => p.status === "active");
-  const inPhase4Plus = projects.filter((p) => p.currentPhase >= 4);
-  const avgFeasibility = projects.filter((p) => p.feasibilityScore !== undefined).reduce((sum, p, _, arr) => sum + (p.feasibilityScore ?? 0) / arr.length, 0);
+  const active = projects.filter((p: Project) => p.status === "active");
+  const inPhase4Plus = projects.filter((p: Project) => p.currentPhase >= 4);
+  const avgFeasibility = projects.filter((p: Project) => p.feasibilityScore !== undefined).reduce((sum: number, p: Project, _: number, arr: Project[]) => sum + (p.feasibilityScore ?? 0) / arr.length, 0);
 
   return (
     <div className={s.root}>
@@ -274,13 +274,13 @@ export default function ProjectsPage() {
           <div className={s.statCard}><span className={s.statLabel}>전체 프로젝트</span><span className={s.statValue}>{projects.length}</span><span className={s.statSub}>총 작업 수</span></div>
           <div className={s.statCard}><span className={s.statLabel}>진행 중</span><span className={s.statValue} style={{ color: "var(--primary)" }}>{active.length}</span><span className={s.statSub}>활성 프로젝트</span></div>
           <div className={s.statCard}><span className={s.statLabel}>대본/이미지</span><span className={s.statValue} style={{ color: "var(--phase-4-color)" }}>{inPhase4Plus.length}</span><span className={s.statSub}>Phase 4~5 진행 중</span></div>
-          <div className={s.statCard}><span className={s.statLabel}>평균 실현가능성</span><span className={s.statValue} style={{ color: avgFeasibility >= 0.7 ? "var(--phase-2-color)" : avgFeasibility >= 0.5 ? "var(--phase-3-color)" : "var(--text)" }}>{projects.some((p) => p.feasibilityScore !== undefined) ? `${Math.round(avgFeasibility * 100)}%` : "—"}</span><span className={s.statSub}>Phase 1 기준</span></div>
+          <div className={s.statCard}><span className={s.statLabel}>평균 실현가능성</span><span className={s.statValue} style={{ color: avgFeasibility >= 0.7 ? "var(--phase-2-color)" : avgFeasibility >= 0.5 ? "var(--phase-3-color)" : "var(--text)" }}>{projects.some((p: Project) => p.feasibilityScore !== undefined) ? `${Math.round(avgFeasibility * 100)}%` : "—"}</span><span className={s.statSub}>Phase 1 기준</span></div>
         </div>
         <div className={s.sectionHeader}><span className={s.sectionTitle}>내 프로젝트</span><span className={s.sectionCount}>{projects.length}개</span></div>
         <div className={s.grid}>
           {projects.length === 0 ? (
             <div className={s.empty}><div className={s.emptyIcon}>✦</div><div className={s.emptyTitle}>아직 프로젝트가 없어요</div><div className={s.emptyDesc}>새 프로젝트를 만들면 7인의 AI 에이전트가 기획부터 대본까지 함께 만들어 드립니다.</div><button className={s.btnPrimary} onClick={() => setShowModal(true)}>첫 번째 프로젝트 시작하기</button></div>
-          ) : projects.map((p) => <ProjectCard key={p.id} project={p} onDelete={handleDelete} />)}
+          ) : projects.map((p: Project) => <ProjectCard key={p.id} project={p} onDelete={handleDelete} />)}
         </div>
       </main>
       {showModal && <NewProjectModal onClose={() => setShowModal(false)} onCreate={handleCreate} />}

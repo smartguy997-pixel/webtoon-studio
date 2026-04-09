@@ -41,7 +41,7 @@ export default function LoginPage() {
     }
   }
 
-  async function handleEmail(e: React.FormEvent) {
+  async function handleEmail(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (!email.trim() || !password.trim()) return;
     setBusy(true);
@@ -196,12 +196,12 @@ export default function LoginPage() {
 
                   <div style={{ marginBottom: 14 }}>
                     <label style={labelStyle}>이메일</label>
-                    <input type="email" required value={email} onChange={e => setEmail(e.target.value)}
+                    <input type="email" required value={email} onChange={(e: { target: HTMLInputElement }) => setEmail(e.target.value)}
                       placeholder="your@email.com" style={inputStyle} autoComplete="email" />
                   </div>
                   <div style={{ marginBottom: 20 }}>
                     <label style={labelStyle}>비밀번호</label>
-                    <input type="password" required value={password} onChange={e => setPassword(e.target.value)}
+                    <input type="password" required value={password} onChange={(e: { target: HTMLInputElement }) => setPassword(e.target.value)}
                       placeholder={mode === "signup" ? "6자 이상" : "••••••••"} style={inputStyle} autoComplete={mode === "signup" ? "new-password" : "current-password"} />
                   </div>
 
@@ -237,19 +237,19 @@ export default function LoginPage() {
 
 // ─── Inline styles ─────────────────────────────────────────────────────────────
 
-const btnPrimaryStyle: React.CSSProperties = {
+const btnPrimaryStyle: { [key: string]: string | number | undefined } = {
   width: "100%", padding: "12px 16px", borderRadius: 12,
   fontSize: 14, fontWeight: 700, cursor: "pointer",
   background: "linear-gradient(135deg, #7c6cfc, #a78bfa)",
   border: "none", color: "white", transition: "opacity 0.15s",
 };
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: { [key: string]: string | number | undefined } = {
   display: "block", fontSize: 12, fontWeight: 600,
   color: "#94a3b8", marginBottom: 6, textTransform: "uppercase" as const, letterSpacing: "0.05em",
 };
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: { [key: string]: string | number | undefined } = {
   width: "100%", padding: "10px 14px", borderRadius: 10,
   background: "#0d0d14", border: "1px solid #2a2a3d",
   color: "#f1f5f9", fontSize: 14, outline: "none",

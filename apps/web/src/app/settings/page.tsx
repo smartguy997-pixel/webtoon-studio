@@ -79,7 +79,7 @@ function validateFormat(cfg: KeyConfig, val: string): string | null {
 }
 
 // ── ApiKey card ───────────────────────────────────────────
-function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
+function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () => void }) {
   const [state, setState] = useState<KeyState>({
     value: "",
     saved: "",
@@ -91,7 +91,7 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
 
   useEffect(() => {
     const saved = localStorage.getItem(cfg.storageKey) ?? "";
-    setState((p) => ({ ...p, saved, value: saved, status: saved ? "ok" : "idle" }));
+    setState((p: KeyState) => ({ ...p, saved, value: saved, status: saved ? "ok" : "idle" }));
   }, [cfg.storageKey]);
 
   const formatError = state.value ? validateFormat(cfg, state.value) : null;
@@ -102,11 +102,11 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
 
     const fmtErr = validateFormat(cfg, val);
     if (fmtErr) {
-      setState((p) => ({ ...p, status: "error", errorMsg: fmtErr }));
+      setState((p: KeyState) => ({ ...p, status: "error", errorMsg: fmtErr }));
       return;
     }
 
-    setState((p) => ({ ...p, status: "testing", errorMsg: "" }));
+    setState((p: KeyState) => ({ ...p, status: "testing", errorMsg: "" }));
 
     let ok = false;
     let msg = "";
@@ -145,10 +145,10 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
 
     if (ok) {
       localStorage.setItem(cfg.storageKey, val);
-      setState((p) => ({ ...p, saved: val, status: "ok", errorMsg: "", dirty: false }));
+      setState((p: KeyState) => ({ ...p, saved: val, status: "ok", errorMsg: "", dirty: false }));
       onSaved();
     } else {
-      setState((p) => ({ ...p, status: "error", errorMsg: msg || "연결 실패" }));
+      setState((p: KeyState) => ({ ...p, status: "error", errorMsg: msg || "연결 실패" }));
     }
   }
 
@@ -194,9 +194,9 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
           className={`${s.keyInput} ${isSaved && !state.visible ? s.masked : ""}`}
           type={state.visible || !isSaved ? "text" : "password"}
           value={isSaved && !state.visible ? mask(state.saved) : state.value}
-          onChange={(e) => {
+          onChange={(e: { target: HTMLInputElement }) => {
             const v = e.target.value;
-            setState((p) => ({
+            setState((p: KeyState) => ({
               ...p,
               value: v,
               dirty: true,
@@ -205,7 +205,7 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
             }));
           }}
           onFocus={() => {
-            if (isSaved) setState((p) => ({ ...p, visible: true, dirty: true }));
+            if (isSaved) setState((p: KeyState) => ({ ...p, visible: true, dirty: true }));
           }}
           placeholder={cfg.placeholder}
           spellCheck={false}
@@ -215,7 +215,7 @@ function KeyCard({ cfg, onSaved }: { cfg: KeyConfig; onSaved: () => void }) {
         {/* Show / hide toggle */}
         <button
           className={s.btnIcon}
-          onClick={() => setState((p) => ({ ...p, visible: !p.visible }))}
+          onClick={() => setState((p: KeyState) => ({ ...p, visible: !p.visible }))}
           title={state.visible ? "숨기기" : "표시"}
           type="button"
         >

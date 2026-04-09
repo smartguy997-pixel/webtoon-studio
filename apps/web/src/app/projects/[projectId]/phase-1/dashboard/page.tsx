@@ -141,7 +141,7 @@ function PositioningChart({ positioning }: { positioning: Phase1Result["position
             axisLine={{ stroke: "#2a2a3d" }} tickLine={false} />
           <ReferenceLine x={50} stroke="#2a2a3d" strokeDasharray="4 4" />
           <ReferenceLine y={50} stroke="#2a2a3d" strokeDasharray="4 4" />
-          <Tooltip cursor={false} content={({ active, payload }) => {
+          <Tooltip cursor={false} content={({ active, payload }: { active?: boolean; payload?: Array<{ payload: unknown }> }) => {
             if (!active || !payload?.length) return null;
             const d = payload[0]?.payload as { label: string; x: number; y: number };
             return (
@@ -151,7 +151,7 @@ function PositioningChart({ positioning }: { positioning: Phase1Result["position
               </div>
             );
           }} />
-          <Scatter data={allPoints} shape={(p) => CustomDot(p as DotProps)} />
+          <Scatter data={allPoints} shape={(p: object) => CustomDot(p as DotProps)} />
         </ScatterChart>
       </ResponsiveContainer>
     </div>
@@ -179,7 +179,7 @@ function RadarChartView({ radar }: { radar: Phase1Result["radar"] }) {
 
 // ─── Competitor card with similarity bar ─────────────────────────────────────
 
-function CompetitorCard({ comp, similarity }: { comp: Competitor; similarity: number }) {
+function CompetitorCard({ comp, similarity }: { key?: number; comp: Competitor; similarity: number }) {
   return (
     <div className={styles.compCard}>
       <div className={styles.compCardHeader} style={{ borderTop: `3px solid ${comp.genre_color}` }}>
@@ -227,7 +227,7 @@ function CompetitorCard({ comp, similarity }: { comp: Competitor; similarity: nu
 
 // ─── USP card ────────────────────────────────────────────────────────────────
 
-function USPCard({ usp, idx }: { usp: USP; idx: number }) {
+function USPCard({ usp, idx }: { key?: number; usp: USP; idx: number }) {
   const accents = ["#7c6cfc", "#34d399", "#f87171", "#fbbf24", "#60a5fa"];
   const accent = accents[idx % accents.length];
   return (
@@ -247,7 +247,7 @@ function USPCard({ usp, idx }: { usp: USP; idx: number }) {
 // ─── Section wrapper ──────────────────────────────────────────────────────────
 
 function Section({ num, title, sub, children }: {
-  num: string; title: string; sub?: string; children: React.ReactNode;
+  num: string; title: string; sub?: string; children?: unknown;
 }) {
   return (
     <section className={styles.section}>
@@ -445,7 +445,7 @@ export default function Phase1Dashboard() {
       {/* ── Section 3: Competitor comparison ── */}
       <Section num="03" title="유사작품 비교 분석" sub="경쟁작 강점·약점·차별화 전략 및 포지셔닝 유사도">
         <div className={styles.compGrid}>
-          {result.competitors.map((comp, i) => {
+          {result.competitors.map((comp: Competitor, i: number) => {
             const matchedComp = result.positioning.competitors[i];
             const sim = matchedComp ? calcSimilarity(result.positioning.ours, matchedComp) : 0;
             return <CompetitorCard key={i} comp={comp} similarity={sim} />;
@@ -456,7 +456,7 @@ export default function Phase1Dashboard() {
       {/* ── Section 4: USPs ── */}
       <Section num="04" title="핵심 셀링 포인트 (USP)" sub="독자가 이 작품을 선택해야 하는 이유">
         <div className={styles.uspGrid}>
-          {result.usp.map((u, i) => <USPCard key={i} usp={u} idx={i} />)}
+          {result.usp.map((u: USP, i: number) => <USPCard key={i} usp={u} idx={i} />)}
         </div>
       </Section>
 
@@ -468,7 +468,7 @@ export default function Phase1Dashboard() {
           </button>
         </div>
         <div className={styles.reportBox}>
-          {result.final_report.split("\n").map((line, i) => {
+          {result.final_report.split("\n").map((line: string, i: number) => {
             if (!line.trim()) return <div key={i} className={styles.reportBlank} />;
             if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━━"))
               return <div key={i} className={styles.reportHeading}>{line}</div>;

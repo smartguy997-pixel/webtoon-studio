@@ -9,7 +9,7 @@ export function useProject(projectId: string) {
 
   useEffect(() => {
     const ref = doc(db, "projects", projectId);
-    const unsubscribe = onSnapshot(ref, (snap) => {
+    const unsubscribe = onSnapshot(ref, (snap: { exists: () => boolean; data: () => unknown }) => {
       setProject(snap.exists() ? (snap.data() as Project) : null);
       setLoading(false);
     });
