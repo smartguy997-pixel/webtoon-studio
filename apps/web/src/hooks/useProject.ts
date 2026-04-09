@@ -8,6 +8,10 @@ export function useProject(projectId: string) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
     const ref = doc(db, "projects", projectId);
     const unsubscribe = onSnapshot(ref, (snap: { exists: () => boolean; data: () => unknown }) => {
       setProject(snap.exists() ? (snap.data() as Project) : null);
