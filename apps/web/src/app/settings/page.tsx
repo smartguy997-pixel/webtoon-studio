@@ -259,12 +259,12 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
 
 // ── Firebase config card ──────────────────────────────────
 const FIREBASE_FIELDS = [
-  { key: "wts_firebase_api_key",            label: "API Key",            placeholder: "AIzaSy..." },
-  { key: "wts_firebase_auth_domain",        label: "Auth Domain",        placeholder: "your-project.firebaseapp.com" },
-  { key: "wts_firebase_project_id",         label: "Project ID",         placeholder: "your-project-id" },
-  { key: "wts_firebase_storage_bucket",     label: "Storage Bucket",     placeholder: "your-project.appspot.com" },
+  { key: "wts_firebase_api_key",             label: "API Key",             placeholder: "AIzaSy..." },
+  { key: "wts_firebase_auth_domain",         label: "Auth Domain",         placeholder: "your-project.firebaseapp.com" },
+  { key: "wts_firebase_project_id",          label: "Project ID",          placeholder: "your-project-id" },
+  { key: "wts_firebase_storage_bucket",      label: "Storage Bucket",      placeholder: "your-project.appspot.com" },
   { key: "wts_firebase_messaging_sender_id", label: "Messaging Sender ID", placeholder: "123456789012" },
-  { key: "wts_firebase_app_id",             label: "App ID",             placeholder: "1:123456789012:web:abc123..." },
+  { key: "wts_firebase_app_id",              label: "App ID",              placeholder: "1:123456789012:web:abc123..." },
 ];
 
 function FirebaseCard({ onSaved }: { onSaved: () => void }) {
@@ -274,12 +274,9 @@ function FirebaseCard({ onSaved }: { onSaved: () => void }) {
 
   useEffect(() => {
     const init: Record<string, string> = {};
-    FIREBASE_FIELDS.forEach((f) => {
-      init[f.key] = localStorage.getItem(f.key) ?? "";
-    });
+    FIREBASE_FIELDS.forEach((f) => { init[f.key] = localStorage.getItem(f.key) ?? ""; });
     setValues(init);
-    const hasAny = Object.values(init).some(Boolean);
-    setSaved(hasAny);
+    setSaved(Object.values(init).some(Boolean));
   }, []);
 
   function handleChange(key: string, val: string) {
@@ -290,7 +287,7 @@ function FirebaseCard({ onSaved }: { onSaved: () => void }) {
 
   function handleSave() {
     FIREBASE_FIELDS.forEach((f) => {
-      const v = values[f.key]?.trim() ?? "";
+      const v = (values[f.key] ?? "").trim();
       if (v) localStorage.setItem(f.key, v);
       else localStorage.removeItem(f.key);
     });
@@ -326,11 +323,10 @@ function FirebaseCard({ onSaved }: { onSaved: () => void }) {
             <strong style={{ color: "#fbbf24" }}>저장 후 페이지를 새로고침해야 적용됩니다.</strong>
           </div>
         </div>
-        {isSaved ? (
-          <div className={`${s.statusBadge} ${s.statusSaved}`}>✓ 설정됨</div>
-        ) : (
-          <div className={`${s.statusBadge} ${s.statusNone}`}>미설정</div>
-        )}
+        {isSaved
+          ? <div className={`${s.statusBadge} ${s.statusSaved}`}>✓ 설정됨</div>
+          : <div className={`${s.statusBadge} ${s.statusNone}`}>미설정</div>
+        }
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -357,7 +353,7 @@ function FirebaseCard({ onSaved }: { onSaved: () => void }) {
             console.firebase.google.com ↗
           </a>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {hasValues && (
             <button className={s.btnClear} onClick={handleClear} type="button" style={{ marginTop: 0 }}>
               ✕ 초기화
@@ -383,8 +379,8 @@ export default function SettingsPage() {
 
   const countSaved = useCallback(() => {
     const apiKeys = KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
-    const fbKeys = FIREBASE_FIELDS.filter((f) => !!localStorage.getItem(f.key)).length;
-    setSavedCount(apiKeys + (fbKeys > 0 ? 1 : 0));
+    const fbSaved = FIREBASE_FIELDS.some((f) => !!localStorage.getItem(f.key)) ? 1 : 0;
+    setSavedCount(apiKeys + fbSaved);
   }, []);
 
   useEffect(() => {
