@@ -138,32 +138,61 @@ const STAGE_PROMPTS: Record<StageId, string> = {
   5: "복선과 암시 — 복선 장치·회수 장면·훼이크",
 };
 
-// 이전 단계 결과를 구조화된 컨텍스트로 변환
+// 단계별 구조화 데이터 → 사람이 읽을 수 있는 요약 문자열
+function formatStageSummary(stageId: StageId, data: Record<string, unknown>): string {
+  if (data.raw_summary) return String(data.raw_summary).slice(0, 300);
+  try {
+    switch (stageId) {
+      case 1: {
+        const rules = Array.isArray(data.world_rules)
+          ? (data.world_rules as string[]).join(", ")
+          : String(data.world_rules || "");
+        return [
+          data.era            && `시대/배경: ${data.era}`,
+          data.atmosphere     && `분위기: ${data.atmosphere}`,
+          rules               && `세계 규칙: ${rules}`,
+          data.special_elements && `특수 설정: ${data.special_elements}`,
+        ].filter(Boolean).join(" · ");
+      }
+      case 2:
+        return [
+          data.logline,
+          data.conflict        && `갈등: ${data.conflict}`,
+          data.resolution_hint && `해결 방향: ${data.resolution_hint}`,
+        ].filter(Boolean).join(" · ");
+      case 3:
+        if (Array.isArray(data.characters)) {
+          return (data.characters as Record<string, string>[])
+            .map(c => `${c.name}(${c.role}): 성격 ${c.personality}, 동기 ${c.motivation}`)
+            .join(" · ");
+        }
+        break;
+      case 4:
+        if (Array.isArray(data.locations)) {
+          return (data.locations as Record<string, string>[])
+            .map(l => `${l.name}: ${l.atmosphere} — ${l.significance}`)
+            .join(" · ");
+        }
+        break;
+      case 5:
+        if (Array.isArray(data.foreshadowing)) {
+          return (data.foreshadowing as Record<string, string>[])
+            .slice(0, 3).map(f => `${f.setup}→${f.payoff}`).join(", ");
+        }
+        break;
+    }
+  } catch { /* ignore */ }
+  return Object.entries(data).slice(0, 4)
+    .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`).join(" · ");
+}
+
+// 이전 단계 결과를 에이전트가 읽기 쉬운 컨텍스트로 변환 (summary 필드 사용)
 function buildContext(stageId: StageId, prevResults: StageResult[]): string {
   const relevant = prevResults.filter(r => r.stageId < stageId);
   if (!relevant.length) return "";
-
   return relevant.map(r => {
-    const stageName = STAGES.find(s => s.id === r.stageId)?.name ?? "";
-    // raw_summary(평문 fallback)는 그대로 사용
-    if (r.data.raw_summary) {
-      return `[${stageName} — 확정됨]\n${String(r.data.raw_summary)}`;
-    }
-    // 구조화 data를 사람이 읽기 쉬운 형태로 변환
-    const detail = Object.entries(r.data)
-      .map(([k, v]) => {
-        if (Array.isArray(v)) {
-          const items = (v as unknown[]).map(item =>
-            typeof item === "object" && item !== null
-              ? Object.entries(item as Record<string, unknown>).map(([ik, iv]) => `${ik}: ${String(iv)}`).join(", ")
-              : String(item)
-          ).join("\n    · ");
-          return `  ${k}:\n    · ${items}`;
-        }
-        return `  ${k}: ${String(v)}`;
-      })
-      .join("\n");
-    return `[${stageName} — 확정됨]\n${detail}`;
+    const stage = STAGES.find(s => s.id === r.stageId)!;
+    return `[${stage.name} 확정]\n${r.summary}`;
   }).join("\n\n");
 }
 
@@ -183,7 +212,7 @@ function buildSingleAgentPrompt(
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
 성격: ${roleDesc}
 장르: ${genre}
-${p1Context ? `\n[Phase 1 분석 결과 — 반드시 참고]\n${p1Context}\n` : ""}${context ? `\n[이미 확정된 내용 — 참고만]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
+${p1Context ? `\n[Phase 1 분석 결과 — 반드시 참고]\n${p1Context}\n` : ""}${context ? `\n[이미 확정된 내용 — 반드시 이 내용을 바탕으로 토론해]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
 
 [대화 방식]
 - 앞 사람 말 받아서 자연스럽게 이어가.
@@ -275,10 +304,7 @@ async function extractStageData(
 
   const structured = parseBlock<Record<string, unknown>>(fullText, stage.tag);
   if (structured) {
-    const summary = Object.entries(structured)
-      .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 80)}`)
-      .join(" / ");
-    return { data: structured, summary };
+    return { data: structured, summary: formatStageSummary(stage.id, structured) };
   }
 
   // ② 루즈 JSON 파싱 (태그 없이 JSON 블록만 찾기)
@@ -286,10 +312,7 @@ async function extractStageData(
   if (jsonMatch) {
     try {
       const loose = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      const summary = Object.entries(loose)
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 80)}`)
-        .join(" / ");
-      return { data: loose, summary };
+      return { data: loose, summary: formatStageSummary(stage.id, loose) };
     } catch { /* ignore */ }
   }
 
@@ -333,7 +356,7 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
 
   return (
     <div style={{ background:`${c}08`, border:`1px solid ${c}30`, borderRadius:10, padding:"14px 16px", marginBottom:6 }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
         <div style={{ fontSize:10, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.7px" }}>✓ {stage.name} 완료</div>
         {onViewDebate && (
           <button
@@ -343,6 +366,12 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
           </button>
         )}
       </div>
+      {/* 요약 한 줄 — 다음 단계 에이전트에게 전달되는 내용과 동일 */}
+      {result.summary && !data.raw_summary && (
+        <div style={{ fontSize:12, color:`${c}cc`, lineHeight:1.7, marginBottom:10, padding:"6px 10px", background:`${c}0a`, borderRadius:6, borderLeft:`2px solid ${c}50` }}>
+          {result.summary}
+        </div>
+      )}
       {result.stageId === 1 && <>{row("시대/배경", data.era)}{row("분위기", data.atmosphere)}{row("세계 규칙", data.world_rules)}{row("특수 설정", data.special_elements)}</>}
       {result.stageId === 2 && <>{row("로그라인", data.logline)}{row("전제", data.premise)}{row("갈등", data.conflict)}{row("해결 방향", data.resolution_hint)}</>}
       {result.stageId === 3 && Array.isArray(data.characters) && (data.characters as Record<string,string>[]).map((ch, i) => (
