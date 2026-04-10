@@ -1344,8 +1344,9 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
 
-    // agentIndex는 위에서 이미 초기화됨
-    // 사용자가 "끝내자"/"마무리해" 를 입력할 때까지 무한 진행
+    // 사용자가 말한 후 몇 명의 에이전트가 반응해야 하는지 카운트
+    let userSpokeRecentlyCount = 0;
+
     debateLoop: while (true) {
       // 에이전트를 돌아가며 선택 (API 키도 자동으로 로테이션)
       const agentId = AGENT_SPEAKING_ORDER_P1[agentIndex % AGENT_SPEAKING_ORDER_P1.length];
@@ -1376,6 +1377,7 @@ export default function Phase1Page() {
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
         userJustSpoke = true;
+        userSpokeRecentlyCount = 3; // 이후 3명 에이전트가 사용자 메시지 우선 반응
 
         // debate-config.ts의 USER_COMMAND_PATTERNS으로 명령 매칭
         matchedCommand = matchCommand(pendingMsg);
@@ -1511,11 +1513,12 @@ export default function Phase1Page() {
       )].join(", ");
 
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
+      const lastUserMsg = [...transcript].reverse().find(l => l.startsWith("[사용자]"))?.replace("[사용자]: ", "") ?? "";
       const userContent = agentIndex === 0
         ? `리서치 세션을 시작해줘. 우리가 분석할 기획은:\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획 개요: ${c.slice(0, 500)}\n\n이 기획과 유사한 웹툰 작품을 한 편 골라서 소개하고, 그 작품의 좋은 점이나 배울 점을 공유해줘.`
-        : userJustSpoke
-          ? `${historyText}사용자가 최근에 이렇게 말했어: "${recentUserMsgs}". 앞뒤 맥락을 이해하고 직접 반응해. 사용자 의견을 반드시 반영해.`
-          : `${historyText}당신 차례야. 위 대화에서 아직 나오지 않은 새로운 유사 작품이나 인사이트를 추가해줘. 절대로 앞사람 말을 반복하거나 단순 동의로 시작하지 마. '맞아', '그렇지' 금지. 바로 새 내용으로 시작해.${mentionedWorks ? `\n(이미 언급된 내용이니 피해줘: ${mentionedWorks})` : ""}`;
+        : userSpokeRecentlyCount > 0
+          ? `${historyText}사용자가 방금 이렇게 말했어: "${lastUserMsg}". 이걸 먼저 받아서 네 관점으로 짧게 반응해줘.`
+          : `${historyText}네 차례야. 새로운 인사이트 하나만 짧게.${mentionedWorks ? ` (이미 언급된 내용 피해줘: ${mentionedWorks})` : ""}`;
 
       // 스트리밍: 이 에이전트 발언
       let roundText = "";
@@ -1591,6 +1594,7 @@ export default function Phase1Page() {
 
       round++;
       agentIndex++;
+      if (userSpokeRecentlyCount > 0) userSpokeRecentlyCount--;
 
       // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
       if (transcript.length > 0 && transcript.length % 20 === 0) {
