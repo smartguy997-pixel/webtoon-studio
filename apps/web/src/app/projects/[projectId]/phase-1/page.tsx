@@ -110,9 +110,12 @@ function buildAgentPromptP1(
 
 [이미지 서치 방법 — 연출작가는 반드시 사용, 다른 에이전트도 필요시 사용]
 비주얼 레퍼런스를 공유할 때는 반드시 다음 형식으로 출력:
-🖼️ 이미지 서치: "검색어 영문 키워드"
-예: 🖼️ 이미지 서치: "korean webtoon fantasy dark art style"
-예: 🖼️ 이미지 서치: "manhwa action scene dramatic lighting"
+🖼️ 이미지 서치: "검색어"
+언어 규칙: 한국/일본 작품 → 한글로 검색, 미국/유럽 작품 → 영어로 검색
+예(한국): 🖼️ 이미지 서치: "나 혼자만 레벨업 던전 배경 컷"
+예(한국): 🖼️ 이미지 서치: "이태원 클라쓰 감성 도시 배경"
+예(영어): 🖼️ 이미지 서치: "manhwa noir alley surveillance aesthetic"
+예(영어): 🖼️ 이미지 서치: "webtoon urban decay detailed background"
 
 ${DEBATE_RULES}`;
 }
