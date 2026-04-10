@@ -1543,8 +1543,8 @@ export default function Phase1Page() {
 
         const trimmed = bubbleText.trim();
 
-        // 스트림 실패 + 빈 텍스트 → 빈 말풍선 제거 후 중단
-        if (streamFailed && !trimmed) {
+        // 텍스트가 없으면 (실패든 빈 응답이든) 말풍선 제거 후 중단
+        if (!trimmed) {
           setMsgs(prev => prev.filter(m => m.id !== currentMsgId));
           break;
         }
