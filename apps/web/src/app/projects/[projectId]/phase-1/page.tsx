@@ -471,12 +471,8 @@ function ImageSearchCard({ query }: { query: string }) {
         <div style={{ fontSize: 12, color: "#f87171" }}>⚠ {error}</div>
       )}
 
-      {!loading && !error && images.length === 0 && (
-        <div style={{ fontSize: 12, color: "#64748b" }}>관련 이미지를 찾지 못했습니다.</div>
-      )}
-
-      {!loading && !error && images.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+      {!loading && images.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 8 }}>
           {images.map((url, idx) => (
             <a
               key={idx}
@@ -491,13 +487,29 @@ function ImageSearchCard({ query }: { query: string }) {
                 style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
                 loading="lazy"
                 onError={(e) => {
-                  // 이미지 로딩 실패 시 숨김
                   (e.currentTarget.parentElement as HTMLElement).style.display = "none";
                 }}
               />
             </a>
           ))}
         </div>
+      )}
+
+      {/* 항상 Google 이미지 링크 표시 (이미지 없을 때는 더 크게) */}
+      {!loading && (
+        <a
+          href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query + " webtoon manhwa art")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4,
+            fontSize: 11, color: "#60a5fa", textDecoration: "none",
+            background: "rgba(96,165,250,0.08)", borderRadius: 5,
+            padding: "3px 10px", border: "1px solid rgba(96,165,250,0.2)",
+          }}
+        >
+          {images.length === 0 ? "🔍 Google 이미지에서 보기 →" : "더 찾기 →"}
+        </a>
       )}
     </div>
   );

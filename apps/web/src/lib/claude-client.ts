@@ -64,33 +64,22 @@ export interface StreamClaudeOptions {
   model?: string;
 }
 
-// ─── Image search via Claude web_search (non-streaming) ──────────────────────
+// ─── Image search via Claude (non-streaming, with tool-use fallback) ─────────
 
-/**
- * Claude가 web_search 툴로 이미지 URL을 직접 찾아서 반환.
- * Pixabay 키 불필요 — 기존 Anthropic API 키만 사용.
- */
-export async function fetchImagesWithClaude(
-  query: string,
+type ApiContent = { type: string; id?: string; name?: string; text?: string; input?: unknown };
+type ApiResponse = { content: ApiContent[]; stop_reason: string };
+
+async function callClaudeOnce(
   apiKey: string,
-): Promise<string[]> {
-  const body = {
+  messages: Array<{ role: string; content: unknown }>,
+  withSearch: boolean,
+): Promise<ApiResponse> {
+  const body: Record<string, unknown> = {
     model: "claude-haiku-4-5-20251001",
     max_tokens: 800,
-    tools: [WEB_SEARCH_TOOL],
-    messages: [
-      {
-        role: "user",
-        content: `Search the web for images related to: "${query} webtoon manhwa korean comic art style reference"
-
-Find pages on sites like artstation.com, deviantart.com, pinterest.com, or similar art/image hosting sites.
-Extract 4 direct image file URLs from the search results (URLs ending in .jpg .jpeg .png .webp .gif or containing image CDN paths).
-
-Return ONLY a raw JSON array of the 4 URLs — no explanation, no markdown, no other text:
-["https://...", "https://...", "https://...", "https://..."]`,
-      },
-    ],
+    messages,
   };
+  if (withSearch) body.tools = [WEB_SEARCH_TOOL];
 
   let res: Response;
   try {
@@ -113,32 +102,85 @@ Return ONLY a raw JSON array of the 4 URLs — no explanation, no markdown, no o
   }
 
   if (!res.ok) throw new Error(`Claude API ${res.status}`);
+  return res.json() as Promise<ApiResponse>;
+}
 
-  const data = await res.json() as {
-    content?: Array<{ type: string; text?: string }>;
-  };
-
-  const text = (data.content ?? [])
-    .filter((b): b is { type: "text"; text: string } => b.type === "text" && !!b.text)
-    .map(b => b.text)
-    .join("");
-
-  // JSON 배열 추출 시도
+function extractUrls(text: string): string[] {
+  // 1) JSON 배열 추출
   const jsonMatch = text.match(/\[[\s\S]*?\]/);
   if (jsonMatch) {
     try {
-      const urls = JSON.parse(jsonMatch[0]) as unknown[];
-      const filtered = urls.filter(
-        (u): u is string => typeof u === "string" && u.startsWith("http"),
-      );
-      if (filtered.length > 0) return filtered.slice(0, 4);
-    } catch { /* fallthrough */ }
+      const arr = JSON.parse(jsonMatch[0]) as unknown[];
+      const urls = arr.filter((u): u is string => typeof u === "string" && u.startsWith("http"));
+      if (urls.length > 0) return urls.slice(0, 4);
+    } catch { /* fall through */ }
+  }
+  // 2) 직접 URL 추출 (확장자 있는 것)
+  const matches =
+    text.match(/https?:\/\/[^\s"'\],<>]+\.(jpg|jpeg|png|webp|gif)(\?[^\s"'\],<>]*)?/gi) ?? [];
+  return matches.slice(0, 4);
+}
+
+/**
+ * Claude web_search 또는 학습 데이터 기반으로 이미지 URL을 반환.
+ * 1차: web_search 툴 사용 (tool_use 응답이면 multi-turn 처리)
+ * 2차: 툴 없이 Claude 지식 기반 요청
+ */
+export async function fetchImagesWithClaude(
+  query: string,
+  apiKey: string,
+): Promise<string[]> {
+  const userPrompt = `Find 4 direct image file URLs (ending in .jpg .jpeg .png .webp .gif) related to: "${query} webtoon manhwa korean comic art style reference"
+
+Search art sites like artstation.com, deviantart.com, or similar.
+Return ONLY a raw JSON array — no markdown, no explanation:
+["https://...","https://...","https://...","https://..."]`;
+
+  const messages: Array<{ role: string; content: unknown }> = [
+    { role: "user", content: userPrompt },
+  ];
+
+  // ── 1차: web_search 툴 포함 요청 ──
+  let data = await callClaudeOnce(apiKey, messages, true);
+
+  // tool_use 응답 → multi-turn: tool_result 전달 후 재요청
+  if (data.stop_reason === "tool_use") {
+    const toolBlock = data.content.find(b => b.type === "tool_use");
+    if (toolBlock?.id) {
+      messages.push({ role: "assistant", content: data.content });
+      messages.push({
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: toolBlock.id,
+          content: `Web search results for "${query} webtoon manhwa art". Please extract 4 direct image file URLs from the search results and return them as a JSON array.`,
+        }],
+      });
+      data = await callClaudeOnce(apiKey, messages, true);
+    }
   }
 
-  // regex fallback: URL 패턴 직접 추출
-  const matches =
-    text.match(/https?:\/\/[^\s"'\],]+\.(jpg|jpeg|png|webp|gif)(\?[^\s"'\],]*)?/gi) ?? [];
-  return matches.slice(0, 4);
+  const text1 = (data.content ?? [])
+    .filter((b): b is { type: "text"; text: string } => b.type === "text" && !!b.text)
+    .map(b => b.text).join("");
+
+  const urls1 = extractUrls(text1);
+  if (urls1.length > 0) return urls1;
+
+  // ── 2차: 툴 없이, 학습 데이터 기반 URL 요청 ──
+  const data2 = await callClaudeOnce(apiKey, [
+    {
+      role: "user",
+      content: `From your training data, list 4 real image URLs (jpg/png/webp) you know exist on art hosting sites, related to: "${query} webtoon manhwa art style"
+Only URLs you are confident about. Return ONLY: ["url1","url2","url3","url4"]`,
+    },
+  ], false);
+
+  const text2 = (data2.content ?? [])
+    .filter((b): b is { type: "text"; text: string } => b.type === "text" && !!b.text)
+    .map(b => b.text).join("");
+
+  return extractUrls(text2);
 }
 
 // ─── Streaming generator (with 429 auto-retry) ───────────────────────────────
