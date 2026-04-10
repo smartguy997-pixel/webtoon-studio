@@ -1373,8 +1373,15 @@ export default function Phase1Page() {
         if (matchedCommand?.handler === "end") break debateLoop;
       }
 
-      // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 10~15초 생각 (사용자 개입 시간 확보)
-      await sleep(userJustSpoke ? 1000 + Math.random() * 1000 : 10000 + Math.random() * 5000);
+      // 사용자가 말했으면 1초, 아니면 최대 12초 대기 — 대기 중 사용자 메시지 오면 즉시 깨어남
+      {
+        const maxWait = userJustSpoke ? 1000 : 12000;
+        const start = Date.now();
+        while (Date.now() - start < maxWait) {
+          if (pendingUserMsgRef.current) break;
+          await sleep(150);
+        }
+      }
 
       // 최근 30줄 컨텍스트
       const recentLines = transcript.slice(-30);
