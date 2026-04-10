@@ -1135,8 +1135,9 @@ export default function Phase1Page() {
     if (rawMsgs) {
       try {
         const savedMsgs = JSON.parse(rawMsgs) as Msg[];
-        if (savedMsgs.length > 0) {
-          setMsgs(savedMsgs);
+        const nonEmptyMsgs = savedMsgs.filter((m: Msg) => m.text.trim().length > 0);
+        if (nonEmptyMsgs.length > 0) {
+          setMsgs(nonEmptyMsgs);
           hasSavedMsgs = true;
         }
       } catch { /* ignore */ }
