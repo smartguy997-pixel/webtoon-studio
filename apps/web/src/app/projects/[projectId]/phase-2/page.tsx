@@ -303,7 +303,14 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
 이후 시나리오 작성 시 활용할 수 있도록 구체적으로 정리하세요.`,
 };
 
-// ─── 단계 결과 추출 (3단계 fallback — 반드시 StageResult 반환) ───────────────────
+// ─── 단계 결과 추출 ────────────────────────────────────────────────────────────
+//
+// 두 가지를 항상 병렬로 생성:
+//   data    → 구조화 JSON (카드 UI 표시, 필드별 렌더링)
+//   summary → 상세 내러티브 요약 (다음 단계 에이전트 컨텍스트용)
+//
+// summary는 STAGE_SUMMARY_PROMPTS 기반 LLM 생성 — JSON 스키마에 없는
+// 토론 뉘앙스·관계성·배경 설명까지 포함.
 
 async function extractStageData(
   stage: typeof STAGES[number],
@@ -312,46 +319,58 @@ async function extractStageData(
   apiKey: string,
 ): Promise<{ data: Record<string, unknown>; summary: string }> {
 
-  // ① 구조화 JSON 추출 (태그 형식)
-  let fullText = "";
-  try {
-    for await (const chunk of streamClaude({
-      apiKey,
-      systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
-      messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, debateText) }],
-      maxTokens: 1500,
-    })) fullText += chunk;
-  } catch { /* ignore, try fallbacks */ }
+  const slicedDebate = debateText.slice(0, 4000);
 
-  const structured = parseBlock<Record<string, unknown>>(fullText, stage.tag);
-  if (structured) {
-    return { data: structured, summary: formatStageSummary(stage.id, structured) };
-  }
+  // ① JSON 추출 + ② 상세 내러티브 요약 — 병렬 실행
+  const [jsonResult, narrativeResult] = await Promise.allSettled([
 
-  // ② 루즈 JSON 파싱 (태그 없이 JSON 블록만 찾기)
-  const jsonMatch = fullText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const loose = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      return { data: loose, summary: formatStageSummary(stage.id, loose) };
-    } catch { /* ignore */ }
-  }
+    // JSON 추출 (카드 UI용)
+    (async () => {
+      let fullText = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey,
+          systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
+          messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate) }],
+          maxTokens: 1500,
+        })) fullText += chunk;
+      } catch { /* ignore */ }
+      // 태그 파싱 → 루즈 JSON 파싱 순서로 시도
+      const tagged = parseBlock<Record<string, unknown>>(fullText, stage.tag);
+      if (tagged) return tagged;
+      const m = fullText.match(/\{[\s\S]*\}/);
+      if (m) { try { return JSON.parse(m[0]) as Record<string, unknown>; } catch { /* ignore */ } }
+      return null;
+    })(),
 
-  // ③ 단계별 상세 평문 요약 (최후 fallback — 항상 성공)
-  let summaryText = "";
-  try {
-    for await (const chunk of streamClaude({
-      apiKey,
-      systemPrompt: `당신은 웹툰 기획 전문가입니다. 장르: ${genre}. 토론 결과를 다음 단계 작업에 바로 활용할 수 있도록 상세하고 정확하게 정리합니다.`,
-      messages: [{
-        role: "user",
-        content: `${STAGE_SUMMARY_PROMPTS[stage.id]}\n\n[토론 내용]\n${debateText.slice(0, 4000)}`,
-      }],
-      maxTokens: 1200,
-    })) summaryText += chunk;
-  } catch { summaryText = "(요약 실패 — 토론 내용을 직접 확인해주세요)"; }
+    // 상세 내러티브 요약 (에이전트 컨텍스트용)
+    (async () => {
+      let text = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey,
+          systemPrompt: `웹툰 기획 전문가. 장르: ${genre}. 토론에서 합의된 내용을 다음 단계 작업자가 바로 활용할 수 있도록 빠짐없이, 구체적으로 정리합니다.`,
+          messages: [{
+            role: "user",
+            content: `${STAGE_SUMMARY_PROMPTS[stage.id]}\n\n[토론 내용]\n${slicedDebate}`,
+          }],
+          maxTokens: 1500,
+        })) text += chunk;
+      } catch { /* ignore */ }
+      return text.trim();
+    })(),
+  ]);
 
-  return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 800) };
+  const structured = jsonResult.status === "fulfilled" ? jsonResult.value : null;
+  const narrative  = narrativeResult.status === "fulfilled" ? narrativeResult.value : "";
+
+  // data: 구조화 JSON 우선, 없으면 내러티브를 raw_summary로
+  const data: Record<string, unknown> = structured ?? (narrative ? { raw_summary: narrative } : { raw_summary: "(추출 실패)" });
+
+  // summary: 내러티브 우선 (가장 상세), 없으면 JSON 기반 포맷
+  const summary = narrative || formatStageSummary(stage.id, data);
+
+  return { data, summary };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
