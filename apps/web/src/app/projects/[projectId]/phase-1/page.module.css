@@ -672,6 +672,9 @@
   border-color: rgba(124,108,252,0.22);
   border-radius: 14px 4px 14px 14px;
   color: #ddd4ff;
+  min-width: 120px;
+  max-width: 480px;
+  width: max-content;
 }
 
 /* ─── Animations ─────────────────────────────────────────────────────────── */
