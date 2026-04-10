@@ -543,12 +543,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const available = P2_AGENTS.filter(a => a !== last);
       if (!available.length) return P2_AGENTS[0];
       const lower = lastLine.toLowerCase();
+      // 키워드 매칭: 주제에 맞는 전문가 우선
       if (/세계|배경|규칙|설정|시대|문명|마법|공간/.test(lower) && available.includes("worldbuilder")) return "worldbuilder";
       if (/캐릭터|인물|주인공|감정|성격|외형|말투|빌런/.test(lower) && available.includes("character")) return "character";
       if (/이야기|서사|플롯|갈등|전개|장르|훅|전제/.test(lower) && available.includes("scenario")) return "scenario";
       if (/그림|연출|장면|시각|컷|화면|비주얼|그려/.test(lower) && available.includes("script")) return "script";
       if (/편집|구조|흐름|전반적|연결/.test(lower) && available.includes("editor")) return "editor";
-      return available[agentIndex % available.length];
+      // 매칭 없으면: editor는 3턴에 한 번꼴로만 끼어들게 (흐름 끊지 않도록)
+      const nonEditor = available.filter(a => a !== "editor");
+      const pool = (nonEditor.length > 0 && agentIndex % 3 !== 2) ? nonEditor : available;
+      return pool[Math.floor(Math.random() * pool.length)];
     }
 
     // 롤링 요약 (백그라운드 비동기, 누적 갱신)
