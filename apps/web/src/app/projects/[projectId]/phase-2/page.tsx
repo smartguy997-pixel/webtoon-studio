@@ -18,14 +18,15 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-const NAME_TO_AGENT: Record<string, AgentId> = {
-  "세계관설계자": "worldbuilder",
-  "캐릭터디자이너": "character",
-  "시나리오작가": "scenario",
-  "연출작가": "script",
-  "총괄프로듀서": "producer",
-  "편집자": "editor",
-  "사용자": "user",
+// 라운드당 한 명씩 순서대로 발언
+const DEBATE_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "producer"];
+
+const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
+  worldbuilder: "설정과 세계 규칙의 일관성·독창성을 중시한다. 세계가 어떻게 작동하는지 논리적으로 따진다.",
+  character:    "캐릭터의 감정·외형·성격·말투가 살아있어야 한다고 생각한다. 인물이 입체적인지 따진다.",
+  scenario:     "서사 구조와 이야기의 개연성·설득력을 최우선으로 본다. 이야기 흐름이 자연스러운지 따진다.",
+  script:       "독자가 그림으로 볼 때의 연출·시각적 임팩트를 중시한다. 장면이 그려지는지 상상하며 따진다.",
+  producer:     "모두의 의견을 종합해 합의를 이끌거나 더 나은 방향을 제시한다. 결론을 유도한다.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -105,36 +106,31 @@ function buildContext(stageId: StageId, prevResults: StageResult[]): string {
   }).join("\n\n");
 }
 
-function buildDebatePrompt(stageId: StageId, genre: string, prevResults: StageResult[]): string {
+// 에이전트 1명이 이전 토론을 읽고 반응하는 단일 역할 프롬프트
+function buildSingleAgentPrompt(
+  stageId: StageId,
+  genre: string,
+  agentId: AgentId,
+  prevResults: StageResult[],
+): string {
+  const agentLabel = AGENTS[agentId].label;
+  const roleDesc = AGENT_ROLE_DESC[agentId] ?? "";
   const context = buildContext(stageId, prevResults);
 
-  return `당신은 웹툰 제작팀의 일원으로 기획 회의에 참여하고 있습니다.
+  return `당신은 웹툰 기획 회의에 참여 중인 ${agentLabel}입니다.
+성향: ${roleDesc}
 장르: ${genre}
-${context ? `\n[확정된 내용]\n${context}\n` : ""}
-[지금 할 일]
+${context ? `\n[이미 확정된 내용 — 참고만]\n${context}\n` : ""}
+[현재 토론 주제]
 ${STAGE_PROMPTS[stageId]}
 
-[절대 금지]
-- 다음 단계로 자동 진행 금지
-- 현재 주제 외 다른 단계 언급 금지
-- 총괄프로듀서도 다음 단계 제안 금지
-- "다음 단계", "다음으로 넘어가", "단계 완료" 등의 표현 금지
-
-[참여자]
-- [세계관설계자]: 설정과 규칙 중심
-- [캐릭터디자이너]: 외형과 감정 중심
-- [시나리오작가]: 서사 연결 관점
-- [연출작가]: 시각적 구현 관점
-- [총괄프로듀서]: 종합·중재만. 현재 주제 내에서만 발언.
-- [편집자]: 침묵 유지. 토론이 반복되면 앞 대화를 인용해 정리 유도.
-- [사용자] 발언이 있으면 반드시 직접 반응.
-
-[출력 형식]
-[이름]: 대사
-
 [규칙]
-- 직전 발언자 1명에만 반응. 1~2문장.
-- 마크다운·JSON 금지. 짧고 자연스러운 한국어.`;
+- 이전 발언을 읽고 직접 반응하거나 새 관점·반론·제안을 하세요.
+- 오직 당신의 대사만 출력. [이름]: 같은 접두어 없이 대사만.
+- 다른 참여자 대사를 대신 쓰지 마세요. 당신 발언만.
+- 1~3문장, 짧고 자연스러운 구어체 한국어.
+- 마크다운, JSON, 특수 기호 금지.
+- "다음 단계", "단계 완료" 등의 표현 금지.`;
 }
 
 function buildExtractionPrompt(stageId: StageId, genre: string, debateText: string): string {
@@ -252,30 +248,6 @@ async function extractStageData(
   return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 300) };
 }
 
-// ─── Parse [이름]: 대사 format ────────────────────────────────────────────────
-
-function parseAgentMessages(text: string): Array<{ agentId: AgentId; text: string }> {
-  const lines = text.split(/\n/);
-  const results: Array<{ agentId: AgentId; text: string }> = [];
-  let current: { agentId: AgentId; lines: string[] } | null = null;
-  for (const line of lines) {
-    const match = line.match(/^\[([^\]]+)\]:\s*([\s\S]*)/);
-    if (match) {
-      if (current && current.lines.join(" ").trim())
-        results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
-      const name = match[1].trim();
-      const agentId = NAME_TO_AGENT[name] ?? "producer";
-      current = { agentId, lines: [match[2]] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current && current.lines.join(" ").trim())
-    results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
-  return results;
-}
-
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ThinkingDots() {
@@ -383,10 +355,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const runningRef = useRef(false);
   const abortRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
-  const convRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const convRef = useRef<string[]>([]); // transcript: 각 에이전트 발언 문자열 배열
   const stageResultsRef = useRef<StageResult[]>([]);
   const msgsRef = useRef<Msg[]>([]); // msgs의 최신값 추적용
-  const resumeDataRef = useRef<{ conv: Array<{ role: "user" | "assistant"; content: string }>; msgs: Msg[] } | null>(null);
+  const resumeDataRef = useRef<{ transcript: string[]; msgs: Msg[] } | null>(null);
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -411,7 +383,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             const savedMsgs = localStorage.getItem(`p2_msgs_${idx}_${projectId}`);
             if (savedConv && savedMsgs) {
               resumeDataRef.current = {
-                conv: JSON.parse(savedConv) as Array<{ role: "user" | "assistant"; content: string }>,
+                transcript: JSON.parse(savedConv) as string[],
                 msgs: JSON.parse(savedMsgs) as Msg[],
               };
               setDebatePhase("paused");
@@ -457,7 +429,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text, streaming } : m));
   }, []);
 
-  // ── Run debate for a stage (fresh isolated API call, no memory of other stages) ──
+  // ── Run debate: 에이전트 1명씩 순서대로 별도 API 호출 (진짜 반응형 토론) ──
   const runDebate = useCallback(async (stageIdx: number) => {
     if (runningRef.current) return;
     runningRef.current = true;
@@ -469,72 +441,102 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); runningRef.current = false; setDebatePhase("idle"); return; }
 
     const stage = STAGES[stageIdx];
-    const systemPrompt = buildDebatePrompt(stage.id, genre, stageResultsRef.current);
 
-    // 이어하기: 저장된 대화 복원 / 새 시작: 빈 대화
-    let conv: Array<{ role: "user" | "assistant"; content: string }>;
+    // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
+    let transcript: string[];
+    let startRound: number;
     if (resumeDataRef.current) {
-      conv = [...resumeDataRef.current.conv];
+      transcript = [...resumeDataRef.current.transcript];
       setMsgs(resumeDataRef.current.msgs);
+      startRound = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
       resumeDataRef.current = null;
     } else {
-      conv = [{ role: "user", content: `"${stage.topic}" 주제로 자유롭게 토론을 시작해주세요.` }];
+      transcript = [];
+      startRound = 1;
     }
-    convRef.current = conv;
+    convRef.current = transcript;
 
     try {
-      for (let round = 1; round <= 999; round++) {
+      for (let round = startRound; round <= 999; round++) {
         if (abortRef.current) break;
 
-        let roundText = "";
-        const roundMsgIds = new Map<AgentId, string>();
+        // 이번 발언자 결정 (순환)
+        const agentIdx = (round - 1) % DEBATE_AGENTS.length;
+        const agentId = DEBATE_AGENTS[agentIdx];
+        const systemPrompt = buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current);
 
-        for await (const chunk of streamClaude({ apiKey, systemPrompt, messages: conv, maxTokens: 200, tools: [] })) {
-          if (abortRef.current) break;
-          roundText += chunk;
-          for (const { agentId, text } of parseAgentMessages(roundText)) {
-            if (!roundMsgIds.has(agentId)) roundMsgIds.set(agentId, addMsg(agentId, text, true));
-            else updateMsg(roundMsgIds.get(agentId)!, text, true);
-          }
-        }
-
-        const finalParsed = parseAgentMessages(roundText);
-        for (const [agentId, id] of roundMsgIds)
-          updateMsg(id, finalParsed.find(m => m.agentId === agentId)?.text ?? "", false);
-
-        // abort 여부와 관계없이 내용 저장 (나중에 JSON 추출에 사용)
-        if (roundText.trim()) conv.push({ role: "assistant", content: roundText });
-        if (abortRef.current) break;
-
-        // 10라운드마다 슬라이딩 윈도우 압축 (사용자 모르게 백그라운드)
-        if (round % 10 === 0 && conv.length > 12) {
-          const initial = conv[0];
-          const recent = conv.slice(-6);
-          const old = conv.slice(1, -6).filter(m => m.role === "assistant");
-          if (old.length) {
-            let summary = "";
-            for await (const c of streamClaude({ apiKey, systemPrompt: "토론 요약 전문가. 핵심 쟁점만 간결하게.", messages: [{ role: "user", content: `요약:\n${old.map(m => m.content).join("\n").slice(0, 2000)}` }], maxTokens: 300, tools: [] })) summary += c;
-            conv.length = 0;
-            conv.push(initial, { role: "assistant", content: `[이전 토론 요약] ${summary}` }, { role: "user", content: "위 요약을 참고해서 계속해줘." }, ...recent);
-          }
-        }
-
-        // 압축된 대화 + 현재 메시지 저장 (재접속 시 이어하기 가능)
-        try {
-          localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(conv));
-          localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
-        } catch { /* localStorage 용량 초과 등 무시 */ }
-
-        await sleep(3500);
-
+        // 사용자 입력 처리 (발언 전에 transcript에 삽입)
         const pending = pendingUserMsgRef.current;
         if (pending) {
           pendingUserMsgRef.current = null;
           addMsg("user", pending, false);
-          conv.push({ role: "user", content: `[사용자]: ${pending}\n위 내용에 직접 반응해줘.` });
-        } else {
-          conv.push({ role: "user", content: "계속 토론해줘." });
+          transcript.push(`[사용자]: ${pending}`);
+          convRef.current = transcript;
         }
+
+        // 최근 대화 컨텍스트 (마지막 30줄)
+        const recentLines = transcript.slice(-30);
+        const historyText = recentLines.length > 0
+          ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+          : "";
+
+        const userContent = round === 1
+          ? `"${stage.topic}" 주제로 첫 의견을 말해주세요.`
+          : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 관점을 제시하세요.`;
+
+        // 스트리밍: 이 에이전트의 응답만 생성
+        let roundText = "";
+        const msgId = addMsg(agentId, "", true);
+
+        for await (const chunk of streamClaude({
+          apiKey,
+          systemPrompt,
+          messages: [{ role: "user", content: userContent }],
+          maxTokens: 400,
+          tools: [],
+        })) {
+          if (abortRef.current) break;
+          roundText += chunk;
+          updateMsg(msgId, roundText, true);
+        }
+
+        const finalText = roundText.trim();
+        updateMsg(msgId, finalText, false);
+
+        // abort와 관계없이 내용 저장 (추출에 사용)
+        if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+        convRef.current = transcript;
+        if (abortRef.current) break;
+
+        // 20줄마다 슬라이딩 윈도우 압축 (사용자 모르게 백그라운드)
+        if (transcript.length > 0 && transcript.length % 20 === 0) {
+          const recentKeep = transcript.slice(-10);
+          const oldLines = transcript.slice(0, -10);
+          if (oldLines.length >= 5) {
+            let summary = "";
+            try {
+              for await (const c of streamClaude({
+                apiKey,
+                systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 합의사항과 주요 아이디어만 간결하게 정리.",
+                messages: [{ role: "user", content: `다음 토론을 핵심만 요약해줘:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                maxTokens: 400,
+                tools: [],
+              })) summary += c;
+            } catch { /* ignore */ }
+            if (summary.trim()) {
+              transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+              convRef.current = transcript;
+            }
+          }
+        }
+
+        // 매 라운드 저장 (재접속 시 이어하기)
+        try {
+          localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
+          localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
+        } catch { /* localStorage 용량 초과 무시 */ }
+
+        await sleep(1800); // 에이전트 1명씩이라 짧아도 충분
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
@@ -557,7 +559,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const apiKey = getAnthropicKey();
     if (!apiKey) { setDebatePhase("running"); abortRef.current = false; return; }
 
-    const debateText = convRef.current.filter((m: { role: string; content: string }) => m.role === "assistant").map((m: { role: string; content: string }) => m.content).join("\n\n");
+    const debateText = convRef.current.join("\n");
     const extractId = addMsg("producer", "결과 정리 중...", true);
 
     const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
