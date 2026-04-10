@@ -1365,12 +1365,13 @@ export default function Phase1Page() {
     let lastSpeaker: AgentId | null = null;
 
     // ── 에이전트 한 번 발언 헬퍼 ──
+    // 1) 스트리밍은 백그라운드에서 조용히 받고 (ThinkingDots 표시)
+    // 2) 완성 후 사람 타이핑 속도로 재생 (~8자/55ms ≈ 빠른 타이핑)
     const runSingleAgent = async (agentId: AgentId, prompt: string, tokens: number) => {
       const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
       if (!key) return;
-      const msgId = addMsg(agentId, round, "", true);
+      const msgId = addMsg(agentId, round, "", true); // ThinkingDots
       let text = "";
-      let lastUpdate = 0;
       const msgs: Array<{ role: "user" | "assistant"; content: string }> = [
         { role: "user", content: prompt },
       ];
@@ -1386,14 +1387,11 @@ export default function Phase1Page() {
             maxTokens: tokens,
             tools: [],
             onStopReason: (r) => { stopReason = r; },
-            onRateLimit: (msg) => { updateMsg(msgId, text + `\n\n${msg}`, true); },
+            onRateLimit: (msg) => { updateMsg(msgId, msg, true); },
           })) {
-            text += chunk;
-            const now = Date.now();
-            if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
+            text += chunk; // UI 업데이트 없이 백그라운드 수집
           }
         } catch { /* stream error → use what we have */ }
-        updateMsg(msgId, text, true);
         if (cont === 2) break;
         const truncated = stopReason === "max_tokens" || (text.trim().length > 0 && !isSentenceEnd(text));
         if (!truncated) break;
@@ -1402,9 +1400,16 @@ export default function Phase1Page() {
         await sleep(600);
       }
       const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+      if (!clean) { setMsgs(prev => prev.filter(m => m.id !== msgId)); return; }
+      // 타자 효과: 사람 타이핑 속도로 재생
+      const CHARS = 8;
+      const TICK = 55; // ~145자/초 — 빠른 타이핑이지만 눈으로 따라갈 수 있는 속도
+      for (let i = CHARS; i < clean.length; i += CHARS) {
+        updateMsg(msgId, clean.slice(0, i), true);
+        await sleep(TICK);
+      }
       updateMsg(msgId, clean, false);
-      if (!clean) setMsgs(prev => prev.filter(m => m.id !== msgId));
-      else transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
+      transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
       round++;
       agentIndex++;
     };
@@ -1441,7 +1446,7 @@ export default function Phase1Page() {
 
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
-        const minWait = 4000 + Math.random() * 2000;
+        const minWait = 7000 + Math.random() * 5000;
         const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
