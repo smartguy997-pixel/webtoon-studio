@@ -1597,22 +1597,40 @@ export default function Phase1Page() {
     setIsWritingReport(true);
 
     const allDebateText = transcript.join("\n");
-    let reportText = "";
 
-    for await (const chunk of streamClaude({
-      apiKey,
-      systemPrompt: "너는 총괄프로듀서다. 지시에 따라 최종 보고서를 작성하라.",
-      messages: [{ role: "user", content: buildFinalReportPrompt(allDebateText) }],
-      maxTokens: 3000,
-      tools: [],
-    })) {
-      reportText += chunk;
-      // 채팅 버블에 표시 안 함 — "보고서 작성 중..." 인디케이터만 표시됨
+    // 보고서는 sonnet 사용 — 복잡한 JSON 포맷을 haiku보다 훨씬 안정적으로 생성
+    const reportApiKey = apiKey; // getAnthropicKey() — 이미 위에서 검증됨
+    const reportStream = async (model: string) => {
+      let text = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey: reportApiKey,
+          model,
+          systemPrompt: "너는 총괄프로듀서다. 팀의 실제 토론 내용을 바탕으로 지시에 따라 최종 보고서를 작성하라. 반드시 토론에서 언급된 실제 작품명과 인사이트를 반영하라.",
+          messages: [{ role: "user", content: buildFinalReportPrompt(allDebateText) }],
+          maxTokens: 4000,
+          tools: [],
+        })) text += chunk;
+      } catch { /* ignore */ }
+      return text;
+    };
+
+    // 1차: sonnet으로 시도
+    let reportText = await reportStream("claude-sonnet-4-6");
+    let parsed = parsePhase1Result(reportText);
+
+    // 2차: 파싱 실패 시 재시도
+    if (!parsed) {
+      console.warn("[Phase1] 보고서 파싱 실패 — 재시도 중. 원본:", reportText.slice(0, 300));
+      reportText = await reportStream("claude-sonnet-4-6");
+      parsed = parsePhase1Result(reportText);
     }
 
     setIsWritingReport(false);
 
-    const parsed = parsePhase1Result(reportText);
+    if (!parsed) {
+      console.error("[Phase1] 보고서 생성 실패. 원본 응답:", reportText.slice(0, 500));
+    }
     setResult(parsed ?? MOCK_RESULT);
     saveResult(parsed ?? MOCK_RESULT, g, c);
 
