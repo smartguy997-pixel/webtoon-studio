@@ -118,7 +118,7 @@ ${personality}
 
 [지금 하는 일]
 장르: ${genre} | 플랫폼: ${platLabel} | 목표화수: ${ep}
-기획 개요: ${concept.slice(0, 300)}
+기획 개요: ${concept.slice(0, 120)}
 
 팀이 같이 하는 건 이거야:
 - 비슷한 작품들 보면서 이 기획이 시장에서 될 것 같은지 판단
@@ -1414,7 +1414,7 @@ export default function Phase1Page() {
 
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
-        const minWait = 2000 + Math.random() * 1000;
+        const minWait = 4000 + Math.random() * 2000;
         const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
@@ -1443,7 +1443,7 @@ export default function Phase1Page() {
       }
 
       setTurnCount(round);
-      const historyText = `[대화 내용]\n${transcript.slice(-20).join("\n")}\n\n`;
+      const historyText = `[대화 내용]\n${transcript.slice(-6).join("\n")}\n\n`;
 
       // 3) 명령 핸들러
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
