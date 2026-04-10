@@ -150,6 +150,63 @@ ${stage.schema}
 }
 
 
+// ─── 단계 결과 추출 (3단계 fallback — 반드시 StageResult 반환) ───────────────────
+
+async function extractStageData(
+  stage: typeof STAGES[number],
+  genre: string,
+  debateText: string,
+  apiKey: string,
+): Promise<{ data: Record<string, unknown>; summary: string }> {
+
+  // ① 구조화 JSON 추출 (태그 형식)
+  let fullText = "";
+  try {
+    for await (const chunk of streamClaude({
+      apiKey,
+      systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
+      messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, debateText) }],
+      maxTokens: 1500,
+    })) fullText += chunk;
+  } catch { /* ignore, try fallbacks */ }
+
+  const structured = parseBlock<Record<string, unknown>>(fullText, stage.tag);
+  if (structured) {
+    const summary = Object.entries(structured)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 60)}`)
+      .join(" / ");
+    return { data: structured, summary };
+  }
+
+  // ② 루즈 JSON 파싱 (태그 없이 JSON 블록만 찾기)
+  const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const loose = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const summary = Object.entries(loose)
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 60)}`)
+        .join(" / ");
+      return { data: loose, summary };
+    } catch { /* ignore */ }
+  }
+
+  // ③ 평문 요약 (최후 fallback — 항상 성공)
+  let summaryText = "";
+  try {
+    for await (const chunk of streamClaude({
+      apiKey,
+      systemPrompt: "회의 결과 요약 전문가. 핵심 합의 내용만 간결하게 정리합니다.",
+      messages: [{
+        role: "user",
+        content: `다음 "${stage.name}" 토론에서 합의된 핵심 내용을 3~5줄로 정리해주세요:\n\n${debateText.slice(0, 3000)}`,
+      }],
+      maxTokens: 600,
+    })) summaryText += chunk;
+  } catch { summaryText = "(요약 실패 — 토론 내용을 직접 확인해주세요)"; }
+
+  return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 200) };
+}
+
 // ─── Parse [이름]: 대사 format ────────────────────────────────────────────────
 
 function parseAgentMessages(text: string): Array<{ agentId: AgentId; text: string }> {
@@ -221,6 +278,12 @@ function StageResultCard({ result }: { key?: StageId; result: StageResult }) {
         {Array.isArray(data.hints) && row("암시", (data.hints as string[]).join(", "))}
         {Array.isArray(data.red_herrings) && row("훼이크", (data.red_herrings as string[]).join(", "))}
       </>}
+      {/* Fallback: 구조화 실패 시 평문 요약 */}
+      {data.raw_summary && (
+        <div style={{ fontSize:13, color:"#eeeef5", lineHeight:1.7, whiteSpace:"pre-wrap" as const }}>
+          {String(data.raw_summary)}
+        </div>
+      )}
     </div>
   );
 }
@@ -414,43 +477,21 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     const debateText = convRef.current.filter((m: { role: string; content: string }) => m.role === "assistant").map((m: { role: string; content: string }) => m.content).join("\n\n");
     const extractId = addMsg("producer", "결과 정리 중...", true);
-    let fullText = "";
-    try {
-      for await (const chunk of streamClaude({
-        apiKey,
-        systemPrompt: "당신은 토론 결과를 정확한 JSON으로 변환하는 전문가입니다.",
-        messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, debateText) }],
-        maxTokens: 1500,
-      })) {
-        fullText += chunk;
-        updateMsg(extractId, `결과 정리 중... (${fullText.length}자)`, true);
-      }
-    } catch { /* ignore */ }
+
+    const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
 
     updateMsg(extractId, "", false);
     setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
 
-    const data = parseBlock<Record<string, unknown>>(fullText, stage.tag);
-    if (data) {
-      const summary = Object.entries(data)
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 60)}`)
-        .join(" / ");
-      const result: StageResult = { stageId: stage.id, data, summary };
-      const newResults = [...stageResultsRef.current, result];
-      stageResultsRef.current = newResults;
-      setStageResults(newResults);
-      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
-        stageResults: newResults,
-        currentStageIdx: stageIdx + 1,
-      }));
-      setDebatePhase("confirmed");
-    } else {
-      // 추출 실패 — 토론이 너무 짧거나 LLM이 형식을 지키지 않은 경우
-      setApiError(`${stage.name} 결과 정리 실패. 토론을 조금 더 진행한 뒤 다시 확정해주세요.`);
-      // 토론 재개
-      abortRef.current = false;
-      void runDebate(stageIdx);
-    }
+    const result: StageResult = { stageId: stage.id, data, summary };
+    const newResults = [...stageResultsRef.current, result];
+    stageResultsRef.current = newResults;
+    setStageResults(newResults);
+    localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+      stageResults: newResults,
+      currentStageIdx: stageIdx + 1,
+    }));
+    setDebatePhase("confirmed");
   }, [genre, projectId, addMsg, updateMsg]);
 
   // ── Move to next stage (only via button) ──
