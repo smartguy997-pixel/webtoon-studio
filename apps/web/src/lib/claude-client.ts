@@ -100,7 +100,7 @@ async function callClaudeOnce(
   }
 
   if (!res.ok) throw new Error(`Claude API ${res.status}`);
-  return res.json() as Promise<ApiResponse>();
+  return res.json() as Promise<ApiResponse>;
 }
 
 function extractUrls(text: string): string[] {
