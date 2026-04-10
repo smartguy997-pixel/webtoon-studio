@@ -69,6 +69,16 @@ interface StageResult {
   summary: string;
 }
 
+interface ImageItem {
+  type: "character" | "location" | "prop";
+  name: string;
+  description: string;
+  stageId: StageId;
+  imageUrl?: string;
+  prompt?: string;
+  confirmed: boolean;
+}
+
 // Phase 1 → Phase 2 인계 데이터 타입 (최소한만)
 interface P1Data {
   concept?: string;
@@ -84,6 +94,7 @@ interface Msg {
   agent: AgentId;
   text: string;
   streaming: boolean;
+  imageUrl?: string;
 }
 
 type DebatePhase = "idle" | "running" | "confirming" | "confirmed" | "done" | "paused";
@@ -613,6 +624,13 @@ function MsgBubble({ msg }: { key?: string; msg: Msg }) {
           {msg.streaming && !msg.text ? <ThinkingDots /> : (
             <span className={s.msgText}>{msg.text}{msg.streaming && <StreamCursor />}</span>
           )}
+          {msg.imageUrl && (
+            <img
+              src={msg.imageUrl}
+              alt="concept art"
+              style={{ display: "block", maxWidth: 320, width: "100%", borderRadius: 8, marginTop: 10, border: "1px solid #2a2a3d", objectFit: "cover" }}
+            />
+          )}
         </div>
       </div>
       {isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>나</div>}
@@ -646,6 +664,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [styleGenError, setStyleGenError] = useState<string | null>(null);
   const [styleInput, setStyleInput] = useState(""); // 사용자가 편집하는 스타일 텍스트
 
+  // ── 이미지 생성 State (Stage 3/4/5 완료 후 삽입) ──
+  type ImageGenPhase = "idle" | "generating" | "discussing" | "feedback";
+  const [imageGenPhase, setImageGenPhase] = useState<ImageGenPhase>("idle");
+  const [imageItems, setImageItems] = useState<ImageItem[]>([]);
+  const [currentImageItemIdx, setCurrentImageItemIdx] = useState(0);
+  const [imageGenLoading, setImageGenLoading] = useState(false);
+  const [imageGenError, setImageGenError] = useState<string | null>(null);
+  const [imageRefinement, setImageRefinement] = useState("");
+
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
@@ -659,6 +686,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const styleRunningRef = useRef(false);
   const styleConvRef = useRef<string[]>([]);
   const pendingStyleMsgRef = useRef<string | null>(null);
+  const imageItemsRef = useRef<ImageItem[]>([]);
+  const imageTargetStageIdxRef = useRef<number>(0);
+  const imageDiscussingRef = useRef(false);
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -1159,6 +1189,208 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     void runDebate(2);
   }, [styleInput, conceptStyle, projectId, runDebate]);
 
+  // ── Image Generation Phase ──
+
+  // 다음 스테이지로 이동 (이미지 생성 완료 후)
+  const proceedAfterAllImages = useCallback(() => {
+    const stageIdx = imageTargetStageIdxRef.current;
+    const nextIdx = stageIdx + 1;
+    setImageGenPhase("idle");
+    setImageItems([]);
+    imageItemsRef.current = [];
+    setMsgs([]);
+    convRef.current = [];
+    setCurrentStageIdx(nextIdx);
+    if (nextIdx >= STAGES.length) {
+      setDebatePhase("done");
+    } else {
+      void runDebate(nextIdx);
+    }
+  }, [runDebate]);
+
+  // 에이전트 3명이 생성된 이미지에 대해 토론
+  const runImageAgentDiscussion = useCallback(async (item: ImageItem) => {
+    if (imageDiscussingRef.current) return;
+    imageDiscussingRef.current = true;
+    const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+    const discussAgents: AgentId[] = ["character", "script", "worldbuilder"];
+    for (let i = 0; i < 3; i++) {
+      if (abortRef.current) break;
+      if (i > 0) await sleep(2500 + Math.random() * 2000);
+      const agentId = discussAgents[i];
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(i));
+      if (!key) continue;
+      const msgId = addMsg(agentId, "", true);
+      let text = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey: key,
+          systemPrompt: `너는 웹툰 기획 팀의 ${AGENTS[agentId].label}야. ${AGENT_ROLE_DESC[agentId] ?? ""}`,
+          messages: [{
+            role: "user",
+            content:
+              `방금 "${item.name}" ${typeLabel} 컨셉 이미지가 생성됐어.\n\n` +
+              `[설계 내용]\n${item.description}\n\n` +
+              `[사용된 프롬프트]\n${item.prompt ?? ""}\n\n` +
+              `이 이미지가 설계 내용에 얼마나 맞는지, 어떤 부분이 좋고 어떤 점이 아쉬운지 짧게 한마디. ` +
+              `구체적으로 (색감, 구도, 외형 등). 딱 1~2문장.`,
+          }],
+          maxTokens: 180,
+          tools: [],
+        })) {
+          if (abortRef.current) break;
+          text += chunk;
+        }
+      } catch {
+        setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId));
+        continue;
+      }
+      const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+      if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); continue; }
+      for (let j = 2; j < clean.length; j += 2) {
+        if (abortRef.current) break;
+        updateMsg(msgId, clean.slice(0, j), true);
+        await sleep(100);
+      }
+      updateMsg(msgId, clean, false);
+    }
+    imageDiscussingRef.current = false;
+    setImageGenPhase("feedback");
+  }, [addMsg, updateMsg]);
+
+  // 현재 아이템 이미지 생성 → 에이전트 토론
+  const generateCurrentItem = useCallback(async (idx: number, refinement?: string) => {
+    const items = imageItemsRef.current;
+    if (idx >= items.length) return;
+    const item = items[idx];
+    setCurrentImageItemIdx(idx);
+    setImageGenLoading(true);
+    setImageGenError(null);
+    setImageGenPhase("generating");
+    setMsgs([]);
+    const description = refinement ? `${item.description}\n\n추가 요청: ${refinement}` : item.description;
+    try {
+      const res = await fetch(`${API_BASE}/api/assets/${projectId}/generate-concept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          style: conceptStyle,
+          type: item.type,
+          anthropicApiKey: getAnthropicKey(),
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json() as { error?: string };
+        throw new Error(errData.error ?? `서버 오류 ${res.status}`);
+      }
+      const { imageUrl, prompt } = await res.json() as { imageUrl: string; prompt: string };
+      const updatedItems = items.map((it: ImageItem, i: number) => i === idx ? { ...it, imageUrl, prompt } : it);
+      imageItemsRef.current = updatedItems;
+      setImageItems(updatedItems);
+      // 이미지 메시지 추가
+      const imgId = uid();
+      setMsgs((prev: Msg[]) => [...prev, { id: imgId, agent: "producer" as AgentId, text: `${item.name} 컨셉 이미지`, streaming: false, imageUrl }]);
+      setImageGenLoading(false);
+      setImageGenPhase("discussing");
+      await runImageAgentDiscussion({ ...item, imageUrl, prompt });
+    } catch (err) {
+      setImageGenError(err instanceof Error ? err.message : String(err));
+      setImageGenLoading(false);
+      setImageGenPhase("feedback");
+    }
+  }, [projectId, conceptStyle, runImageAgentDiscussion]);
+
+  // 이미지 생성 단계 진입 (stage 결과에서 아이템 목록 구성)
+  const enterImageGenPhase = useCallback((stageIdx: number) => {
+    const stageId = STAGES[stageIdx].id;
+    const stageResult = stageResultsRef.current.find((r: StageResult) => r.stageId === stageId);
+    if (!stageResult) {
+      const nextIdx = stageIdx + 1;
+      setCurrentStageIdx(nextIdx);
+      if (nextIdx >= STAGES.length) setDebatePhase("done");
+      else void runDebate(nextIdx);
+      return;
+    }
+    imageTargetStageIdxRef.current = stageIdx;
+    const items: ImageItem[] = [];
+    const data = stageResult.data;
+    if (stageIdx === 2 && Array.isArray(data.characters)) {
+      for (const ch of data.characters as Record<string, string>[]) {
+        const desc = [
+          `이름: ${ch.name ?? ""}${ch.role ? ` (${ch.role})` : ""}`,
+          ch.gender && `성별: ${ch.gender}`,
+          ch.age && `나이: ${ch.age}`,
+          ch.face && `얼굴: ${ch.face}`,
+          (ch.height || ch.build) && `키/체형: ${[ch.height, ch.build, ch.weight].filter(Boolean).join(", ")}`,
+          ch.outfit && `복장: ${ch.outfit}`,
+          ch.personality && `성격: ${ch.personality}`,
+        ].filter(Boolean).join("\n");
+        items.push({ type: "character", name: ch.name ?? "캐릭터", description: desc, stageId: 3, confirmed: false });
+      }
+    } else if (stageIdx === 3 && Array.isArray(data.locations)) {
+      for (const loc of data.locations as Record<string, string>[]) {
+        const desc = [
+          `장소명: ${loc.name ?? ""}${loc.type ? ` (${loc.type})` : ""}`,
+          loc.visual && `시각적 묘사: ${loc.visual}`,
+          loc.architecture && `건축 구조: ${loc.architecture}`,
+          loc.lighting && `조명: ${loc.lighting}`,
+          loc.color_palette && `색채: ${loc.color_palette}`,
+          loc.atmosphere && `분위기: ${loc.atmosphere}`,
+        ].filter(Boolean).join("\n");
+        items.push({ type: "location", name: loc.name ?? "장소", description: desc, stageId: 4, confirmed: false });
+      }
+    } else if (stageIdx === 4 && Array.isArray(data.props)) {
+      for (const p of data.props as Record<string, string>[]) {
+        const desc = [
+          `소품명: ${p.name ?? ""}${p.type ? ` (${p.type})` : ""}`,
+          p.visual && `시각적 묘사: ${p.visual}`,
+          p.condition && `상태: ${p.condition}`,
+          p.function && `기능: ${p.function}`,
+          p.owner && `소유자: ${p.owner}`,
+        ].filter(Boolean).join("\n");
+        items.push({ type: "prop", name: p.name ?? "소품", description: desc, stageId: 5, confirmed: false });
+      }
+    }
+    if (items.length === 0) {
+      const nextIdx = stageIdx + 1;
+      setCurrentStageIdx(nextIdx);
+      if (nextIdx >= STAGES.length) setDebatePhase("done");
+      else void runDebate(nextIdx);
+      return;
+    }
+    imageItemsRef.current = items;
+    setImageItems(items);
+    setCurrentImageItemIdx(0);
+    setImageRefinement("");
+    setMsgs([]);
+    convRef.current = [];
+    void generateCurrentItem(0);
+  }, [generateCurrentItem, runDebate]);
+
+  // 현재 아이템 확정 → 다음으로
+  const confirmCurrentItem = useCallback(() => {
+    const idx = currentImageItemIdx;
+    const items = imageItemsRef.current;
+    const updated = items.map((it: ImageItem, i: number) => i === idx ? { ...it, confirmed: true } : it);
+    imageItemsRef.current = updated;
+    setImageItems(updated);
+    setImageRefinement("");
+    const nextIdx = idx + 1;
+    if (nextIdx < items.length) void generateCurrentItem(nextIdx);
+    else proceedAfterAllImages();
+  }, [currentImageItemIdx, generateCurrentItem, proceedAfterAllImages]);
+
+  // 현재 아이템 건너뛰기 → 다음으로
+  const skipCurrentItem = useCallback(() => {
+    const idx = currentImageItemIdx;
+    const items = imageItemsRef.current;
+    setImageRefinement("");
+    const nextIdx = idx + 1;
+    if (nextIdx < items.length) void generateCurrentItem(nextIdx);
+    else proceedAfterAllImages();
+  }, [currentImageItemIdx, generateCurrentItem, proceedAfterAllImages]);
+
   // ── Confirm current stage: stop debate → extract JSON → save ──
   const handleConfirm = useCallback(async (stageIdx: number) => {
     abortRef.current = true;
@@ -1214,6 +1446,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       void runStyleDebate();
       return;
     }
+    // Stage 3/4/5(index=2/3/4) 완료 후 → 이미지 생성 단계 삽입
+    if (stageIdx >= 2) {
+      enterImageGenPhase(stageIdx);
+      return;
+    }
     const nextIdx = stageIdx + 1;
     setMsgs([]);
     convRef.current = [];
@@ -1223,7 +1460,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     } else {
       void runDebate(nextIdx);
     }
-  }, [runDebate, runStyleDebate, stylePhase]);
+  }, [runDebate, runStyleDebate, stylePhase, enterImageGenPhase]);
 
   const handleRestartNew = useCallback(() => {
     abortRef.current = true;
@@ -1297,6 +1534,22 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               </div>
             )}
           </div>
+          {/* 이미지 생성 아이템 진행 표시기 */}
+          {imageGenPhase !== "idle" && imageItems.length > 0 && (
+            <div style={{ display: "flex", gap: 6, padding: "4px 16px 0", overflowX: "auto", flexShrink: 0 }}>
+              {imageItems.map((item: ImageItem, i: number) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "3px 8px", borderRadius: 6, flexShrink: 0,
+                  background: i === currentImageItemIdx ? "rgba(124,108,252,0.15)" : item.confirmed ? "rgba(52,211,153,0.08)" : "transparent",
+                  border: `1px solid ${i === currentImageItemIdx ? "#7c6cfc" : item.confirmed ? "#34d399" : "#2a2a3d"}`,
+                  fontSize: 11, color: i === currentImageItemIdx ? "#7c6cfc" : item.confirmed ? "#34d399" : "#4a4a6a",
+                }}>
+                  {item.confirmed ? "✓" : i === currentImageItemIdx ? (imageGenPhase === "generating" ? "⏳" : "→") : "·"} {item.name}
+                </div>
+              ))}
+            </div>
+          )}
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
 
@@ -1340,8 +1593,58 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         <div className={s.chatBottom}>
 
+          {/* ── 이미지 생성 단계 UI (imageGenPhase가 활성이면 스타일/일반 바텀바 대체) ── */}
+          {imageGenPhase !== "idle" ? (
+            <div>
+              {/* 현재 아이템 정보 헤더 */}
+              <div style={{ padding: "8px 16px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#7c6cfc" }}>
+                  🖼️ {imageItems[currentImageItemIdx]?.name ?? ""} 컨셉 이미지
+                  <span style={{ fontSize: 11, fontWeight: 400, color: "#4a4a6a", marginLeft: 8 }}>
+                    ({currentImageItemIdx + 1} / {imageItems.length})
+                  </span>
+                </div>
+                {imageGenPhase === "generating" && <span style={{ fontSize: 11, color: "#fbbf24" }}>⏳ 생성 중...</span>}
+                {imageGenPhase === "discussing" && <span style={{ fontSize: 11, color: "#34d399" }}>💬 팀 피드백 중...</span>}
+              </div>
+              {imageGenError && (
+                <div style={{ padding: "4px 16px", fontSize: 12, color: "#f87171" }}>⚠ {imageGenError}</div>
+              )}
+              {imageGenPhase === "feedback" && (
+                <>
+                  <div style={{ padding: "6px 16px 0" }}>
+                    <textarea
+                      value={imageRefinement}
+                      onChange={(e: { target: HTMLTextAreaElement }) => setImageRefinement(e.target.value)}
+                      placeholder="수정 요청 (예: 더 어둡게, 머리색 빨간색으로 변경...) — 비워두면 동일 설정으로 재생성"
+                      rows={1}
+                      style={{ width: "100%", background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "8px 10px", resize: "none", boxSizing: "border-box" as const, fontFamily: "inherit" }}
+                    />
+                  </div>
+                  <div style={{ padding: "6px 16px 10px", display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => void generateCurrentItem(currentImageItemIdx, imageRefinement || undefined)}
+                      style={{ flex: 1, background: "rgba(124,108,252,0.08)", border: "1px solid rgba(124,108,252,0.3)", borderRadius: 8, color: "#7c6cfc", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
+                      🔄 재생성
+                    </button>
+                    <button
+                      onClick={confirmCurrentItem}
+                      style={{ flex: 1, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
+                      ✓ 확정 →
+                    </button>
+                    <button
+                      onClick={skipCurrentItem}
+                      style={{ flex: 1, background: "transparent", border: "1px solid #2a2a3d", borderRadius: 8, color: "#4a4a6a", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
+                      건너뛰기
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+
           {/* ── 스타일 정의 단계 UI (stylePhase가 활성이면 일반 바텀바 대체) ── */}
-          {stylePhase === "debating" && (
+          {imageGenPhase !== "idle" ? null : stylePhase === "debating" && (
             <>
               <div style={{ padding:"6px 16px 0" }}>
                 <button
@@ -1368,7 +1671,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             </>
           )}
 
-          {(stylePhase === "reviewing" || stylePhase === "generating") && (
+          {imageGenPhase === "idle" && (stylePhase === "reviewing" || stylePhase === "generating") && (
             <div>
               {/* 생성된 테스트 이미지들 */}
               {styleTestImages.length > 0 && (
@@ -1412,8 +1715,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             </div>
           )}
 
-          {/* 스타일 단계 활성 중엔 아래 일반 바텀바 숨김 */}
-          {stylePhase !== "idle" && stylePhase !== "confirmed" ? null : (<>
+          {/* 이미지/스타일 단계 활성 중엔 아래 일반 바텀바 숨김 */}
+          {imageGenPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") ? null : (<>
 
           {/* Paused: 이전 토론 이어하기 */}
           {debatePhase === "paused" && (
