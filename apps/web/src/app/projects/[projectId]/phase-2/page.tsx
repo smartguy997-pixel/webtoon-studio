@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import s from "./page.module.css";
-import { streamClaude, getAnthropicKey } from "@/lib/claude-client";
+import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
@@ -18,8 +18,19 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-// 라운드당 한 명씩 순서대로 발언
-const DEBATE_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "producer"];
+// ─── 에이전트 페어링 (각 쌍이 하나의 API 키 공유) ─────────────────────────────
+const AGENT_PAIRS_P2: Array<AgentId[]> = [
+  ["worldbuilder", "character"],  // Pair 1 (Key 1)
+  ["scenario", "script"],         // Pair 2 (Key 2)
+  ["producer"],                   // Pair 3 (Key 3)
+];
+
+// API 키 할당 (페어 인덱스 → 키 인덱스)
+function getApiKeyIndexForPair(pairIndex: number): number {
+  const keys = getAllAnthropicKeys();
+  if (keys.length === 0) return 0;
+  return (pairIndex % Math.max(1, keys.length)) + 1;
+}
 
 const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
   worldbuilder: "설정과 세계 규칙의 일관성·독창성을 중시한다. 세계가 어떻게 작동하는지 논리적으로 따진다.",
@@ -457,86 +468,111 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     convRef.current = transcript;
 
     try {
-      for (let round = startRound; round <= 999; round++) {
+      // 페어 라운드 계산 (이미 완료한 페어 수)
+      let completedPairs = 0;
+      for (const pair of AGENT_PAIRS_P2) {
+        const allSpoke = pair.every(agent =>
+          transcript.some(l => l.includes(`[${AGENTS[agent].label}]`))
+        );
+        if (allSpoke) completedPairs++;
+        else break;
+      }
+
+      let pairRound = completedPairs;
+      let round = startRound;
+
+      for (; pairRound < AGENT_PAIRS_P2.length; pairRound++) {
         if (abortRef.current) break;
 
-        // 이번 발언자 결정 (순환)
-        const agentIdx = (round - 1) % DEBATE_AGENTS.length;
-        const agentId = DEBATE_AGENTS[agentIdx];
-        const systemPrompt = buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current);
+        const pair = AGENT_PAIRS_P2[pairRound];
+        const keyIndex = getApiKeyIndexForPair(pairRound);
+        const pairApiKey = getAnthropicKeyByIndex(keyIndex);
 
-        // 사용자 입력 처리 (발언 전에 transcript에 삽입)
-        const pending = pendingUserMsgRef.current;
-        if (pending) {
-          pendingUserMsgRef.current = null;
-          addMsg("user", pending, false);
-          transcript.push(`[사용자]: ${pending}`);
-          convRef.current = transcript;
+        if (!pairApiKey) {
+          console.warn(`No API key found for pair ${pairRound}`);
+          break;
         }
 
-        // 최근 대화 컨텍스트 (마지막 30줄)
-        const recentLines = transcript.slice(-30);
-        const historyText = recentLines.length > 0
-          ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
-          : "";
-
-        const userContent = round === 1
-          ? `"${stage.topic}" 주제로 첫 의견을 말해주세요.`
-          : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 관점을 제시하세요.`;
-
-        // 스트리밍: 이 에이전트의 응답만 생성
-        let roundText = "";
-        const msgId = addMsg(agentId, "", true);
-
-        for await (const chunk of streamClaude({
-          apiKey,
-          systemPrompt,
-          messages: [{ role: "user", content: userContent }],
-          maxTokens: 400,
-          tools: [],
-        })) {
+        // 이 페어의 각 에이전트를 순차적으로 처리
+        for (const agentId of pair) {
           if (abortRef.current) break;
-          roundText += chunk;
-          updateMsg(msgId, roundText, true);
-        }
 
-        const finalText = roundText.trim();
-        updateMsg(msgId, finalText, false);
+          const systemPrompt = buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current);
 
-        // abort와 관계없이 내용 저장 (추출에 사용)
-        if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
-        convRef.current = transcript;
-        if (abortRef.current) break;
+          // 사용자 입력 처리 (발언 전에 transcript에 삽입)
+          const pending = pendingUserMsgRef.current;
+          if (pending) {
+            pendingUserMsgRef.current = null;
+            addMsg("user", pending, false);
+            transcript.push(`[사용자]: ${pending}`);
+            convRef.current = transcript;
+          }
 
-        // 20줄마다 슬라이딩 윈도우 압축 (사용자 모르게 백그라운드)
-        if (transcript.length > 0 && transcript.length % 20 === 0) {
-          const recentKeep = transcript.slice(-10);
-          const oldLines = transcript.slice(0, -10);
-          if (oldLines.length >= 5) {
-            let summary = "";
-            try {
-              for await (const c of streamClaude({
-                apiKey,
-                systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 합의사항과 주요 아이디어만 간결하게 정리.",
-                messages: [{ role: "user", content: `다음 토론을 핵심만 요약해줘:\n${oldLines.join("\n").slice(0, 3000)}` }],
-                maxTokens: 400,
-                tools: [],
-              })) summary += c;
-            } catch { /* ignore */ }
-            if (summary.trim()) {
-              transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
-              convRef.current = transcript;
+          // 최근 대화 컨텍스트 (마지막 30줄)
+          const recentLines = transcript.slice(-30);
+          const historyText = recentLines.length > 0
+            ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+            : "";
+
+          const userContent = pairRound === 0 && pair.indexOf(agentId) === 0
+            ? `"${stage.topic}" 주제로 첫 의견을 말해주세요.`
+            : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 관점을 제시하세요.`;
+
+          // 스트리밍: 이 에이전트의 응답만 생성
+          let roundText = "";
+          const msgId = addMsg(agentId, "", true);
+
+          for await (const chunk of streamClaude({
+            apiKey: pairApiKey,
+            systemPrompt,
+            messages: [{ role: "user", content: userContent }],
+            maxTokens: 400,
+            tools: [],
+          })) {
+            if (abortRef.current) break;
+            roundText += chunk;
+            updateMsg(msgId, roundText, true);
+          }
+
+          const finalText = roundText.trim();
+          updateMsg(msgId, finalText, false);
+
+          // abort와 관계없이 내용 저장 (추출에 사용)
+          if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+          convRef.current = transcript;
+          if (abortRef.current) break;
+
+          // 20줄마다 슬라이딩 윈도우 압축 (사용자 모르게 백그라운드)
+          if (transcript.length > 0 && transcript.length % 20 === 0) {
+            const recentKeep = transcript.slice(-10);
+            const oldLines = transcript.slice(0, -10);
+            if (oldLines.length >= 5) {
+              let summary = "";
+              try {
+                for await (const c of streamClaude({
+                  apiKey: pairApiKey,
+                  systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 합의사항과 주요 아이디어만 간결하게 정리.",
+                  messages: [{ role: "user", content: `다음 토론을 핵심만 요약해줘:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                  maxTokens: 400,
+                  tools: [],
+                })) summary += c;
+              } catch { /* ignore */ }
+              if (summary.trim()) {
+                transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+                convRef.current = transcript;
+              }
             }
           }
+
+          // 매 라운드 저장 (재접속 시 이어하기)
+          try {
+            localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
+            localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
+          } catch { /* localStorage 용량 초과 무시 */ }
+
+          await sleep(1800);
+          round++;
         }
-
-        // 매 라운드 저장 (재접속 시 이어하기)
-        try {
-          localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
-          localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
-        } catch { /* localStorage 용량 초과 무시 */ }
-
-        await sleep(1800); // 에이전트 1명씩이라 짧아도 충분
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);

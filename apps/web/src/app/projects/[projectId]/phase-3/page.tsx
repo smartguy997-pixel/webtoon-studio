@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import s from "./page.module.css";
-import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-client";
+import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys, WEB_SEARCH_TOOL } from "@/lib/claude-client";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
