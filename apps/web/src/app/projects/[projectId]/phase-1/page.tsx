@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { streamClaude, getAnthropicKey } from "@/lib/claude-client";
+import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
 import styles from "./page.module.css";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
@@ -28,11 +28,21 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-// ─── 라운드당 한 명씩 순서대로 발언 (Phase 2와 동일한 방식) ─────────────────────
+// ─── 에이전트 페어링 (각 쌍이 하나의 API 키 공유) ─────────────────────────────
 
-const DEBATE_AGENTS_P1: AgentId[] = [
-  "strategist", "researcher", "worldbuilder", "character", "scenario", "script", "producer",
+const AGENT_PAIRS_P1: Array<AgentId[]> = [
+  ["strategist", "researcher"],   // Pair 1 (Key 1)
+  ["worldbuilder", "character"],  // Pair 2 (Key 2)
+  ["scenario", "script"],         // Pair 3 (Key 3)
+  ["producer"],                   // Pair 4 (마지막, 아무 키)
 ];
+
+// API 키 할당 (페어 인덱스 → 키 인덱스)
+function getApiKeyIndexForPair(pairIndex: number): number {
+  const keys = getAllAnthropicKeys();
+  if (keys.length === 0) return 0;
+  return (pairIndex % Math.max(1, keys.length)) + 1;
+}
 
 // 에이전트별 성격·역할 (이전 DEBATE_SYSTEM_PROMPT에서 분리)
 const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
@@ -968,93 +978,112 @@ export default function Phase1Page() {
     setDebatePhase("running");
 
     const END_TRIGGERS = ["끝내자", "결론 내자", "마무리해", "결론내자"];
-    const MAX_ROUNDS = 100;
 
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
     let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
-    // startRound: 사용자 발언 제외한 에이전트 발언 수 기준
-    let startRound = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
 
-    let round = startRound;
+    // 페어 라운드 계산 (이미 완료한 페어 수)
+    let completedPairs = 0;
+    for (const pair of AGENT_PAIRS_P1) {
+      const allSpoke = pair.every(agent =>
+        transcript.some(l => l.includes(`[${AGENTS[agent].label}]`))
+      );
+      if (allSpoke) completedPairs++;
+      else break;
+    }
+
+    let pairRound = completedPairs;
+    let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
 
-    debateLoop: for (; round <= MAX_ROUNDS; round++) {
-      setTurnCount(round);
+    debateLoop: for (; pairRound < AGENT_PAIRS_P1.length; pairRound++) {
+      const pair = AGENT_PAIRS_P1[pairRound];
+      const keyIndex = getApiKeyIndexForPair(pairRound);
+      const pairApiKey = getAnthropicKeyByIndex(keyIndex);
 
-      // 이번 발언자 결정
-      const agentId = DEBATE_AGENTS_P1[(round - 1) % DEBATE_AGENTS_P1.length];
-      const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
-
-      // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
-      const pendingMsg = pendingUserMsgRef.current;
-      if (pendingMsg) {
-        pendingUserMsgRef.current = null;
-        addMsg("user", round, pendingMsg, false);
-        transcript.push(`[사용자]: ${pendingMsg}`);
-
-        if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
-          break debateLoop;
-        }
+      if (!pairApiKey) {
+        console.warn(`No API key found for pair ${pairRound}`);
+        break debateLoop;
       }
 
-      // 최근 30줄 컨텍스트
-      const recentLines = transcript.slice(-30);
-      const historyText = recentLines.length > 0
-        ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
-        : "";
+      // 이 페어의 각 에이전트를 순차적으로 처리
+      for (const agentId of pair) {
+        setTurnCount(round);
 
-      const userContent = round === 1
-        ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
-        : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
+        // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
+        const pendingMsg = pendingUserMsgRef.current;
+        if (pendingMsg) {
+          pendingUserMsgRef.current = null;
+          addMsg("user", round, pendingMsg, false);
+          transcript.push(`[사용자]: ${pendingMsg}`);
 
-      // 스트리밍: 이 에이전트만 발언
-      let roundText = "";
-      const msgId = addMsg(agentId, round, "", true);
-
-      for await (const chunk of streamClaude({
-        apiKey,
-        systemPrompt,
-        messages: [{ role: "user", content: userContent }],
-        maxTokens: 400,
-        tools: [],
-      })) {
-        roundText += chunk;
-        updateMsg(msgId, roundText, true);
-      }
-
-      const finalText = roundText.trim();
-      updateMsg(msgId, finalText, false);
-      if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
-
-      // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
-      if (transcript.length > 0 && transcript.length % 20 === 0) {
-        const recentKeep = transcript.slice(-10);
-        const oldLines = transcript.slice(0, -10);
-        if (oldLines.length >= 5) {
-          let summary = "";
-          try {
-            for await (const c of streamClaude({
-              apiKey,
-              systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
-              messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
-              maxTokens: 400,
-              tools: [],
-            })) summary += c;
-          } catch { /* ignore */ }
-          if (summary.trim()) {
-            transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+          if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
+            break debateLoop;
           }
         }
+
+        // 최근 30줄 컨텍스트
+        const recentLines = transcript.slice(-30);
+        const historyText = recentLines.length > 0
+          ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+          : "";
+
+        const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
+        const userContent = pairRound === 0 && pair.indexOf(agentId) === 0
+          ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
+          : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
+
+        // 스트리밍: 이 에이전트 발언
+        let roundText = "";
+        const msgId = addMsg(agentId, round, "", true);
+
+        for await (const chunk of streamClaude({
+          apiKey: pairApiKey,
+          systemPrompt,
+          messages: [{ role: "user", content: userContent }],
+          maxTokens: 400,
+          tools: [],
+        })) {
+          roundText += chunk;
+          updateMsg(msgId, roundText, true);
+        }
+
+        const finalText = roundText.trim();
+        updateMsg(msgId, finalText, false);
+        if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+
+        round++;
+
+        // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
+        if (transcript.length > 0 && transcript.length % 20 === 0) {
+          const recentKeep = transcript.slice(-10);
+          const oldLines = transcript.slice(0, -10);
+          if (oldLines.length >= 5) {
+            let summary = "";
+            try {
+              for await (const c of streamClaude({
+                apiKey: pairApiKey,
+                systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
+                messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                maxTokens: 400,
+                tools: [],
+              })) summary += c;
+            } catch { /* ignore */ }
+            if (summary.trim()) {
+              transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+            }
+          }
+        }
+
+        // 재접속 대비 저장
+        try {
+          localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
+            transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
+          }));
+        } catch { /* quota */ }
+
+        await sleep(1800);
       }
-
-      // 재접속 대비 저장
-      try {
-        localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
-          transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
-        }));
-      } catch { /* quota */ }
-
-      await sleep(1800);
     }
 
     // ── Final report (별도 API 호출) ──

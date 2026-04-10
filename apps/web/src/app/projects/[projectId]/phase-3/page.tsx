@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import s from "./page.module.css";
-import { streamClaude, getAnthropicKey, WEB_SEARCH_TOOL } from "@/lib/claude-client";
+import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys, WEB_SEARCH_TOOL } from "@/lib/claude-client";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
@@ -27,6 +27,19 @@ const AGENT_PROMPTS_P3: Partial<Record<AgentId, string>> = {
   producer:     "중재·합의 유도. 갈등 정리 역할.",
   editor:       "베테랑 편집자. 말수 적고 무게감 있음. 앞 대화를 직접 인용하며 마무리를 유도한다.",
 };
+
+// ─── 에이전트 페어링 (각 쌍이 하나의 API 키 공유) ─────────────────────────────
+const AGENT_PAIRS_P3: Array<AgentId[]> = [
+  ["scenario", "researcher"],  // Pair 1 (Key 1)
+  ["worldbuilder", "producer"], // Pair 2 (Key 2)
+];
+
+// API 키 할당 (페어 인덱스 → 키 인덱스)
+function getApiKeyIndexForPair(pairIndex: number): number {
+  const keys = getAllAnthropicKeys();
+  if (keys.length === 0) return 0;
+  return (pairIndex % Math.max(1, keys.length)) + 1;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
