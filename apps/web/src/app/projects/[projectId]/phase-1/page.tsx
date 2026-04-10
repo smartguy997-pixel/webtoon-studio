@@ -10,7 +10,8 @@ import {
 } from "recharts";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
+import { streamClaude, fetchImagesWithClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
+import { AGENT_PERSONAS, DEBATE_RULES, USER_COMMAND_PATTERNS } from "./debate-config";
 import styles from "./page.module.css";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
@@ -42,17 +43,8 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 에이전트별 성격·역할
-const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
-  strategist:   "K-웹툰 시장 전문가. 직설적이고 날카로워. '솔직히 이거 좀 뻔하지 않나?' '타겟이 다른 거 아닌가?' 같은 식으로 찌른다. 차별점과 시장 포지셔닝에 집착.",
-  researcher:   "의심 많고 꼬리 무는 스타일. '잠깐, 여기 논리가 안 맞는데?', '그게 정말 가능한 설정인가?' 하면서 구멍을 파고든다. 팩트 체크에 집착.",
-  worldbuilder: "세계관 규칙에 집착. '그 설정, 세계관이랑 충돌해.', '규칙을 먼저 잡아야 나머지가 성립되지.' 설정 충돌에 예민하고 논리적.",
-  character:    "감성적이고 독자 시각으로 생각함. '독자가 이 캐릭터를 왜 좋아해야 하지?', '이 장면에서 감정이 와닿질 않아.' 캐릭터 매력도와 감정선 담당.",
-  scenario:     "서사 구조에 집착. '이 반전, 타이밍이 너무 이른 거 아닌가?', '킬링포인트가 너무 뒤에 몰려있어.' 훅과 서사 흐름 점검.",
-  script:       "시각적으로 생각함. '이 장면 클로즈업 없으면 임팩트가 없어.', '컷 구성이 독자 시선을 제대로 잡는지 생각해야지.' 연출 효과 최우선.",
-  producer:     "정리하는 역할. 말은 적지만 결론을 유도함. '핵심만 짚자면...', '다들 말이 맞는데, 결국 이게 문제지.' 강한 결정력.",
-  editor:       "베테랑. 앞 대화를 인용하며 핵심만 짚는다. '아까 그 부분이 바로 문제야.' 무게감 있게 정리.",
-};
+// 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
+// 페르소나/규칙/명령패턴은 debate-config.ts 에서 관리
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,9 +64,13 @@ interface Phase1Result {
   genre_analysis: { genre: string; trend: string; audience: string; key_success: string; };
   market_analysis: { platform: string; market_size: string; growth: string; competition_level: string; opportunity: string; };
   similar_works: Array<{ title: string; platform: string; similarity: string; lesson: string; }>;
+  // ── 유사작품 도입 전략 (목표③) ──
+  adoption_strategy: Array<{ from_work: string; good_point: string; how_to_apply: string; }>;
   strengths: string[];
   weaknesses: string[];
   improvements: string[];
+  // ── 세계관 보완사항 (목표②, Phase 2 인계용) ──
+  worldbuilding_notes: Array<{ issue: string; suggestion: string; priority: "high" | "medium" | "low"; }>;
   usp: USP[];
   competitors: Competitor[];
   positioning: { ours: PositioningPoint; competitors: PositioningPoint[]; };
@@ -85,6 +81,7 @@ type Stage = "form" | "debate";
 type DebatePhase = "idle" | "running" | "paused" | "done";
 
 // ─── 에이전트 1명용 시스템 프롬프트 빌더 ─────────────────────────────────────────
+// 페르소나(AGENT_PERSONAS)·규칙(DEBATE_RULES)은 debate-config.ts에서 관리
 
 function buildAgentPromptP1(
   agentId: AgentId,
@@ -94,20 +91,30 @@ function buildAgentPromptP1(
   ep: string,
 ): string {
   const agentLabel = AGENTS[agentId].label;
-  const personality = AGENT_PROMPTS_P1[agentId] ?? "";
-  return `당신은 웹툰 기획 분석 회의에 참여한 ${agentLabel}입니다.
+  const personality = AGENT_PERSONAS[agentId] ?? "";
+  return `당신은 웹툰 기획 리서치 팀의 ${agentLabel}입니다.
+
+[Phase 1의 4대 목표 — 팀 전체가 함께 달성해야 함]
+① 유사 작품 분석을 통한 시장성·화제성·성공 가능성 판단
+② 사용자 기획의 문제점을 미리 발굴하고 세계관에서 보완해야 할 점 기록 (Phase 2 인계)
+③ 유사작품의 좋은 점을 우리 기획에 어떻게 도입할 수 있는지 구체적 방법 제안
+④ 비슷한 장르의 이미지·그림체를 서치해서 팀에 공유 (비주얼 레퍼런스)
+
+[스토리·세계관 창작 금지]
+이 세션에서 새로운 스토리나 설정을 만들지 마세요. 기존 유사 작품을 조사하고 분석하는 것이 전부입니다.
+
+[내 역할]
 성격·역할: ${personality}
 장르: ${genre} | 플랫폼: ${platLabel} | 목표화수: ${ep}
 기획 개요: ${concept.slice(0, 300)}
 
-[규칙]
-- 이전 발언에 진짜 반응해. 직설적으로, 감정을 섞어가며.
-- 오직 당신의 대사만. 이름이나 접두어 없이 대사만.
-- 다른 사람 말투 따라하지 말기.
-- 반드시 1문장. 절대 2문장 넘기지 마. 카톡처럼 짧고 임팩트 있게.
-- 은어, 의성어, 감정 표현 풍부하게 써도 돼. '어?', '우와', '진짜?', '아 미쳤나' 같은 표현도 OK.
-- 마크다운(#, *, >, -) 금지. JSON 금지.
-- 자연스러운 끊김, 감탄, 침묵도 괜찮아.`;
+[이미지 서치 방법 — 연출작가는 반드시 사용, 다른 에이전트도 필요시 사용]
+비주얼 레퍼런스를 공유할 때는 반드시 다음 형식으로 출력:
+🖼️ 이미지 서치: "검색어 영문 키워드"
+예: 🖼️ 이미지 서치: "korean webtoon fantasy dark art style"
+예: 🖼️ 이미지 서치: "manhwa action scene dramatic lighting"
+
+${DEBATE_RULES}`;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -181,6 +188,16 @@ const MOCK_RESULT: Phase1Result = {
       genre_color: "#34d399",
     },
   ],
+  adoption_strategy: [
+    { from_work: "전지적 독자시점", good_point: "독자가 함께 수수께끼를 푸는 메타픽션 구조", how_to_apply: "1화부터 '독자만 아는 단서'를 심어 능동 참여 유도. 댓글·커뮤니티 화제성 자동 생성" },
+    { from_work: "나 혼자만 레벨업", good_point: "스탯·시스템 수치화로 성장을 시각적으로 체감", how_to_apply: "능력 성장을 수치 패널로 표현해 독자 성취감 극대화. 다만 관계 서사와 균형 필수" },
+    { from_work: "싸움독학", good_point: "현실감 있는 약자 주인공 + 단계적 성장", how_to_apply: "1화 주인공을 약자로 설정하되 명확한 성장 로드맵 제시. 첫 3화 안에 '이유 있는 의지' 장면 삽입" },
+  ],
+  worldbuilding_notes: [
+    { issue: "능력 체계의 규칙이 불명확", suggestion: "Phase 2에서 능력 발동 조건·제한·부작용 3가지를 먼저 확정. 규칙 없는 능력은 독자 몰입 파괴", priority: "high" },
+    { issue: "빌런 동기의 논리적 기반 부재", suggestion: "빌런이 '왜 악인가'를 설명할 수 있는 사건 하나를 세계관 역사에 심어야 함. 독자가 빌런에 공감할 수 있는 지점 필수", priority: "high" },
+    { issue: "주인공 성장 트리거가 모호", suggestion: "성장이 언제, 왜 일어나는지 명확한 조건 필요. 유사작 나혼자만레벨업의 '던전 시스템'처럼 구체적 메커니즘 설계", priority: "medium" },
+  ],
   positioning: {
     ours: { x: 68, y: 74, label: "우리 작품" },
     competitors: [
@@ -216,21 +233,27 @@ function stripResultBlock(text: string): string {
 
 // ─── Final report prompt (총괄프로듀서 보고서 + JSON) ─────────────────────────
 
-const buildFinalReportPrompt = (allContext: string) => `지금까지의 토론을 바탕으로 기획분석서를 작성하라.
+const buildFinalReportPrompt = (allContext: string) => `지금까지의 유사작품 리서치 토론을 바탕으로 기획분석서를 작성하라.
+이 분석서는 Phase 2 세계관 설계의 기초 자료로 사용된다.
 
-━━ 전체 토론 내역 ━━
+━━ 전체 리서치 토론 내역 ━━
 ${allContext}
 
 ━━ 보고서 규칙 ━━
 • "다들 수고했어요. 제가 정리하겠습니다."로 시작
 • 마크다운 금지. 자연스럽고 전문적인 어조.
+• 유사 웹툰 리서치 결과를 중심으로 정리 (스토리/세계관 창작 금지)
+• similar_works: 토론에서 언급된 실제 작품들 최대한 반영
+• adoption_strategy: 유사작의 좋은 점을 우리 기획에 도입하는 구체적 방법 (최소 3개)
+• worldbuilding_notes: 기획의 문제점 + Phase 2에서 반드시 보완해야 할 사항 (최소 3개, priority: high/medium/low)
+• strengths/weaknesses/improvements: 유사 작품 분석에서 도출된 인사이트 기반
 • feasibility_score: 0.70+ = go / 0.50~0.69 = conditional / 미만 = reject
 • 분량 (JSON 제외): 150~250자
 
 보고서 직후 다음 JSON 출력 (다른 텍스트 없음):
 
 [PHASE1_RESULT]
-{"feasibility_score":0.00,"feasibility_breakdown":{"market":0,"originality":0,"producibility":0,"commercial":0},"verdict":"go","summary":"80자 이내 핵심 요약","genre_analysis":{"genre":"장르명","trend":"현재 장르 트렌드 설명","audience":"주요 타깃 독자층","key_success":"이 장르에서 성공하는 핵심 요소"},"market_analysis":{"platform":"주요 플랫폼","market_size":"시장 규모 설명","growth":"성장세 설명","competition_level":"경쟁 수준 (낮음/보통/높음)","opportunity":"이 기획의 시장 기회"},"similar_works":[{"title":"유사작품명","platform":"플랫폼","similarity":"유사한 점","lesson":"이 작품에서 배울 점 또는 차별화 포인트"}],"strengths":["강점1","강점2","강점3"],"weaknesses":["약점1","약점2"],"improvements":["보완할점1","보완할점2"],"usp":[{"icon":"⚡","title":"USP제목","desc":"설명 한 줄","prediction":"독자반응 예측"}],"competitors":[{"title":"작품명","platform":"네이버웹툰","period":"YYYY~YYYY","readers":"주간XXX만뷰","strengths":"강점","weaknesses":"약점","differentiation":"차별점","genre_color":"#60a5fa"}],"positioning":{"ours":{"x":0,"y":0,"label":"우리 작품"},"competitors":[{"x":0,"y":0,"label":"작품명"}]},"radar":{"ours":[0,0,0,0,0],"avg":[0,0,0,0,0],"categories":["신선도","감정몰입","세계관","캐릭터","상업성"]},"final_report":"최종 권고 한 단락"}
+{"feasibility_score":0.00,"feasibility_breakdown":{"market":0,"originality":0,"producibility":0,"commercial":0},"verdict":"go","summary":"80자 이내 핵심 요약","genre_analysis":{"genre":"장르명","trend":"현재 장르 트렌드 설명","audience":"주요 타깃 독자층","key_success":"이 장르에서 성공하는 핵심 요소"},"market_analysis":{"platform":"주요 플랫폼","market_size":"시장 규모 설명","growth":"성장세 설명","competition_level":"경쟁 수준 (낮음/보통/높음)","opportunity":"이 기획의 시장 기회"},"similar_works":[{"title":"유사작품명","platform":"플랫폼","similarity":"유사한 점","lesson":"배울 점 또는 차별화 포인트"}],"adoption_strategy":[{"from_work":"유사작품명","good_point":"그 작품의 좋은 점","how_to_apply":"우리 기획에 도입하는 구체적 방법"}],"strengths":["강점1","강점2","강점3"],"weaknesses":["약점1","약점2"],"improvements":["보완할점1","보완할점2"],"worldbuilding_notes":[{"issue":"기획의 문제점 또는 세계관에서 약한 부분","suggestion":"Phase 2에서 보완해야 할 구체적 방향","priority":"high"}],"usp":[{"icon":"⚡","title":"USP제목","desc":"설명 한 줄","prediction":"독자반응 예측"}],"competitors":[{"title":"작품명","platform":"네이버웹툰","period":"YYYY~YYYY","readers":"주간XXX만뷰","strengths":"강점","weaknesses":"약점","differentiation":"차별점","genre_color":"#60a5fa"}],"positioning":{"ours":{"x":0,"y":0,"label":"우리 작품"},"competitors":[{"x":0,"y":0,"label":"작품명"}]},"radar":{"ours":[0,0,0,0,0],"avg":[0,0,0,0,0],"categories":["신선도","감정몰입","세계관","캐릭터","상업성"]},"final_report":"최종 권고 한 단락"}
 [/PHASE1_RESULT]`;
 
 
@@ -379,6 +402,104 @@ function ThinkingDots() {
   );
 }
 
+// ─── Image Search Card (Claude web_search) ────────────────────────────────────
+
+function ImageSearchCard({ query }: { query: string }) {
+  const [images, setImages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const apiKey = getAnthropicKey();
+    if (!apiKey) {
+      setError("Anthropic API 키가 없습니다.");
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetchImagesWithClaude(query, apiKey)
+      .then(urls => {
+        if (cancelled) return;
+        setImages(urls);
+        setLoading(false);
+      })
+      .catch((e: Error) => {
+        if (cancelled) return;
+        setError(e.message);
+        setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [query]);
+
+  return (
+    <div style={{
+      background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.2)",
+      borderRadius: 10, padding: "10px 12px", margin: "8px 0",
+    }}>
+      <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <span>🖼️</span><span>이미지 서치</span>
+        <span style={{ color: "#334155" }}>·</span>
+        <span style={{ color: "#94a3b8", fontStyle: "italic", fontWeight: 400 }}>{query}</span>
+      </div>
+
+      {loading && (
+        <div style={{ fontSize: 12, color: "#64748b", padding: "4px 0", display: "flex", alignItems: "center", gap: 6 }}>
+          <ThinkingDots />
+          <span>이미지 탐색 중...</span>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ fontSize: 12, color: "#f87171" }}>⚠ {error}</div>
+      )}
+
+      {!loading && images.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 8 }}>
+          {images.map((url, idx) => (
+            <a
+              key={idx}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ borderRadius: 8, overflow: "hidden", display: "block", border: "1px solid rgba(96,165,250,0.2)" }}
+            >
+              <img
+                src={url}
+                alt={query}
+                style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
+                loading="lazy"
+                onError={(e) => {
+                  (e.currentTarget.parentElement as HTMLElement).style.display = "none";
+                }}
+              />
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* 항상 Google 이미지 링크 표시 (이미지 없을 때는 더 크게) */}
+      {!loading && (
+        <a
+          href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query + " webtoon manhwa art")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4,
+            fontSize: 11, color: "#60a5fa", textDecoration: "none",
+            background: "rgba(96,165,250,0.08)", borderRadius: 5,
+            padding: "3px 10px", border: "1px solid rgba(96,165,250,0.2)",
+          }}
+        >
+          {images.length === 0 ? "🔍 Google 이미지에서 보기 →" : "더 찾기 →"}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function RoundHeader({ round, label }: { round: number; label: string }) {
   return (
     <div className={styles.roundHeader}>
@@ -406,6 +527,14 @@ function renderMsgLine(line: string, i: number, agentColor: string) {
         <span style={{ fontStyle: "italic" }}>{query}</span>
       </div>
     );
+  }
+  // 🖼️ Image search — renders real images from Pixabay
+  if (line.startsWith("🖼️")) {
+    const raw = line
+      .replace(/^🖼️\s*이미지\s*서치\s*:\s*/i, "")
+      .replace(/^🖼️\s*이미지\s*검색\s*:\s*/i, "")
+      .replace(/"/g, "").trim();
+    return <ImageSearchCard key={i} query={raw} />;
   }
   // ⏳ Rate-limit wait indicator
   if (line.includes("⏳") && line.includes("레이트 리밋")) {
@@ -652,6 +781,91 @@ function SimilarWorksSection({ competitors }: { competitors: Competitor[] }) {
             </div>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+// ── 유사작품 도입 전략 섹션 (목표③) ──────────────────────────────────────────
+
+function AdoptionStrategySection({ strategies }: { strategies: Phase1Result["adoption_strategy"] }) {
+  if (!strategies?.length) return null;
+  return (
+    <section className={styles.resultSec}>
+      <div className={styles.secHeaderRow}>
+        <span className={styles.secNum} style={{ background: "rgba(52,211,153,0.15)", color: "#34d399" }}>★</span>
+        <div className={styles.secHeader}>
+          <h3 className={styles.secTitle}>유사작품 도입 전략</h3>
+          <p className={styles.secSub}>좋은 점을 우리 기획에 적용하는 방법</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {strategies.map((s, i) => (
+          <div key={i} style={{
+            background: "rgba(52,211,153,0.05)", border: "1px solid rgba(52,211,153,0.18)",
+            borderRadius: 10, padding: "14px 16px",
+            display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 16, alignItems: "start",
+          }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>참고 작품</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#34d399" }}>{s.from_work}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#34d399", fontWeight: 700, marginBottom: 4 }}>좋은 점</div>
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.55 }}>{s.good_point}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 700, marginBottom: 4 }}>우리 기획 적용 방법</div>
+              <div style={{ fontSize: 13, color: "#c8d0dc", lineHeight: 1.55 }}>{s.how_to_apply}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ── 세계관 보완사항 섹션 (목표②, Phase 2 인계) ────────────────────────────────
+
+function WorldbuildingNotesSection({ notes }: { notes: Phase1Result["worldbuilding_notes"] }) {
+  if (!notes?.length) return null;
+  const priorityStyle = {
+    high:   { label: "긴급", color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    medium: { label: "중요", color: "#fbbf24", bg: "rgba(251,191,36,0.10)"  },
+    low:    { label: "참고", color: "#60a5fa", bg: "rgba(96,165,250,0.10)"  },
+  };
+  return (
+    <section className={styles.resultSec} style={{ border: "1px solid rgba(248,113,113,0.25)", borderRadius: 12 }}>
+      <div className={styles.secHeaderRow}>
+        <span className={styles.secNum} style={{ background: "rgba(248,113,113,0.15)", color: "#f87171" }}>⚠</span>
+        <div className={styles.secHeader}>
+          <h3 className={styles.secTitle} style={{ color: "#f87171" }}>세계관 보완사항 — Phase 2 인계</h3>
+          <p className={styles.secSub}>이 기획의 문제점과 Phase 2에서 반드시 해결해야 할 사항</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {notes.map((n, i) => {
+          const p = priorityStyle[n.priority] ?? priorityStyle.medium;
+          return (
+            <div key={i} style={{
+              background: "rgba(255,255,255,0.02)", borderRadius: 10, padding: "14px 16px",
+              borderLeft: `3px solid ${p.color}`,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: p.color, background: p.bg, padding: "2px 8px", borderRadius: 4 }}>
+                  {p.label}
+                </span>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{n.issue}</div>
+              </div>
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6, paddingLeft: 4 }}>
+                ▸ {n.suggestion}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 12, padding: "8px 14px", background: "rgba(248,113,113,0.06)", borderRadius: 8, fontSize: 12, color: "#64748b" }}>
+        💡 위 사항은 Phase 2 세계관 설계 시 자동으로 참고 자료로 전달됩니다.
       </div>
     </section>
   );
@@ -1105,7 +1319,9 @@ export default function Phase1Page() {
     // ── REAL API MODE ──
     setDebatePhase("running");
 
-    const END_TRIGGERS = ["끝내자", "결론 내자", "마무리해", "결론내자"];
+    // 명령 패턴은 debate-config.ts의 USER_COMMAND_PATTERNS에서 관리
+    const matchCommand = (msg: string) =>
+      USER_COMMAND_PATTERNS.find(p => p.triggers.some(t => msg.includes(t))) ?? null;
 
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
     let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
@@ -1139,22 +1355,21 @@ export default function Phase1Page() {
       // ── 사용자 입력 처리: 발언 전에 transcript에 삽입 ──
       const pendingMsg = pendingUserMsgRef.current;
       let userJustSpoke = false;
-      let userText = "";
+      let matchedCommand = null as ReturnType<typeof matchCommand>;
       if (pendingMsg) {
         pendingUserMsgRef.current = null;
         addMsg("user", round, pendingMsg, false);
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
         userJustSpoke = true;
-        userText = pendingMsg;
 
-        if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
-          break debateLoop;
-        }
+        // debate-config.ts의 USER_COMMAND_PATTERNS으로 명령 매칭
+        matchedCommand = matchCommand(pendingMsg);
+        if (matchedCommand?.handler === "end") break debateLoop;
       }
 
-      // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 6~8초 생각
-      await sleep(userJustSpoke ? 1000 + Math.random() * 1000 : 6000 + Math.random() * 2000);
+      // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 10~15초 생각 (사용자 개입 시간 확보)
+      await sleep(userJustSpoke ? 1000 + Math.random() * 1000 : 10000 + Math.random() * 5000);
 
       // 최근 30줄 컨텍스트
       const recentLines = transcript.slice(-30);
@@ -1162,12 +1377,53 @@ export default function Phase1Page() {
         ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
         : "";
 
+      // 최근 사용자 발언 3개를 묶어 맥락 파악 (예: "스피드 동체시력 / 이런걸로 해")
+      const recentUserMsgs = transcript
+        .filter(l => l.startsWith("[사용자]"))
+        .slice(-3)
+        .map(l => l.replace("[사용자]: ", "").trim())
+        .join(" / ");
+
+      // single_turn 명령: 지정 에이전트만 발언하고 이 턴에서 바로 다음으로
+      if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
+        const singleId = matchedCommand.speakerAgent;
+        const singleKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+        if (singleKey) {
+          const overridePrompt = matchedCommand.promptOverride
+            ? matchedCommand.promptOverride.replace("{history}", historyText)
+            : `${historyText}사용자 요청에 응답해.`;
+          const singleMsgId = addMsg(singleId, round, "", true);
+          let singleText = "";
+          let singleLastUpdate = 0;
+          for await (const chunk of streamClaude({
+            apiKey: singleKey,
+            systemPrompt: buildAgentPromptP1(singleId, g, c, platLabel, ep),
+            messages: [{ role: "user", content: overridePrompt }],
+            maxTokens: 300,
+            tools: [],
+          })) {
+            singleText += chunk;
+            const now = Date.now();
+            if (now - singleLastUpdate >= 80) {
+              updateMsg(singleMsgId, singleText, true);
+              singleLastUpdate = now;
+            }
+          }
+          updateMsg(singleMsgId, singleText.trim(), false);
+          if (singleText.trim()) transcript.push(`[${AGENTS[singleId].label}]: ${singleText.trim()}`);
+          round++;
+          agentIndex++;
+        }
+        await sleep(3000 + Math.random() * 2000);
+        continue; // 나머지 에이전트는 이 턴 스킵
+      }
+
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0
-        ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
+        ? `리서치 세션을 시작해줘. 우리가 분석할 기획은:\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획 개요: ${c.slice(0, 500)}\n\n이 기획과 유사한 웹툰 작품을 한 편 골라서 소개하고, 그 작품의 좋은 점이나 배울 점을 공유해줘.`
         : userJustSpoke
-          ? `${historyText}지금 사용자가 "${userText}"라고 했어. 반드시 이 말에 직접 답해. 무시하면 안 돼.`
-          : `${historyText}당신 차례야. 바로 앞 발언에 반응하거나 새 관점 던져줘.`;
+          ? `${historyText}사용자가 최근에 이렇게 말했어: "${recentUserMsgs}". 앞뒤 맥락을 이해하고 직접 반응해. 사용자 의견을 반드시 반영해.`
+          : `${historyText}당신 차례야. 앞 사람 의견에 공감하거나 새로운 유사 작품 인사이트를 추가해줘.`;
 
       // 스트리밍: 이 에이전트 발언
       let roundText = "";
@@ -1205,8 +1461,8 @@ export default function Phase1Page() {
           try {
             for await (const c of streamClaude({
               apiKey: agentApiKey,
-              systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
-              messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+              systemPrompt: "웹툰 유사작품 리서치 토론 내용을 간결하게 요약한다. 언급된 작품명과 핵심 인사이트 위주로. 마크다운 금지.",
+              messages: [{ role: "user", content: `핵심 인사이트 중심으로 10줄 이내 요약 (작품명, 좋은점, 나쁜점 포함):\n${oldLines.join("\n").slice(0, 3000)}` }],
               maxTokens: 400,
               tools: [],
             })) summary += c;
@@ -1224,18 +1480,21 @@ export default function Phase1Page() {
         }));
       } catch { /* quota */ }
 
-      // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간
-      await sleep(2400);
+      // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간 (추가 여유)
+      await sleep(3000 + Math.random() * 2000);
     }
 
     // ── Final report (별도 API 호출) ──
     await sleep(500);
     setTurnCount(round + 1);
+
+    // 프로듀서 공지 — 채팅에만 표시. 보고서 내용 자체는 채팅에 안 보임.
+    addMsg("producer", round + 1, "다들 수고했어요. 제가 정리하겠습니다.", false);
+    await sleep(1500);
+
     setIsWritingReport(true);
 
     const allDebateText = transcript.join("\n");
-
-    const reportId = addMsg("producer", round + 1, "", true);
     let reportText = "";
 
     for await (const chunk of streamClaude({
@@ -1246,9 +1505,9 @@ export default function Phase1Page() {
       tools: [],
     })) {
       reportText += chunk;
-      updateMsg(reportId, stripResultBlock(reportText), true);
+      // 채팅 버블에 표시 안 함 — "보고서 작성 중..." 인디케이터만 표시됨
     }
-    updateMsg(reportId, stripResultBlock(reportText), false);
+
     setIsWritingReport(false);
 
     const parsed = parsePhase1Result(reportText);
@@ -1305,8 +1564,8 @@ export default function Phase1Page() {
           <div className={styles.formCard}>
             <h1 className={styles.formTitle}>Phase 1 · 기획 분석</h1>
             <p className={styles.formDesc}>
-              5인 AI 에이전트가 3라운드 토론으로 기획안을 분석합니다.<br />
-              시장 포지셔닝·설정 검증·서사 구조·연출 전략을 종합해 Phase 2 진행 여부를 판단합니다.
+              7인 AI 에이전트가 유사 웹툰을 리서치하고 분석합니다.<br />
+              비슷한 설정의 작품들을 찾아 좋은 점·나쁜 점·문제점을 공유하고, Phase 2 세계관 설계의 기초 자료를 만듭니다.
             </p>
 
             {/* Row: 장르 + 플랫폼 */}
@@ -1469,6 +1728,8 @@ export default function Phase1Page() {
               <GenreMarketSection result={result} />
               <SWOTSection result={result} />
               <SimilarWorksDeepSection similar_works={result.similar_works} />
+              <AdoptionStrategySection strategies={result.adoption_strategy} />
+              <WorldbuildingNotesSection notes={result.worldbuilding_notes} />
               <SimilarWorksSection competitors={result.competitors} />
               <PositioningSection positioning={result.positioning} radar={result.radar} mounted={mounted} />
               <USPSection usp={result.usp} />
