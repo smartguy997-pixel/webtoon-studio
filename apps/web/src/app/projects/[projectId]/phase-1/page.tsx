@@ -996,93 +996,149 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
 
-    debateLoop: for (; pairRound < AGENT_PAIRS_P1.length; pairRound++) {
-      const pair = AGENT_PAIRS_P1[pairRound];
-      const keyIndex = getApiKeyIndexForPair(pairRound);
-      const pairApiKey = getAnthropicKeyByIndex(keyIndex);
+    const MAX_ROUNDS_PER_CYCLE = 15;
+    let roundsInCycle = 0;
+    let shouldContinue = true;
 
-      if (!pairApiKey) {
-        console.warn(`No API key found for pair ${pairRound}`);
-        break debateLoop;
-      }
+    debateLoop: while (shouldContinue) {
+      shouldContinue = false; // 기본값: 끝냄
 
-      // 이 페어의 각 에이전트를 순차적으로 처리
-      for (const agentId of pair) {
-        setTurnCount(round);
+      for (; pairRound < AGENT_PAIRS_P1.length && roundsInCycle < MAX_ROUNDS_PER_CYCLE; pairRound++) {
+        const pair = AGENT_PAIRS_P1[pairRound];
+        const keyIndex = getApiKeyIndexForPair(pairRound);
+        const pairApiKey = getAnthropicKeyByIndex(keyIndex);
 
-        // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
-        const pendingMsg = pendingUserMsgRef.current;
-        if (pendingMsg) {
-          pendingUserMsgRef.current = null;
-          addMsg("user", round, pendingMsg, false);
-          transcript.push(`[사용자]: ${pendingMsg}`);
-
-          if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
-            break debateLoop;
-          }
+        if (!pairApiKey) {
+          console.warn(`No API key found for pair ${pairRound}`);
+          break debateLoop;
         }
 
-        // 최근 30줄 컨텍스트
-        const recentLines = transcript.slice(-30);
-        const historyText = recentLines.length > 0
-          ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
-          : "";
+        // 이 페어의 각 에이전트를 순차적으로 처리
+        for (const agentId of pair) {
+          if (roundsInCycle >= MAX_ROUNDS_PER_CYCLE) break;
 
-        const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
-        const userContent = pairRound === 0 && pair.indexOf(agentId) === 0
-          ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
-          : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
+          setTurnCount(round);
 
-        // 스트리밍: 이 에이전트 발언
-        let roundText = "";
-        const msgId = addMsg(agentId, round, "", true);
+          // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
+          const pendingMsg = pendingUserMsgRef.current;
+          if (pendingMsg) {
+            pendingUserMsgRef.current = null;
+            addMsg("user", round, pendingMsg, false);
+            transcript.push(`[사용자]: ${pendingMsg}`);
 
-        for await (const chunk of streamClaude({
-          apiKey: pairApiKey,
-          systemPrompt,
-          messages: [{ role: "user", content: userContent }],
-          maxTokens: 400,
-          tools: [],
-        })) {
-          roundText += chunk;
-          updateMsg(msgId, roundText, true);
-        }
-
-        const finalText = roundText.trim();
-        updateMsg(msgId, finalText, false);
-        if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
-
-        round++;
-
-        // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
-        if (transcript.length > 0 && transcript.length % 20 === 0) {
-          const recentKeep = transcript.slice(-10);
-          const oldLines = transcript.slice(0, -10);
-          if (oldLines.length >= 5) {
-            let summary = "";
-            try {
-              for await (const c of streamClaude({
-                apiKey: pairApiKey,
-                systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
-                messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
-                maxTokens: 400,
-                tools: [],
-              })) summary += c;
-            } catch { /* ignore */ }
-            if (summary.trim()) {
-              transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+            if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
+              break debateLoop;
             }
           }
+
+          // 상대 대화 읽고 생각하는 시간 (3~4초) - 자연스러운 대화 속도
+          await sleep(3000 + Math.random() * 1000);
+
+          // 최근 30줄 컨텍스트
+          const recentLines = transcript.slice(-30);
+          const historyText = recentLines.length > 0
+            ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+            : "";
+
+          const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
+          const userContent = pairRound === 0 && pair.indexOf(agentId) === 0
+            ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
+            : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
+
+          // 스트리밍: 이 에이전트 발언
+          let roundText = "";
+          const msgId = addMsg(agentId, round, "", true);
+
+          for await (const chunk of streamClaude({
+            apiKey: pairApiKey,
+            systemPrompt,
+            messages: [{ role: "user", content: userContent }],
+            maxTokens: 400,
+            tools: [],
+          })) {
+            roundText += chunk;
+            updateMsg(msgId, roundText, true);
+          }
+
+          const finalText = roundText.trim();
+          updateMsg(msgId, finalText, false);
+          if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+
+          round++;
+          roundsInCycle++;
+
+          // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
+          if (transcript.length > 0 && transcript.length % 20 === 0) {
+            const recentKeep = transcript.slice(-10);
+            const oldLines = transcript.slice(0, -10);
+            if (oldLines.length >= 5) {
+              let summary = "";
+              try {
+                for await (const c of streamClaude({
+                  apiKey: pairApiKey,
+                  systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
+                  messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                  maxTokens: 400,
+                  tools: [],
+                })) summary += c;
+              } catch { /* ignore */ }
+              if (summary.trim()) {
+                transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+              }
+            }
+          }
+
+          // 재접속 대비 저장
+          try {
+            localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
+              transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
+            }));
+          } catch { /* quota */ }
+
+          // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간
+          await sleep(1200);
         }
+      }
 
-        // 재접속 대비 저장
-        try {
-          localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
-            transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
-          }));
-        } catch { /* quota */ }
+      // 15라운드 완료 후: 계속할지 물어보기
+      if (roundsInCycle >= MAX_ROUNDS_PER_CYCLE) {
+        setDebatePhase("paused");
 
-        await sleep(1800);
+        // 에이전트가 계속을 제시
+        const lastAgentId = AGENTS[AGENT_PAIRS_P1[Math.min(pairRound, AGENT_PAIRS_P1.length - 1)][0]] ? Object.keys(AGENTS)[0] as AgentId : "producer";
+        addMsg(lastAgentId, round, "더 논의할 게 있을 것 같은데, 계속할까요?", false);
+        transcript.push(`[${AGENTS[lastAgentId].label}]: 더 논의할 게 있을 것 같은데, 계속할까요?`);
+        round++;
+
+        // UI: 사용자가 "계속"을 선택할 때까지 대기
+        await new Promise<void>((resolve) => {
+          const checkInterval = setInterval(() => {
+            const nextMsg = pendingUserMsgRef.current;
+            if (nextMsg && (nextMsg.includes("계속") || nextMsg.includes("좋아") || nextMsg.includes("맞아"))) {
+              clearInterval(checkInterval);
+              pendingUserMsgRef.current = null;
+              addMsg("user", round, nextMsg, false);
+              transcript.push(`[사용자]: ${nextMsg}`);
+              round++;
+              resolve();
+            }
+          }, 100);
+
+          // 10초 후 자동으로 진행 (사용자 입력 없으면)
+          setTimeout(() => {
+            clearInterval(checkInterval);
+            addMsg("user", round, "계속해줘", false);
+            transcript.push(`[사용자]: 계속해줘`);
+            round++;
+            resolve();
+          }, 10000);
+        });
+
+        // 다음 사이클 준비
+        roundsInCycle = 0;
+        pairRound = 0;
+        shouldContinue = true;
+        setDebatePhase("running");
       }
     }
 
