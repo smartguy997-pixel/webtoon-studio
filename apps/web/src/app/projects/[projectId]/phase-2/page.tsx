@@ -66,32 +66,65 @@ function parseBlock<T>(text: string, tag: string): T | null {
   try { return JSON.parse(m[1]) as T; } catch { return null; }
 }
 
-// ─── Prompt builders (새 구조: 단계마다 완전히 독립된 API 호출) ────────────────
+// ─── Prompt builders (단계별 독립 API 호출 + 이전 결과 컨텍스트) ──────────────
 
-// LLM은 현재 단계 주제만 알고 있음 — 다른 단계 존재 자체를 모름
+const STAGE_PROMPTS: Record<StageId, string> = {
+  1: "시대·배경, 세계 규칙 3가지, 분위기, 특수 설정을 구체적으로 합의하세요. 이 세계가 어떻게 돌아가는지 핵심 규칙을 명확히 정하세요.",
+  2: "로그라인(한 줄 요약), 전제, 핵심 갈등, 해결 방향을 합의하세요. 세계관을 바탕으로 어떤 이야기가 펼쳐지는지 큰 그림을 잡으세요.",
+  3: "주요 등장인물의 이름·역할·성격·동기·외형·말투를 합의하세요. 확정된 세계관과 시놉시스에 어울리는 인물을 만드세요.",
+  4: "주요 장소의 이름·유형·분위기·서사적 의미를 합의하세요. 이야기에서 중요한 사건이 일어나는 공간을 구체화하세요.",
+  5: "복선 장치·회수 장면·암시·의도적 훼이크를 합의하세요. 독자가 나중에 '아!'하고 깨달을 수 있는 장치를 설계하세요.",
+};
+
+// 이전 단계 결과를 구조화된 컨텍스트로 변환
+function buildContext(stageId: StageId, prevResults: StageResult[]): string {
+  const relevant = prevResults.filter(r => r.stageId < stageId);
+  if (!relevant.length) return "";
+
+  return relevant.map(r => {
+    const stageName = STAGES.find(s => s.id === r.stageId)?.name ?? "";
+    // data를 사람이 읽기 쉬운 형태로 변환
+    const detail = Object.entries(r.data)
+      .map(([k, v]) => {
+        if (Array.isArray(v)) {
+          // 배열이면 각 항목을 줄로 나열
+          const items = (v as unknown[]).map(item =>
+            typeof item === "object" && item !== null
+              ? Object.entries(item as Record<string, unknown>).map(([ik, iv]) => `${ik}: ${String(iv)}`).join(", ")
+              : String(item)
+          ).join("\n    · ");
+          return `  ${k}:\n    · ${items}`;
+        }
+        return `  ${k}: ${String(v)}`;
+      })
+      .join("\n");
+    return `[${stageName} — 확정됨]\n${detail}`;
+  }).join("\n\n");
+}
+
 function buildDebatePrompt(stageId: StageId, genre: string, prevResults: StageResult[]): string {
-  const stage = STAGES.find(s => s.id === stageId)!;
-
-  // 이전 확정 결과는 "배경 정보"로만 주입 (다시 토론 대상 아님)
-  const confirmed = prevResults
-    .map(r => `${STAGES.find(s => s.id === r.stageId)?.name}: ${r.summary}`)
-    .join("\n");
+  const context = buildContext(stageId, prevResults);
 
   return `당신은 웹툰 제작팀의 일원으로 기획 회의에 참여하고 있습니다.
-
-지금 회의 주제: ${stage.topic}
 장르: ${genre}
-${confirmed ? `\n[참고 — 이미 확정된 내용, 이 주제는 다시 논의하지 않음]\n${confirmed}\n` : ""}
-위 주제에 대해 자유롭게 의견을 나누세요.
+${context ? `\n[확정된 내용]\n${context}\n` : ""}
+[지금 할 일]
+${STAGE_PROMPTS[stageId]}
+
+[절대 금지]
+- 다음 단계로 자동 진행 금지
+- 현재 주제 외 다른 단계 언급 금지
+- 총괄프로듀서도 다음 단계 제안 금지
+- "다음 단계", "다음으로 넘어가", "단계 완료" 등의 표현 금지
 
 [참여자]
 - [세계관설계자]: 설정과 규칙 중심
 - [캐릭터디자이너]: 외형과 감정 중심
 - [시나리오작가]: 서사 연결 관점
 - [연출작가]: 시각적 구현 관점
-- [총괄프로듀서]: 종합·중재. 의견이 충분히 모이면 "지금까지 잘 정리된 것 같습니다."라고만 말한다.
-- [편집자]: 침묵 유지. 토론이 반복되면 앞 대화를 인용해 정리를 유도한다.
-- [사용자] 발언이 있으면 반드시 직접 반응한다.
+- [총괄프로듀서]: 종합·중재만. 현재 주제 내에서만 발언.
+- [편집자]: 침묵 유지. 토론이 반복되면 앞 대화를 인용해 정리 유도.
+- [사용자] 발언이 있으면 반드시 직접 반응.
 
 [출력 형식]
 [이름]: 대사
