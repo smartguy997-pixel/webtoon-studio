@@ -257,6 +257,36 @@ ${p1Context ? `\n[Phase 1 분석 결과 — 우리 작품의 방향]\n${p1Contex
 - "다음 단계", "단계 완료" 같은 말 하지 마.`;
 }
 
+// 백엔드 API URL
+const API_BASE = "http://localhost:4000";
+
+// 스타일 토론 에이전트 프롬프트
+function buildStyleAgentPrompt(
+  genre: string,
+  agentId: AgentId,
+  worldSummary: string,
+  synopsisSummary: string,
+): string {
+  const agentLabel = AGENTS[agentId].label;
+  const roleDesc = AGENT_ROLE_DESC[agentId] ?? "";
+  return `너는 웹툰 기획 팀의 ${agentLabel}야.
+성격: ${roleDesc}
+장르: ${genre}
+
+[우리 팀이 함께 만든 작품 — 이미 알고 있는 내용]
+세계관: ${worldSummary.slice(0, 600)}
+시놉시스: ${synopsisSummary.slice(0, 400)}
+
+지금 주제: 이 작품에 맞는 시각적 스타일 정의
+목표: 선화 스타일, 색채 팔레트, 분위기/톤을 구체적으로 합의
+
+[대화 방식]
+- 앞 사람 말 받아서 자연스럽게 이어가.
+- 딱 1~2문장.
+- 구체적인 작품명·스타일 이름을 들어서 얘기해. (예: "귀멸의 칼날 색채에 헌터X헌터 선화 조합")
+- 대사만. 이름 접두어 없음. 마크다운 금지. JSON 금지.`;
+}
+
 function buildExtractionPrompt(stageId: StageId, genre: string, debateText: string): string {
   const stage = STAGES.find(s => s.id === stageId)!;
   return `다음 토론에서 "${stage.name}" 관련 합의된 내용을 JSON으로 정리하세요.
@@ -611,6 +641,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
   const [viewingStageIdx, setViewingStageIdx] = useState<number | null>(null); // 열람 중인 이전 단계
 
+  // ── 스타일 정의 State (Stage 2 완료 후 삽입) ──
+  type StylePhase = "idle" | "debating" | "reviewing" | "generating" | "confirmed";
+  const [stylePhase, setStylePhase] = useState<StylePhase>("idle");
+  const [conceptStyle, setConceptStyle] = useState(""); // 확정된 스타일 프롬프트
+  const [styleTestImages, setStyleTestImages] = useState<string[]>([]); // 테스트 이미지 URL들
+  const [styleGenLoading, setStyleGenLoading] = useState(false);
+  const [styleGenError, setStyleGenError] = useState<string | null>(null);
+  const [styleInput, setStyleInput] = useState(""); // 사용자가 편집하는 스타일 텍스트
+
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
@@ -621,6 +660,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const msgsRef = useRef<Msg[]>([]); // msgs의 최신값 추적용
   const resumeDataRef = useRef<{ transcript: string[]; msgs: Msg[] } | null>(null);
   const p1DataRef = useRef<P1Data | null>(null); // Phase 1 분석 결과 인계용
+  const styleRunningRef = useRef(false);
+  const styleConvRef = useRef<string[]>([]);
+  const pendingStyleMsgRef = useRef<string | null>(null);
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -636,6 +678,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           weaknesses:          p1.data.weaknesses,
         };
       }
+
+      // 확정된 스타일 복원
+      const savedStyle = localStorage.getItem(`wts_style_${projectId}`);
+      if (savedStyle) { setConceptStyle(savedStyle); setStyleInput(savedStyle); setStylePhase("confirmed"); }
 
       const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
       if (savedData) {
@@ -958,6 +1004,165 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }, [genre, addMsg, updateMsg, projectId]);
 
+  // ── Style Definition: 스타일 토론 (Stage 2 완료 후) ──
+  const runStyleDebate = useCallback(async () => {
+    if (styleRunningRef.current) return;
+    styleRunningRef.current = true;
+    abortRef.current = false;
+    setMsgs([]);
+    styleConvRef.current = [];
+
+    const worldRes  = stageResultsRef.current.find((r: StageResult) => r.stageId === 1);
+    const synRes    = stageResultsRef.current.find((r: StageResult) => r.stageId === 2);
+    const worldSum  = worldRes?.summary  ?? "";
+    const synSum    = synRes?.summary    ?? "";
+
+    let agentIdx = 0;
+    let lastSpeaker: AgentId | null = null;
+    const transcript: string[] = [];
+    const STYLE_AGENTS: AgentId[] = ["script", "worldbuilder", "character", "scenario", "editor"];
+
+    const runOne = async (agentId: AgentId, prompt: string) => {
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIdx));
+      if (!key) return;
+      const msgId = addMsg(agentId, "", true);
+      let text = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey: key,
+          systemPrompt: buildStyleAgentPrompt(genre, agentId, worldSum, synSum),
+          messages: [{ role: "user", content: prompt }],
+          maxTokens: 180,
+          tools: [],
+        })) {
+          if (abortRef.current) break;
+          text += chunk;
+        }
+      } catch {
+        setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId));
+        return;
+      }
+      const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+      if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); return; }
+      for (let i = 2; i < clean.length; i += 2) {
+        if (abortRef.current) break;
+        updateMsg(msgId, clean.slice(0, i), true);
+        await sleep(120);
+      }
+      updateMsg(msgId, clean, false);
+      transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
+      styleConvRef.current = transcript;
+      agentIdx++;
+      lastSpeaker = agentId;
+    };
+
+    try {
+      for (let turn = 0; turn < 8; turn++) {
+        if (abortRef.current) break;
+        if (turn > 0) {
+          const wait = 6000 + Math.random() * 3000;
+          const start = Date.now();
+          while (Date.now() - start < wait) {
+            if (abortRef.current || pendingStyleMsgRef.current) break;
+            await sleep(150);
+          }
+        }
+        const pending = pendingStyleMsgRef.current;
+        if (pending) {
+          pendingStyleMsgRef.current = null;
+          addMsg("user", pending, false);
+          transcript.push(`[사용자]: ${pending}`);
+          styleConvRef.current = transcript;
+        }
+        if (abortRef.current) break;
+
+        const hist = transcript.length > 0
+          ? `[지금까지 논의]\n${transcript.slice(-4).join("\n")}\n\n`
+          : "";
+        const avail = STYLE_AGENTS.filter(a => a !== lastSpeaker);
+        const next  = avail[Math.floor(Math.random() * avail.length)] ?? STYLE_AGENTS[0];
+
+        if (turn === 0) {
+          await runOne("script", "세계관과 시놉시스를 보고 어떤 시각적 스타일이 어울릴지 첫 제안을 해줘. 구체적인 작품 레퍼런스로.");
+        } else {
+          await runOne(next, `${hist}앞 얘기 받아서 스타일에 대한 네 생각 한마디.`);
+        }
+      }
+      // 마무리: 프로듀서가 합의 요약
+      await runOne("producer", `${transcript.slice(-4).join("\n")}\n\n지금까지 나온 스타일 방향을 자연스럽게 한 문장으로 정리해줘.`);
+    } catch { /* ignore */ }
+
+    // 스타일 키워드 자동 추출 (Claude)
+    const apiKey = getAnthropicKey();
+    if (apiKey && transcript.length > 0) {
+      try {
+        let extracted = "";
+        for await (const chunk of streamClaude({
+          apiKey,
+          systemPrompt: "이미지 생성 프롬프트 전문가.",
+          messages: [{
+            role: "user",
+            content:
+              `다음 스타일 토론 내용을 영문 이미지 생성 스타일 키워드로 40~70단어 이내로 정리하세요.\n` +
+              `예시: "Korean webtoon line art, dark fantasy, detailed ink lines, muted earth tones with glowing blue accents, dramatic shadows, cinematic widescreen"\n` +
+              `[토론]\n${transcript.join("\n")}\n\n영문 키워드만 출력. 설명 없이.`,
+          }],
+          maxTokens: 150,
+          tools: [],
+        })) { extracted += chunk; }
+        const trimmed = extracted.trim();
+        if (trimmed) { setStyleInput(trimmed); setConceptStyle(trimmed); }
+      } catch { /* ignore */ }
+    }
+
+    styleRunningRef.current = false;
+    setStylePhase("reviewing");
+  }, [genre, addMsg, updateMsg]);
+
+  // ── Style: 테스트 이미지 생성 ──
+  const generateStyleTestImage = useCallback(async () => {
+    setStyleGenLoading(true);
+    setStyleGenError(null);
+    setStylePhase("generating");
+    try {
+      const description = `${genre} 장르 웹툰 스타일 테스트 씬 — 세계관과 분위기를 보여주는 대표 컷`;
+      const res = await fetch(`${API_BASE}/api/assets/${projectId}/generate-concept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          style: styleInput || conceptStyle,
+          type: "style_test",
+          anthropicApiKey: getAnthropicKey(),
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json() as { error?: string };
+        throw new Error(errData.error ?? `서버 오류 ${res.status}`);
+      }
+      const { imageUrl } = await res.json() as { imageUrl: string };
+      setStyleTestImages((prev: string[]) => [...prev, imageUrl]);
+    } catch (err) {
+      setStyleGenError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStyleGenLoading(false);
+      setStylePhase("reviewing");
+    }
+  }, [projectId, styleInput, conceptStyle, genre]);
+
+  // ── Style: 확정 & Stage 3 진행 ──
+  const confirmStyle = useCallback(() => {
+    const style = styleInput.trim() || conceptStyle;
+    setConceptStyle(style);
+    localStorage.setItem(`wts_style_${projectId}`, style);
+    setStylePhase("confirmed");
+    setMsgs([]);
+    convRef.current = [];
+    setCurrentStageIdx(2);
+    setDebatePhase("idle");
+    void runDebate(2);
+  }, [styleInput, conceptStyle, projectId, runDebate]);
+
   // ── Confirm current stage: stop debate → extract JSON → save ──
   const handleConfirm = useCallback(async (stageIdx: number) => {
     abortRef.current = true;
@@ -1005,6 +1210,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Move to next stage (only via button) ──
   const handleNextStage = useCallback((stageIdx: number) => {
+    // Stage 2(index=1) 완료 후 → 스타일 정의 단계 삽입
+    if (stageIdx === 1 && stylePhase === "idle") {
+      setMsgs([]);
+      convRef.current = [];
+      setStylePhase("debating");
+      void runStyleDebate();
+      return;
+    }
     const nextIdx = stageIdx + 1;
     setMsgs([]);
     convRef.current = [];
@@ -1014,7 +1227,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     } else {
       void runDebate(nextIdx);
     }
-  }, [runDebate]);
+  }, [runDebate, runStyleDebate, stylePhase]);
 
   const handleRestartNew = useCallback(() => {
     abortRef.current = true;
@@ -1070,7 +1283,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           <div className={s.stepBar} style={{ padding:"0", background:"transparent", border:"none", flex:1 }}>
             {STAGES.map((st, idx) => {
               const isDone = stageResults.some((r: StageResult) => r.stageId === st.id);
-              const isActive = idx === currentStageIdx && debatePhase !== "done";
+              const isActive = idx === currentStageIdx && debatePhase !== "done" && stylePhase === "idle";
               return (
                 <div key={st.id} className={`${s.stepItem} ${isDone ? s.stepDone : ""} ${isActive ? s.stepActive : ""}`}>
                   <div className={s.stepDot} style={isDone || isActive ? { background:st.color } : {}} />
@@ -1078,6 +1291,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 </div>
               );
             })}
+            {/* 스타일 정의 단계 표시기 */}
+            {stylePhase !== "idle" && (
+              <div className={s.stepItem} style={{ opacity: stylePhase === "confirmed" ? 0.5 : 1 }}>
+                <div className={s.stepDot} style={{ background: stylePhase === "confirmed" ? "#34d399" : "#f59e0b", boxShadow: stylePhase !== "confirmed" ? "0 0 6px #f59e0b" : "none" }} />
+                <span className={s.stepLabel} style={{ color: stylePhase === "confirmed" ? "#34d399" : "#f59e0b" }}>
+                  {stylePhase === "confirmed" ? "✓ 스타일" : "🎨 스타일 정의"}
+                </span>
+              </div>
+            )}
           </div>
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
@@ -1121,6 +1343,82 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         </div>
 
         <div className={s.chatBottom}>
+
+          {/* ── 스타일 정의 단계 UI (stylePhase가 활성이면 일반 바텀바 대체) ── */}
+          {stylePhase === "debating" && (
+            <>
+              <div style={{ padding:"6px 16px 0" }}>
+                <button
+                  onClick={() => { abortRef.current = true; styleRunningRef.current = false; setStylePhase("reviewing"); }}
+                  style={{ width:"100%", background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:8, color:"#f59e0b", fontSize:13, fontWeight:700, padding:"9px 0", cursor:"pointer" }}>
+                  ✓ 토론 마무리 & 스타일 정리로 이동
+                </button>
+              </div>
+              <div className={s.inputRow}>
+                <textarea
+                  className={s.chatInput} rows={1}
+                  placeholder="스타일에 대한 의견 입력 (Enter 전송)"
+                  value={chatInput}
+                  onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
+                  onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (chatInput.trim()) { pendingStyleMsgRef.current = chatInput.trim(); setChatInput(""); }
+                    }
+                  }}
+                />
+                <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => { if (chatInput.trim()) { pendingStyleMsgRef.current = chatInput.trim(); setChatInput(""); } }}>전송</button>
+              </div>
+            </>
+          )}
+
+          {(stylePhase === "reviewing" || stylePhase === "generating") && (
+            <div>
+              {/* 생성된 테스트 이미지들 */}
+              {styleTestImages.length > 0 && (
+                <div style={{ padding:"10px 16px 0", overflowX:"auto" }}>
+                  <div style={{ display:"flex", gap:8 }}>
+                    {styleTestImages.map((url: string, i: number) => (
+                      <img key={i} src={url} alt={`스타일 테스트 ${i+1}`}
+                        style={{ height:180, borderRadius:8, objectFit:"cover", border:"1px solid #2a2a3d", flexShrink:0 }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {styleGenError && (
+                <div style={{ padding:"6px 16px", fontSize:12, color:"#f87171" }}>⚠ {styleGenError}</div>
+              )}
+              {/* 스타일 텍스트 편집 영역 */}
+              <div style={{ padding:"8px 16px 0" }}>
+                <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:4, letterSpacing:"0.05em" }}>스타일 프롬프트 — 직접 편집 가능</div>
+                <textarea
+                  value={styleInput}
+                  onChange={(e: { target: HTMLTextAreaElement }) => setStyleInput(e.target.value)}
+                  placeholder="스타일 키워드 (영문). 예: Korean webtoon, dark fantasy, detailed ink lines, muted earth tones..."
+                  rows={2}
+                  style={{ width:"100%", background:"#12121c", border:"1px solid #2a2a3d", borderRadius:6, color:"#eeeef5", fontSize:12, padding:"8px 10px", resize:"none", boxSizing:"border-box", fontFamily:"inherit" }}
+                />
+              </div>
+              <div style={{ padding:"6px 16px 10px", display:"flex", gap:8 }}>
+                <button
+                  onClick={() => void generateStyleTestImage()}
+                  disabled={styleGenLoading || stylePhase === "generating"}
+                  style={{ flex:1, background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:8, color:"#f59e0b", fontSize:13, fontWeight:700, padding:"9px 0", cursor:"pointer", opacity: styleGenLoading ? 0.5 : 1 }}>
+                  {stylePhase === "generating" ? "🎨 생성 중..." : "🎨 테스트 이미지 생성"}
+                </button>
+                <button
+                  onClick={confirmStyle}
+                  disabled={stylePhase === "generating"}
+                  style={{ flex:1, background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)", borderRadius:8, color:"#34d399", fontSize:13, fontWeight:700, padding:"9px 0", cursor:"pointer" }}>
+                  ✓ 이 스타일로 확정 →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 스타일 단계 활성 중엔 아래 일반 바텀바 숨김 */}
+          {stylePhase !== "idle" && stylePhase !== "confirmed" ? null : (<>
+
           {/* Paused: 이전 토론 이어하기 */}
           {debatePhase === "paused" && (
             <div className={s.gatingRow}>
@@ -1206,6 +1504,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => { if (chatInput.trim()) { pendingUserMsgRef.current = chatInput.trim(); setChatInput(""); } }}>전송</button>
             </div>
           )}
+          </>)}
         </div>
       </div>
     </div>
