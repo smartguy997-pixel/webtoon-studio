@@ -138,52 +138,73 @@ const STAGE_PROMPTS: Record<StageId, string> = {
   5: "복선과 암시 — 복선 장치·회수 장면·훼이크",
 };
 
-// 단계별 구조화 데이터 → 사람이 읽을 수 있는 요약 문자열
+// 단계별 구조화 데이터 → 에이전트용 풍부한 다줄 요약 (모든 필드 포함)
 function formatStageSummary(stageId: StageId, data: Record<string, unknown>): string {
-  if (data.raw_summary) return String(data.raw_summary).slice(0, 300);
+  if (data.raw_summary) return String(data.raw_summary).slice(0, 800);
+  const line = (...parts: (string | false | null | undefined)[]) =>
+    parts.filter(Boolean).join(" ");
   try {
     switch (stageId) {
       case 1: {
         const rules = Array.isArray(data.world_rules)
-          ? (data.world_rules as string[]).join(", ")
-          : String(data.world_rules || "");
+          ? (data.world_rules as string[]).map((r, i) => `  ${i + 1}. ${r}`).join("\n")
+          : data.world_rules ? `  ${String(data.world_rules)}` : "";
         return [
           data.era            && `시대/배경: ${data.era}`,
           data.atmosphere     && `분위기: ${data.atmosphere}`,
-          rules               && `세계 규칙: ${rules}`,
+          rules               && `세계 규칙:\n${rules}`,
           data.special_elements && `특수 설정: ${data.special_elements}`,
-        ].filter(Boolean).join(" · ");
+        ].filter(Boolean).join("\n");
       }
       case 2:
         return [
-          data.logline,
-          data.conflict        && `갈등: ${data.conflict}`,
+          data.logline         && `로그라인: ${data.logline}`,
+          data.premise         && `전제: ${data.premise}`,
+          data.conflict        && `핵심 갈등: ${data.conflict}`,
           data.resolution_hint && `해결 방향: ${data.resolution_hint}`,
-        ].filter(Boolean).join(" · ");
+        ].filter(Boolean).join("\n");
       case 3:
         if (Array.isArray(data.characters)) {
-          return (data.characters as Record<string, string>[])
-            .map(c => `${c.name}(${c.role}): 성격 ${c.personality}, 동기 ${c.motivation}`)
-            .join(" · ");
+          return (data.characters as Record<string, string>[]).map(c =>
+            [
+              `▸ ${c.name} (${c.role})`,
+              c.personality && `  성격: ${c.personality}`,
+              c.motivation  && `  동기: ${c.motivation}`,
+              c.appearance  && `  외형: ${c.appearance}`,
+              c.speech      && `  말투: ${c.speech}`,
+            ].filter(Boolean).join("\n")
+          ).join("\n");
         }
         break;
       case 4:
         if (Array.isArray(data.locations)) {
-          return (data.locations as Record<string, string>[])
-            .map(l => `${l.name}: ${l.atmosphere} — ${l.significance}`)
-            .join(" · ");
+          return (data.locations as Record<string, string>[]).map(l =>
+            [
+              `▸ ${l.name}${l.type ? ` (${l.type})` : ""}`,
+              l.atmosphere  && `  분위기: ${l.atmosphere}`,
+              l.significance && `  서사적 의미: ${l.significance}`,
+            ].filter(Boolean).join("\n")
+          ).join("\n");
         }
         break;
-      case 5:
-        if (Array.isArray(data.foreshadowing)) {
-          return (data.foreshadowing as Record<string, string>[])
-            .slice(0, 3).map(f => `${f.setup}→${f.payoff}`).join(", ");
-        }
-        break;
+      case 5: {
+        const fw = Array.isArray(data.foreshadowing)
+          ? (data.foreshadowing as Record<string, string>[])
+              .map((f, i) => line(`  ${i + 1}.`, f.setup && `설정: ${f.setup}`, f.payoff && `→ 회수: ${f.payoff}`))
+              .join("\n")
+          : "";
+        const hints = Array.isArray(data.hints)
+          ? `암시: ${(data.hints as string[]).join(", ")}`
+          : "";
+        const rh = Array.isArray(data.red_herrings)
+          ? `훼이크: ${(data.red_herrings as string[]).join(", ")}`
+          : "";
+        return [fw && `복선:\n${fw}`, hints, rh].filter(Boolean).join("\n");
+      }
     }
   } catch { /* ignore */ }
-  return Object.entries(data).slice(0, 4)
-    .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`).join(" · ");
+  return Object.entries(data).slice(0, 8)
+    .map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`).join("\n");
 }
 
 // 이전 단계 결과를 에이전트가 읽기 쉬운 컨텍스트로 변환 (summary 필드 사용)
@@ -330,7 +351,7 @@ async function extractStageData(
     })) summaryText += chunk;
   } catch { summaryText = "(요약 실패 — 토론 내용을 직접 확인해주세요)"; }
 
-  return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 300) };
+  return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 800) };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -344,6 +365,7 @@ function StreamCursor() {
 }
 
 function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: StageId; result: StageResult; onViewDebate?: () => void; isViewingDebate?: boolean }) {
+  const [showContext, setShowContext] = useState(false);
   const stage = STAGES.find(s => s.id === result.stageId)!;
   const { data } = result;
   const c = stage.color;
@@ -356,20 +378,28 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
 
   return (
     <div style={{ background:`${c}08`, border:`1px solid ${c}30`, borderRadius:10, padding:"14px 16px", marginBottom:6 }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
         <div style={{ fontSize:10, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.7px" }}>✓ {stage.name} 완료</div>
-        {onViewDebate && (
+        <div style={{ display:"flex", gap:6 }}>
           <button
-            onClick={onViewDebate}
-            style={{ fontSize:11, fontWeight:700, color: isViewingDebate ? c : "#4a4a6a", background: isViewingDebate ? `${c}18` : "transparent", border:`1px solid ${isViewingDebate ? c : "#2a2a3d"}`, borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
-            {isViewingDebate ? "▲ 닫기" : "💬 토론 보기"}
+            onClick={() => setShowContext((v: boolean) => !v)}
+            style={{ fontSize:11, fontWeight:700, color: showContext ? c : "#4a4a6a", background: showContext ? `${c}18` : "transparent", border:`1px solid ${showContext ? c : "#2a2a3d"}`, borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
+            {showContext ? "▲" : "📋"} 전달 내용
           </button>
-        )}
+          {onViewDebate && (
+            <button
+              onClick={onViewDebate}
+              style={{ fontSize:11, fontWeight:700, color: isViewingDebate ? c : "#4a4a6a", background: isViewingDebate ? `${c}18` : "transparent", border:`1px solid ${isViewingDebate ? c : "#2a2a3d"}`, borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
+              {isViewingDebate ? "▲ 닫기" : "💬 토론"}
+            </button>
+          )}
+        </div>
       </div>
-      {/* 요약 한 줄 — 다음 단계 에이전트에게 전달되는 내용과 동일 */}
-      {result.summary && !data.raw_summary && (
-        <div style={{ fontSize:12, color:`${c}cc`, lineHeight:1.7, marginBottom:10, padding:"6px 10px", background:`${c}0a`, borderRadius:6, borderLeft:`2px solid ${c}50` }}>
-          {result.summary}
+      {/* 다음 단계 에이전트에게 전달되는 내용 */}
+      {showContext && result.summary && (
+        <div style={{ marginBottom:12, padding:"10px 12px", background:"#0d0d1a", border:`1px solid ${c}30`, borderRadius:8 }}>
+          <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, letterSpacing:"0.05em" }}>📋 다음 단계 에이전트 전달 내용</div>
+          <pre style={{ fontSize:12, color:`${c}dd`, lineHeight:1.75, whiteSpace:"pre-wrap" as const, margin:0, fontFamily:"inherit" }}>{result.summary}</pre>
         </div>
       )}
       {result.stageId === 1 && <>{row("시대/배경", data.era)}{row("분위기", data.atmosphere)}{row("세계 규칙", data.world_rules)}{row("특수 설정", data.special_elements)}</>}
