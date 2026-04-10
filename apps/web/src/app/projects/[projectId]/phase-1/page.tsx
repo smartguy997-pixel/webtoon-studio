@@ -1364,7 +1364,13 @@ export default function Phase1Page() {
     setTurnCount(round);
     let lastSpeaker: AgentId | null = null;
     let lastUserMsg = "";   // 가장 최근 사용자 발언
-    let userTurnCount = 0;  // > 0 이면 "사용자 응답 모드" — 에이전트가 사용자에게만 집중
+    let userTurnCount = 0;  // > 0 이면 "사용자 응답 모드"
+    let wrapUpProposed = false;     // 프로듀서가 마무리 제안 중
+    let wrapUpProposedAt = 0;       // 제안 시각 (ms)
+    const WRAP_UP_AFTER = 20;       // 에이전트 발언 N회 후 마무리 제안
+    const WRAP_UP_AUTO_MS = 30_000; // 30초 무응답 → 자동 종료
+    // 사용자 동의 패턴 (마무리 제안에 yes 한 것으로 간주)
+    const AGREE_RE = /^(그래|응|ㅇㅇ|좋아|해줘|시작|정리|맞아|그렇게|ㄱ|ok|오케|ㅇㅋ)/i;
 
     // ── 에이전트 한 번 발언 헬퍼 ──
     // 1) 스트리밍은 백그라운드에서 조용히 받고 (ThinkingDots 표시)
@@ -1446,6 +1452,14 @@ export default function Phase1Page() {
     // ── 메인 대화 루프 ──
     debateLoop: while (true) {
 
+      // 0) 마무리 제안 후 30초 무응답 → 프로듀서가 자동으로 정리
+      if (wrapUpProposed && !pendingUserMsgRef.current && Date.now() - wrapUpProposedAt > WRAP_UP_AUTO_MS) {
+        addMsg("producer", round, "그럼 제가 정리할게요.", false);
+        transcript.push(`[총괄프로듀서]: 그럼 제가 정리할게요.`);
+        await sleep(1500);
+        break debateLoop;
+      }
+
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
         const minWait = 9000 + Math.random() * 6000; // 9~15s
@@ -1476,6 +1490,11 @@ export default function Phase1Page() {
         userTurnCount = 4; // 4턴 동안 사용자 의견을 context에 유지
         refreshSummary();  // 즉시 요약 갱신 — 사용자 발언 바로 반영
         turnsSinceLastSummary = 0;
+        // 마무리 제안 중이면: 동의 → 종료, 그 외 → 계속 대화
+        if (wrapUpProposed) {
+          if (AGREE_RE.test(pendingMsg.trim())) break debateLoop;
+          wrapUpProposed = false; // 사용자가 더 할 말 있음 → 계속
+        }
         matchedCommand = matchCommand(pendingMsg);
         if (matchedCommand?.handler === "end") break debateLoop;
       }
@@ -1515,7 +1534,23 @@ export default function Phase1Page() {
         continue;
       }
 
-      // 4) 다음 발언자: 직전 발언 맥락 기반으로 선택
+      // 4) 마무리 제안 시점 확인 (20턴 or 대화 수렴 감지)
+      const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]") && l.trim()).length;
+      // 옵션3: 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
+      const recentLines = transcript.slice(-4).join(" ");
+      const converging = agentTurnsSoFar >= 15 &&
+        (recentLines.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
+
+      if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
+        wrapUpProposed = true;
+        wrapUpProposedAt = Date.now();
+        const wrapPrompt = `${historyText}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
+        await runSingleAgent("producer", wrapPrompt, 80);
+        lastSpeaker = "producer";
+        continue; // 이번 턴은 프로듀서 제안으로 끝
+      }
+
+      // 5) 다음 발언자: 직전 발언 맥락 기반으로 선택
       const nextAgent = pickNextSpeaker(lastLine, lastSpeaker);
 
       // 5) 프롬프트 구성
