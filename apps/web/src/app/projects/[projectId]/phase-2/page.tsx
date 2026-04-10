@@ -27,27 +27,29 @@ function getApiKeyIndexForAgent(agentIdx: number): number {
 
 const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
   worldbuilder:
-    "세계관 설계 전문가. 설정 구멍 찾는 걸 좋아해. " +
-    "대화 듣다가 '잠깐, 이 설정 논리적으로 안 맞는데' 하고 끼어들어. " +
-    "문제만 짚지 말고 어떻게 보완하면 좋을지도 같이 얘기해줘.",
+    "세계관 설계 전문가. 이 세계가 실제로 존재하는 것처럼 만들어야 해. " +
+    "설정 구멍 찾고, 논리적으로 맞지 않으면 바로 짚어. " +
+    "시각적으로 어떻게 보여야 하는지도 구체적으로 얘기해줘. " +
+    "빌딩, 거리, 복장, 기술 수준까지 세세하게.",
   character:
-    "캐릭터랑 감정선 파는 사람. 독자가 캐릭터한테 왜 빠지는지 알아. " +
-    "앞 얘기 들으면서 '그 캐릭터 구조 이렇게 바꾸면 더 살겠다' 하고 자연스럽게 제안해. " +
-    "감정적으로 공감 가는 얘기 위주로.",
+    "캐릭터 디자이너. 인물의 외형·복장·표정·몸짓까지 이미지로 그려질 수 있게 설계해. " +
+    "얼굴 생김새, 키와 체형, 헤어, 패션까지 구체적으로 얘기해. " +
+    "내면의 상처와 성격이 외모와 말투에 어떻게 드러나는지 연결해줘.",
   scenario:
-    "서사 구조랑 훅 전문가. 독자를 어디서 잡고 어떻게 끌고 가는지 봐. " +
-    "앞 대화 받아서 '그 방식 이렇게 쓰면 돼' 식으로 구체적으로 연결해줘.",
+    "서사 구조 전문가. 이야기가 100화 동안 독자를 어떻게 끌고 가는지 설계해. " +
+    "복선이 어디서 심겨서 어디서 회수되는지, 감정 곡선이 어떻게 흐르는지 구체적으로.",
   script:
-    "비주얼·연출 전문가. 그림체랑 연출 방향 잡아주는 역할이야. " +
-    "앞 얘기 듣다가 비주얼로 연결되는 포인트 생기면 자연스럽게 끼어들어.",
+    "연출·비주얼 감독. 영화나 애니메이션 감독처럼 생각해. " +
+    "이 장면을 어떤 앵글로 찍을지, 조명은 어떻게, 색감은 어떻게. " +
+    "공간 구조, 인물 배치, 카메라 무브까지 그림으로 떠올릴 수 있게 얘기해줘.",
   producer:
-    "팀 리더. 다들 얘기하는 거 들으면서 방향 잡아줘. " +
-    "의견 충돌하거나 정리 필요할 때 '좋아, 이렇게 가자' 하고 결정해줘. " +
-    "너무 자주 끼어들지 말고, 진짜 필요할 때만 한마디.",
+    "총괄 프로듀서. 지금 우리가 만드는 건 단순한 아이디어가 아니라 실제 제작물이야. " +
+    "설정이 너무 추상적이면 '그래서 구체적으로 어떻게 보여?' 하고 파고들어. " +
+    "의견 충돌하거나 정리 필요할 때만 끼어들고, 진짜 필요한 결정을 내려줘.",
   editor:
-    "베테랑 편집자. 대화 흐름 보면서 핵심 찌르는 한마디 잘 해. " +
-    "'아까 그거 결국 이 문제랑 연결되잖아' 하고 점 잇는 역할이야. " +
-    "길게 말하지 말고 짧고 날카롭게.",
+    "베테랑 편집자. 독자 입장에서 생각해. " +
+    "'이 설정 독자가 납득할 수 있어?', '이 캐릭터 독자가 왜 좋아해야 해?' 하고 날카롭게. " +
+    "짧고 핵심만. 길게 말하지 마.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -56,8 +58,8 @@ const STAGES = [
   { id: 1 as const, name: "세계관",     topic: "세계관 — 시대·배경·세계 규칙·분위기·특수 설정",  tag: "WORLD",         color: "#60a5fa", schema: '{"era":"시대/배경","atmosphere":"분위기","world_rules":["규칙1","규칙2","규칙3"],"special_elements":"특수 설정"}' },
   { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·해결 방향",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","resolution_hint":"해결 방향"}' },
   { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
-  { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·분위기·서사적 의미",         tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","atmosphere":"분위기","significance":"서사적 의미"}]}' },
-  { id: 5 as const, name: "복선·암시",  topic: "복선과 암시 — 복선 장치·회수 장면·의도적 훼이크",  tag: "FORESHADOWING", color: "#f87171", schema: '{"foreshadowing":[{"setup":"복선 설정","payoff":"회수 장면"}],"hints":["암시1","암시2"],"red_herrings":["훼이크1"]}' },
+  { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
+  { id: 5 as const, name: "복선·암시",  topic: "복선과 암시 — 설치 장면·회수 장면·시각적 모티프·상징 오브젝트·훼이크·복선 타임라인",  tag: "FORESHADOWING", color: "#f87171", schema: '{"foreshadowing":[{"setup":"복선 설치 장면 (몇 화, 상황, 오브젝트/대사)","payoff":"회수 장면 (감정적 충격)","visual_marker":"시각적 표식"}],"motifs":["반복 시각 모티프"],"symbols":[{"object":"오브젝트","meaning":"상징 의미"}],"red_herrings":["훼이크와 그 효과"]}' },
 ];
 type StageId = 1 | 2 | 3 | 4 | 5;
 
@@ -131,11 +133,11 @@ function buildPhase1Context(p1: P1Data): string {
 // ─── Prompt builders (단계별 독립 API 호출 + 이전 결과 컨텍스트) ──────────────
 
 const STAGE_PROMPTS: Record<StageId, string> = {
-  1: "세계관 — 이 세계의 시대·배경·핵심 규칙·분위기·특수 설정",
-  2: "시놉시스 — 로그라인·전제·핵심 갈등·해결 방향",
-  3: "등장인물 — 이름·역할·성격·동기·외형·말투",
-  4: "주요 장소 — 이름·유형·분위기·서사적 의미",
-  5: "복선과 암시 — 복선 장치·회수 장면·훼이크",
+  1: "세계관 — 이 세계의 시대·배경·핵심 규칙·분위기·특수 설정. 독자가 이 세계에 발을 들여놓는 순간 느끼는 감각까지 구체적으로.",
+  2: "시놉시스 — 로그라인·전제·핵심 갈등·3막 구조·해결 방향. 나중에 100화 로드맵을 짤 수 있을 만큼 구체적으로.",
+  3: "등장인물 — 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 쓸 수 있을 만큼 시각적으로 구체적으로. 인물당 충분히 깊이 파고들어.",
+  4: "주요 장소 — 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로 묘사해. 시각적 이미지가 눈에 그려져야 해.",
+  5: "복선과 암시 — 설치 장면·회수 장면·시각적 모티프·상징 오브젝트·훼이크. 독자가 재독 시 '아 이때 이미 나왔었구나' 하는 순간을 설계해. 타임라인과 시각적 표식까지 구체적으로.",
 };
 
 // 단계별 구조화 데이터 → 에이전트용 풍부한 다줄 요약 (모든 필드 포함)
@@ -181,25 +183,35 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
           return (data.locations as Record<string, string>[]).map(l =>
             [
               `▸ ${l.name}${l.type ? ` (${l.type})` : ""}`,
-              l.atmosphere  && `  분위기: ${l.atmosphere}`,
+              l.visual       && `  시각: ${l.visual}`,
+              l.architecture && `  구조: ${l.architecture}`,
+              l.lighting     && `  조명: ${l.lighting}`,
+              l.color_palette && `  색채: ${l.color_palette}`,
+              l.atmosphere   && `  분위기: ${l.atmosphere}`,
+              l.sound        && `  소리: ${l.sound}`,
               l.significance && `  서사적 의미: ${l.significance}`,
+              l.key_scenes   && `  주요 장면: ${l.key_scenes}`,
+              l.symbolic_meaning && `  상징: ${l.symbolic_meaning}`,
             ].filter(Boolean).join("\n")
-          ).join("\n");
+          ).join("\n\n");
         }
         break;
       case 5: {
         const fw = Array.isArray(data.foreshadowing)
           ? (data.foreshadowing as Record<string, string>[])
-              .map((f, i) => line(`  ${i + 1}.`, f.setup && `설정: ${f.setup}`, f.payoff && `→ 회수: ${f.payoff}`))
+              .map((f, i) => line(`  ${i + 1}.`, f.setup && `설치: ${f.setup}`, f.payoff && `→ 회수: ${f.payoff}`, f.visual_marker && `[표식: ${f.visual_marker}]`))
               .join("\n")
           : "";
-        const hints = Array.isArray(data.hints)
-          ? `암시: ${(data.hints as string[]).join(", ")}`
+        const motifs = Array.isArray(data.motifs)
+          ? `반복 모티프: ${(data.motifs as string[]).join(", ")}`
+          : "";
+        const symbols = Array.isArray(data.symbols)
+          ? `상징 오브젝트:\n${(data.symbols as Record<string,string>[]).map(s => `  · ${s.object}: ${s.meaning}`).join("\n")}`
           : "";
         const rh = Array.isArray(data.red_herrings)
           ? `훼이크: ${(data.red_herrings as string[]).join(", ")}`
           : "";
-        return [fw && `복선:\n${fw}`, hints, rh].filter(Boolean).join("\n");
+        return [fw && `복선:\n${fw}`, motifs, symbols, rh].filter(Boolean).join("\n");
       }
     }
   } catch { /* ignore */ }
@@ -347,20 +359,63 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
 
 각 인물을 풍부하게 서술하세요.`,
 
-  4: `다음 토론에서 합의된 주요 장소를 상세히 정리해주세요.
-각 장소마다 반드시 포함할 내용:
-- 장소 이름과 유형
-- 분위기와 시각적 특징 (이미지화 가능한 수준으로)
-- 이야기에서의 서사적 의미와 역할
-- 어떤 장면/사건이 이곳에서 일어나는가
-복선/암시 설계에서 활용할 수 있도록 구체적으로 정리하세요.`,
+  4: `다음 토론에서 합의된 주요 장소를 프로덕션 디자인 바이블 수준으로 상세히 정리해주세요.
+영화·애니메이션 프로덕션 디자이너가 실제로 공간을 설계할 수 있는 수준이어야 합니다.
 
-  5: `다음 토론에서 합의된 복선과 암시 장치를 상세히 정리해주세요.
+각 장소마다 반드시 포함할 내용 (장소당 충분히 서술):
+■ 장소 기본 정보
+  - 이름, 유형 (실내/실외, 도시/자연 등)
+  - 세계관에서의 위치와 규모
+
+■ 시각적 묘사 — 눈에 그려질 수 있도록 구체적으로
+  - 건축/공간 구조: 형태, 재질, 높이, 구획
+  - 조명: 자연광/인공광, 방향, 시간대별 변화, 그림자
+  - 색채 팔레트: 지배색, 보조색, 금지색 (이 공간에 어울리지 않는 색)
+  - 주요 오브젝트와 소품: 눈에 띄는 것들
+  - 소리 풍경: 어떤 소리가 들리는가 (바람, 기계, 군중, 침묵...)
+  - 냄새: 어떤 냄새가 나는가
+
+■ 분위기와 감정적 기능
+  - 이 공간에 들어서는 순간 느끼는 감정
+  - 계절/날씨/시간에 따른 분위기 변화
+  - 캐릭터별로 이 공간이 다르게 느껴지는 방식
+
+■ 서사적 역할
+  - 이곳에서 일어나는 주요 장면/사건 (구체적으로)
+  - 이 공간이 인물에게 갖는 개인적 의미
+  - 이야기 전체에서의 상징적 기능
+
+■ 이 장소의 역사와 비밀
+  - 과거에 어떤 일이 있었는가
+  - 숨겨진 공간이나 비밀이 있는가
+
+서술형 문단과 구체적 묘사를 섞어 작성하세요.`,
+
+  5: `다음 토론에서 합의된 복선·암시 체계를 시나리오 작가가 실제로 사용할 수 있는 수준으로 상세히 정리해주세요.
+
 반드시 포함할 내용:
-- 주요 복선 장치와 회수 장면 (각각 구체적으로)
-- 독자에게 던지는 암시
-- 의도적인 훼이크(red herring)와 그 효과
-시나리오 작성 시 활용할 수 있도록 구체적으로 정리하세요.`,
+■ 핵심 복선 체계 (각 복선 상세)
+  - 설치 장면: 몇 화쯤, 어떤 상황에서, 어떤 오브젝트/대사/장면으로 심는가
+  - 회수 장면: 어떤 감정적 충격을 주는가, 독자의 반응
+  - 시각적 표식: 독자가 나중에 돌아봤을 때 알아볼 수 있는 시각적 단서
+  - 설치-회수 사이의 간격 (몇 화, 어느 시점)
+
+■ 반복 시각 모티프
+  - 작품 전체를 관통하는 반복 이미지 (색, 형태, 오브젝트)
+  - 각 모티프의 의미와 변주 방식
+
+■ 상징 오브젝트 체계
+  - 특정 오브젝트가 가진 상징적 의미
+  - 오브젝트가 등장할 때마다 달라지는 의미의 레이어
+
+■ 의도적 훼이크 (Red Herring)
+  - 독자를 잘못된 방향으로 유도하는 장치
+  - 훼이크가 드러나는 순간의 효과
+
+■ 복선 전체 타임라인
+  - 설치 → 강화 → 회수 흐름을 일목요연하게
+
+서술형으로 풍부하게 작성하세요.`,
 };
 
 // ─── 단계 결과 추출 ────────────────────────────────────────────────────────────
@@ -379,7 +434,7 @@ async function extractStageData(
   apiKey: string,
 ): Promise<{ data: Record<string, unknown>; summary: string }> {
 
-  const slicedDebate = debateText.slice(0, 4000);
+  const slicedDebate = debateText.slice(0, 8000);
 
   // ① JSON 추출 + ② 상세 내러티브 요약 — 병렬 실행
   const [jsonResult, narrativeResult] = await Promise.allSettled([
@@ -392,7 +447,7 @@ async function extractStageData(
           apiKey,
           systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
           messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate) }],
-          maxTokens: 1500,
+          maxTokens: (stage.id === 3 || stage.id === 4) ? 3000 : 1500,
         })) fullText += chunk;
       } catch { /* ignore */ }
       // 태그 파싱 → 루즈 JSON 파싱 순서로 시도
@@ -493,18 +548,21 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
         </div>
       ))}
       {result.stageId === 4 && Array.isArray(data.locations) && (data.locations as Record<string,string>[]).map((loc, i) => (
-        <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #2a2a3d" }}>
-          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>{loc.name} <span style={{ fontSize:11, color:"#7878a0" }}>({loc.type})</span></div>
-          {row("분위기", loc.atmosphere)}{row("서사적 의미", loc.significance)}
+        <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>{loc.name} <span style={{ fontSize:11, color:"#7878a0" }}>({loc.type})</span></div>
+          {row("시각", loc.visual)}{row("구조", loc.architecture)}{row("조명", loc.lighting)}{row("색채", loc.color_palette)}{row("분위기", loc.atmosphere)}{row("소리", loc.sound)}{row("서사적 의미", loc.significance)}{row("주요 장면", loc.key_scenes)}{row("상징", loc.symbolic_meaning)}
         </div>
       ))}
       {result.stageId === 5 && <>
         {Array.isArray(data.foreshadowing) && (data.foreshadowing as Record<string,string>[]).map((f, i) => (
           <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #2a2a3d" }}>
-            {row(`복선 ${i+1}`, f.setup)}{row("회수", f.payoff)}
+            {row(`복선 ${i+1} 설치`, f.setup)}{row("회수", f.payoff)}{row("시각 표식", f.visual_marker)}
           </div>
         ))}
-        {Array.isArray(data.hints) && row("암시", (data.hints as string[]).join(", "))}
+        {Array.isArray(data.motifs) && row("반복 모티프", (data.motifs as string[]).join(" · "))}
+        {Array.isArray(data.symbols) && (data.symbols as Record<string,string>[]).map((s, i) => (
+          <div key={i}>{row(`상징 오브젝트`, `${s.object} — ${s.meaning}`)}</div>
+        ))}
         {Array.isArray(data.red_herrings) && row("훼이크", (data.red_herrings as string[]).join(", "))}
       </>}
       {/* Fallback: 구조화 실패 시 단계별 상세 요약 */}
@@ -660,7 +718,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let wrapUpProposed = false;
     let wrapUpProposedAt = 0;
     let naturalExit = false;
-    const WRAP_UP_AFTER = 12;
+    // 캐릭터(3)·장소(4)는 시각적 디테일이 많아서 더 긴 토론 필요
+    const WRAP_UP_AFTER = (stage.id === 3 || stage.id === 4) ? 18 : 14;
     const WRAP_UP_AUTO_MS = 30_000;
     const AGREE_RE = /^(그래|응|ㅇㅇ|좋아|해줘|시작|정리|맞아|그렇게|ㄱ|ok|오케|ㅇㅋ|확인|다음)/i;
 
