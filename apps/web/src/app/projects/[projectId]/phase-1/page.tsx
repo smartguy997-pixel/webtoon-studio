@@ -1127,6 +1127,7 @@ export default function Phase1Page() {
   const runningRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
   const pendingUserMsgIdRef = useRef<string | null>(null);
+  const userTypingRef = useRef(false);
   const savedTranscriptRef = useRef<string[]>([]);
   const isComposingRef = useRef(false);
 
@@ -1381,13 +1382,19 @@ export default function Phase1Page() {
         if (matchedCommand?.handler === "end") break debateLoop;
       }
 
-      // 에이전트 발언 후 사용자 개입 대기 — 메시지 오면 즉시 깨어남
-      // 사용자가 방금 말했으면 1.5초, 아니면 최대 20초 (사용자가 타이핑할 충분한 시간)
+      // 에이전트 발언 후 대기:
+      // - 최소 2~4초는 무조건 기다림
+      // - 그 이후 사용자가 타이핑 중이면 계속 대기 (최대 60초)
+      // - 타이핑 없으면 다음 에이전트로 자동 진행
+      // - 메시지 전송되면 즉시 진행
       {
-        const maxWait = userJustSpoke ? 1500 : 20000;
+        const minWait = userJustSpoke ? 1500 : 2000 + Math.random() * 2000;
+        const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
           if (pendingUserMsgRef.current) break;
+          const elapsed = Date.now() - start;
+          if (elapsed >= minWait && !userTypingRef.current) break;
           await sleep(150);
         }
       }
@@ -1908,7 +1915,10 @@ export default function Phase1Page() {
             className={styles.chatInputBox}
             value={chatInput}
             rows={2}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setChatInput(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+              setChatInput(e.target.value);
+              userTypingRef.current = e.target.value.length > 0;
+            }}
             onCompositionStart={() => { isComposingRef.current = true; }}
             onCompositionEnd={() => { isComposingRef.current = false; }}
             onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1918,6 +1928,7 @@ export default function Phase1Page() {
                 const id = `user_${Date.now()}_${Math.random()}`;
                 pendingUserMsgRef.current = text;
                 pendingUserMsgIdRef.current = id;
+                userTypingRef.current = false;
                 setMsgs(prev => [...prev, { id, agent: "user" as AgentId, round: 0, text, streaming: false }]);
                 setChatInput("");
               }
@@ -1933,6 +1944,7 @@ export default function Phase1Page() {
                 const id = `user_${Date.now()}_${Math.random()}`;
                 pendingUserMsgRef.current = text;
                 pendingUserMsgIdRef.current = id;
+                userTypingRef.current = false;
                 setMsgs(prev => [...prev, { id, agent: "user" as AgentId, round: 0, text, streaming: false }]);
                 setChatInput("");
               }
