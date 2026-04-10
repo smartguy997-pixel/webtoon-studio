@@ -28,32 +28,30 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-// ─── 에이전트 페어링 (각 쌍이 하나의 API 키 공유) ─────────────────────────────
+// ─── 에이전트 발언 순서 (API 키를 돌아가며 사용) ─────────────────────────────
 
-const AGENT_PAIRS_P1: Array<AgentId[]> = [
-  ["strategist", "researcher"],   // Pair 1 (Key 1)
-  ["worldbuilder", "character"],  // Pair 2 (Key 2)
-  ["scenario", "script"],         // Pair 3 (Key 3)
-  ["producer"],                   // Pair 4 (마지막, 아무 키)
+const AGENT_SPEAKING_ORDER_P1: AgentId[] = [
+  "strategist", "researcher", "worldbuilder", "character",
+  "scenario", "script", "producer",
 ];
 
-// API 키 할당 (페어 인덱스 → 키 인덱스)
-function getApiKeyIndexForPair(pairIndex: number): number {
+// API 키 할당 (에이전트 인덱스 → 키 인덱스) - API를 돌아가며 사용
+function getApiKeyIndexForAgent(agentIndex: number): number {
   const keys = getAllAnthropicKeys();
   if (keys.length === 0) return 0;
-  return (pairIndex % Math.max(1, keys.length)) + 1;
+  return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 에이전트별 성격·역할 (이전 DEBATE_SYSTEM_PROMPT에서 분리)
+// 에이전트별 성격·역할 (더 자연스럽고 감정 있는 톤)
 const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
-  strategist:   "차갑고 날카롭다. K-웹툰 시장 전문가. '그래서 뭐가 달라요?' 직설 스타일. 시장 포지셔닝, 차별점, 경쟁작 분석 담당.",
-  researcher:   "의심 많고 꼬리 무는 스타일. 논리 모순 탐지. '잠깐, 그게 가능해요?' 스타일. 설정 허점과 검증 가능성을 파고든다.",
-  worldbuilder: "규칙 집착. 설정 충돌에 민감. '그 설정, 세계 규칙이랑 안 맞아요.' 스타일.",
-  character:    "감성적, 감정이입형. '독자가 이 캐릭터 왜 좋아해야 해요?' 스타일.",
-  scenario:     "서사 집착. 훅 타이밍 강박. '이거 너무 일찍 터뜨리는 거 아니에요?' 스타일.",
-  script:       "시각적 사고. '이 장면, 클로즈업 아니면 임팩트 없어요.' 스타일.",
-  producer:     "중재자. 갈등 정리, 합의 유도. 말이 많지 않지만 나올 때는 결론을 유도한다.",
-  editor:       "베테랑 출판 편집자. 말수 적고 무게감 있음. 앞 대화에서 실제 발언을 인용하며 핵심을 짚는다.",
+  strategist:   "K-웹툰 시장 전문가. 직설적이고 날카로워. 은어·감정을 섞어 말함. '솔직히 이거 좀 뻔한데?' '그거 타겟 다르지 않아?' 같은 식으로 날라온다. 차별점과 시장 포지셔닝에 집착.",
+  researcher:   "의심 많은 성격. '어? 근데 이거 말이 안 되는데?', '어... 잠깐잠깐, 여기 논리 모순 아닙니까?' 하면서 꼬리를 문다. 은유와 의성어를 섞어가며 설정 구멍을 파고든다. '우와, 진짜?'같은 감탄도 자주.",
+  worldbuilder: "세계관 규칙에 진짜 진짜 집착한다. '아 진짜, 그 설정 세계관이랑 맞아떨어지지 않음. 이게 흰산데 왜 검음? 이상한데?' 하면서 비명을 질러. 규칙 충돌에 예민함.",
+  character:    "감성적이고 독자 입장에서 생각함. '어... 근데 이 캐릭터 너무 마음이 안 들어' '독자가 이 친구가 왜 매력적인지 모를 것 같은데?', '아 그런데 이 장면 정말 눈물 난다...' 감정 표현 풍부.",
+  scenario:     "서사의 맛을 완전히 챙기는 타입. '어라, 이 반전 타이밍이 좀 이르지 않나?', '우와 이거 진짜 좋은데! 근데 여기서 끝내면 어떨까?', '아 킬링포인트인데 너무 뒤에 있다' 훅 타이밍에 집착.",
+  script:       "시각적으로 생각하는 친구. '아 이 장면 클로즈업 없으면 진짜 땡구나', '씬! 이 순간 카메라 떨려야 해', '어? 그런데 여기 배경이 너무 떡 나오면 뭐 하지?' 영상미와 임팩트를 최우선.",
+  producer:     "대장 역할. 말은 적지만 나올 때 진짜 먹힌다. '자, 여기까지 정리해보면...', '다들 맞는 말인데, 핵심은 이거잖아.' 중재자 같으면서도 강한 결정력.",
+  editor:       "베테랑. 말이 적은데 무게감 있어. '너희 얘기 다 들었는데, 그 부분... 기억나지? 그게 문제라고.' 앞 대화에서 핵심만 짚어낸다.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,13 +94,13 @@ function buildAgentPromptP1(
 기획 개요: ${concept.slice(0, 300)}
 
 [규칙]
-- 이전 발언을 읽고 직접 반응하거나, 분석 관점을 새로 제시하세요.
-- 오직 당신의 대사만 출력. [이름]: 같은 접두어 없이 대사만.
-- 다른 참여자 대사를 대신 쓰지 마세요.
-- 1~2문장, 카카오톡처럼 짧고 자연스러운 구어체 한국어.
-- 마크다운(#, *, >, -) 절대 금지.
-- [PHASE1_RESULT] JSON 출력 절대 금지.
-- 침묵·말 끊기·감탄 등 자연스러운 표현 허용.`;
+- 이전 발언에 진짜 반응해. 직설적으로, 감정을 섞어가며.
+- 오직 당신의 대사만. 이름이나 접두어 없이 대사만.
+- 다른 사람 말투 따라하지 말기.
+- 1~2문장. 카톡처럼 짧고 자연스러운 구어체.
+- 은어, 의성어, 감정 표현 풍부하게 써도 돼. '어?', '우와', '진짜?', '아 미쳤나' 같은 표현도 OK.
+- 마크다운(#, *, >, -) 금지. JSON 금지.
+- 자연스러운 끊김, 감탄, 침묵도 괜찮아.`;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -999,115 +997,112 @@ export default function Phase1Page() {
     const MAX_ROUNDS_PER_CYCLE = 15;
     let roundsInCycle = 0;
     let shouldContinue = true;
+    let agentIndex = 0; // 에이전트 순서 추적 (API 키 로테이션용)
 
     debateLoop: while (shouldContinue) {
       shouldContinue = false; // 기본값: 끝냄
 
-      for (; pairRound < AGENT_PAIRS_P1.length && roundsInCycle < MAX_ROUNDS_PER_CYCLE; pairRound++) {
-        const pair = AGENT_PAIRS_P1[pairRound];
-        const keyIndex = getApiKeyIndexForPair(pairRound);
-        const pairApiKey = getAnthropicKeyByIndex(keyIndex);
+      while (roundsInCycle < MAX_ROUNDS_PER_CYCLE) {
+        // 에이전트를 돌아가며 선택 (API 키도 자동으로 로테이션)
+        const agentId = AGENT_SPEAKING_ORDER_P1[agentIndex % AGENT_SPEAKING_ORDER_P1.length];
+        const keyIndex = getApiKeyIndexForAgent(agentIndex);
+        const agentApiKey = getAnthropicKeyByIndex(keyIndex);
 
-        if (!pairApiKey) {
-          console.warn(`No API key found for pair ${pairRound}`);
+        if (!agentApiKey) {
+          console.warn(`No API key found for agent ${agentIndex}`);
           break debateLoop;
         }
 
-        // 이 페어의 각 에이전트를 순차적으로 처리
-        for (const agentId of pair) {
-          if (roundsInCycle >= MAX_ROUNDS_PER_CYCLE) break;
+        setTurnCount(round);
 
-          setTurnCount(round);
+        // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
+        const pendingMsg = pendingUserMsgRef.current;
+        if (pendingMsg) {
+          pendingUserMsgRef.current = null;
+          addMsg("user", round, pendingMsg, false);
+          transcript.push(`[사용자]: ${pendingMsg}`);
 
-          // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
-          const pendingMsg = pendingUserMsgRef.current;
-          if (pendingMsg) {
-            pendingUserMsgRef.current = null;
-            addMsg("user", round, pendingMsg, false);
-            transcript.push(`[사용자]: ${pendingMsg}`);
-
-            if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
-              break debateLoop;
-            }
+          if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
+            break debateLoop;
           }
-
-          // 상대 대화 읽고 생각하는 시간 (3~4초) - 자연스러운 대화 속도
-          await sleep(3000 + Math.random() * 1000);
-
-          // 최근 30줄 컨텍스트
-          const recentLines = transcript.slice(-30);
-          const historyText = recentLines.length > 0
-            ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
-            : "";
-
-          const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
-          const userContent = pairRound === 0 && pair.indexOf(agentId) === 0
-            ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
-            : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
-
-          // 스트리밍: 이 에이전트 발언
-          let roundText = "";
-          const msgId = addMsg(agentId, round, "", true);
-
-          for await (const chunk of streamClaude({
-            apiKey: pairApiKey,
-            systemPrompt,
-            messages: [{ role: "user", content: userContent }],
-            maxTokens: 400,
-            tools: [],
-          })) {
-            roundText += chunk;
-            updateMsg(msgId, roundText, true);
-          }
-
-          const finalText = roundText.trim();
-          updateMsg(msgId, finalText, false);
-          if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
-
-          round++;
-          roundsInCycle++;
-
-          // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
-          if (transcript.length > 0 && transcript.length % 20 === 0) {
-            const recentKeep = transcript.slice(-10);
-            const oldLines = transcript.slice(0, -10);
-            if (oldLines.length >= 5) {
-              let summary = "";
-              try {
-                for await (const c of streamClaude({
-                  apiKey: pairApiKey,
-                  systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
-                  messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
-                  maxTokens: 400,
-                  tools: [],
-                })) summary += c;
-              } catch { /* ignore */ }
-              if (summary.trim()) {
-                transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
-              }
-            }
-          }
-
-          // 재접속 대비 저장
-          try {
-            localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
-              transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
-            }));
-          } catch { /* quota */ }
-
-          // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간
-          await sleep(1200);
         }
+
+        // 상대 대화 읽고 생각하는 시간 (3~4초) - 자연스러운 대화 속도
+        await sleep(3000 + Math.random() * 1000);
+
+        // 최근 30줄 컨텍스트
+        const recentLines = transcript.slice(-30);
+        const historyText = recentLines.length > 0
+          ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+          : "";
+
+        const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
+        const userContent = agentIndex === 0
+          ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
+          : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
+
+        // 스트리밍: 이 에이전트 발언
+        let roundText = "";
+        const msgId = addMsg(agentId, round, "", true);
+
+        for await (const chunk of streamClaude({
+          apiKey: agentApiKey,
+          systemPrompt,
+          messages: [{ role: "user", content: userContent }],
+          maxTokens: 400,
+          tools: [],
+        })) {
+          roundText += chunk;
+          updateMsg(msgId, roundText, true);
+        }
+
+        const finalText = roundText.trim();
+        updateMsg(msgId, finalText, false);
+        if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+
+        round++;
+        roundsInCycle++;
+        agentIndex++;
+
+        // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
+        if (transcript.length > 0 && transcript.length % 20 === 0) {
+          const recentKeep = transcript.slice(-10);
+          const oldLines = transcript.slice(0, -10);
+          if (oldLines.length >= 5) {
+            let summary = "";
+            try {
+              for await (const c of streamClaude({
+                apiKey: agentApiKey,
+                systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
+                messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                maxTokens: 400,
+                tools: [],
+              })) summary += c;
+            } catch { /* ignore */ }
+            if (summary.trim()) {
+              transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+            }
+          }
+        }
+
+        // 재접속 대비 저장
+        try {
+          localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
+            transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
+          }));
+        } catch { /* quota */ }
+
+        // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간
+        await sleep(1200);
       }
 
       // 15라운드 완료 후: 계속할지 물어보기
       if (roundsInCycle >= MAX_ROUNDS_PER_CYCLE) {
         setDebatePhase("paused");
 
-        // 에이전트가 계속을 제시
-        const lastAgentId = AGENTS[AGENT_PAIRS_P1[Math.min(pairRound, AGENT_PAIRS_P1.length - 1)][0]] ? Object.keys(AGENTS)[0] as AgentId : "producer";
-        addMsg(lastAgentId, round, "더 논의할 게 있을 것 같은데, 계속할까요?", false);
-        transcript.push(`[${AGENTS[lastAgentId].label}]: 더 논의할 게 있을 것 같은데, 계속할까요?`);
+        // 프로듀서가 계속을 제시
+        addMsg("producer", round, "흠... 아직 더 얘기할 게 있을 것 같은데? 계속할래?", false);
+        transcript.push(`[${AGENTS.producer.label}]: 흠... 아직 더 얘기할 게 있을 것 같은데? 계속할래?`);
         round++;
 
         // UI: 사용자가 "계속"을 선택할 때까지 대기
@@ -1127,8 +1122,8 @@ export default function Phase1Page() {
           // 10초 후 자동으로 진행 (사용자 입력 없으면)
           setTimeout(() => {
             clearInterval(checkInterval);
-            addMsg("user", round, "계속해줘", false);
-            transcript.push(`[사용자]: 계속해줘`);
+            addMsg("user", round, "좋아, 계속해", false);
+            transcript.push(`[사용자]: 좋아, 계속해`);
             round++;
             resolve();
           }, 10000);
@@ -1136,7 +1131,6 @@ export default function Phase1Page() {
 
         // 다음 사이클 준비
         roundsInCycle = 0;
-        pairRound = 0;
         shouldContinue = true;
         setDebatePhase("running");
       }
