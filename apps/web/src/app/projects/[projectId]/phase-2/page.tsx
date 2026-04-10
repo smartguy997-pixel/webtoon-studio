@@ -18,18 +18,11 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-// ─── 에이전트 페어링 (각 쌍이 하나의 API 키 공유) ─────────────────────────────
-const AGENT_PAIRS_P2: Array<AgentId[]> = [
-  ["worldbuilder", "character"],  // Pair 1 (Key 1)
-  ["scenario", "script"],         // Pair 2 (Key 2)
-  ["producer"],                   // Pair 3 (Key 3)
-];
-
-// API 키 할당 (페어 인덱스 → 키 인덱스)
-function getApiKeyIndexForPair(pairIndex: number): number {
+// API 키 할당 (에이전트 인덱스 → 키 인덱스, 순환)
+function getApiKeyIndexForAgent(agentIdx: number): number {
   const keys = getAllAnthropicKeys();
   if (keys.length === 0) return 0;
-  return (pairIndex % Math.max(1, keys.length)) + 1;
+  return (agentIdx % Math.max(1, keys.length)) + 1;
 }
 
 const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
@@ -440,7 +433,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text, streaming } : m));
   }, []);
 
-  // ── Run debate: 에이전트 1명씩 순서대로 별도 API 호출 (진짜 반응형 토론) ──
+  // ── Run debate: 자연스러운 토론 루프 (Phase 1과 동일 방식) ──
   const runDebate = useCallback(async (stageIdx: number) => {
     if (runningRef.current) return;
     runningRef.current = true;
@@ -448,139 +441,238 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setDebatePhase("running");
     setApiError(null);
 
-    const apiKey = getAnthropicKey();
-    if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); runningRef.current = false; setDebatePhase("idle"); return; }
-
     const stage = STAGES[stageIdx];
+
+    // 롤링 요약 + 사용자 컨텍스트 상태
+    let conversationSummary = "";
+    let turnsSinceLastSummary = 0;
+    let lastUserMsg = "";
+    let userTurnCount = 0;
+    let wrapUpProposed = false;
+    let wrapUpProposedAt = 0;
+    let naturalExit = false;
+    const WRAP_UP_AFTER = 12;
+    const WRAP_UP_AUTO_MS = 30_000;
+    const AGREE_RE = /^(그래|응|ㅇㅇ|좋아|해줘|시작|정리|맞아|그렇게|ㄱ|ok|오케|ㅇㅋ|확인|다음)/i;
 
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
     let transcript: string[];
-    let startRound: number;
     if (resumeDataRef.current) {
       transcript = [...resumeDataRef.current.transcript];
       setMsgs(resumeDataRef.current.msgs);
-      startRound = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
       resumeDataRef.current = null;
     } else {
       transcript = [];
-      startRound = 1;
     }
     convRef.current = transcript;
 
-    try {
-      // 페어 라운드 계산 (이미 완료한 페어 수)
-      let completedPairs = 0;
-      for (const pair of AGENT_PAIRS_P2) {
-        const allSpoke = pair.every(agent =>
-          transcript.some(l => l.includes(`[${AGENTS[agent].label}]`))
-        );
-        if (allSpoke) completedPairs++;
-        else break;
+    // Phase 2 에이전트 동적 선택
+    const P2_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "editor"];
+    let agentIndex = 0;
+    let lastSpeaker: AgentId | null = null;
+
+    function pickNextSpeaker(lastLine: string, last: AgentId | null): AgentId {
+      const available = P2_AGENTS.filter(a => a !== last);
+      if (!available.length) return P2_AGENTS[0];
+      const lower = lastLine.toLowerCase();
+      if (/세계|배경|규칙|설정|시대|문명|마법|공간/.test(lower) && available.includes("worldbuilder")) return "worldbuilder";
+      if (/캐릭터|인물|주인공|감정|성격|외형|말투|빌런/.test(lower) && available.includes("character")) return "character";
+      if (/이야기|서사|플롯|갈등|전개|장르|훅|전제/.test(lower) && available.includes("scenario")) return "scenario";
+      if (/그림|연출|장면|시각|컷|화면|비주얼|그려/.test(lower) && available.includes("script")) return "script";
+      if (/편집|구조|흐름|전반적|연결/.test(lower) && available.includes("editor")) return "editor";
+      return available[agentIndex % available.length];
+    }
+
+    // 롤링 요약 (백그라운드 비동기, 누적 갱신)
+    const refreshSummary = () => {
+      if (transcript.length < 3) return;
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key) return;
+      void (async () => {
+        let next = "";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
+            messages: [{
+              role: "user",
+              content: `${conversationSummary ? `이전 요약: ${conversationSummary}\n\n` : ""}최근 대화:\n${transcript.slice(-5).join("\n")}\n\n합쳐서 2문장 이내 요약. 핵심 합의사항·의견 포함. 마크다운 금지.`,
+            }],
+            maxTokens: 120,
+            tools: [],
+          })) next += chunk;
+        } catch { /* ignore */ }
+        if (next.trim()) conversationSummary = next.trim();
+      })();
+    };
+
+    // 단일 에이전트 타이프라이터 효과 (백그라운드 스트림 → 재생)
+    const runSingleAgent = async (agentId: AgentId, userContent: string, tokens: number) => {
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key) return;
+      const msgId = addMsg(agentId, "", true);
+      let text = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey: key,
+          systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current),
+          messages: [{ role: "user", content: userContent }],
+          maxTokens: tokens,
+          tools: [],
+        })) {
+          if (abortRef.current) break;
+          text += chunk;
+        }
+      } catch (err) {
+        setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId));
+        const raw = err instanceof Error ? err.message : String(err);
+        if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
+        return;
       }
+      const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+      if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); return; }
+      // 타이프라이터: 2자씩 120ms
+      const CHARS = 2; const TICK = 120;
+      for (let i = CHARS; i < clean.length; i += CHARS) {
+        if (abortRef.current) break;
+        updateMsg(msgId, clean.slice(0, i), true);
+        await sleep(TICK);
+      }
+      updateMsg(msgId, clean, false);
+      transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
+      convRef.current = transcript;
+      agentIndex++;
+      lastSpeaker = agentId;
+      // 진행 저장 (이어하기 지원)
+      try {
+        localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
+        localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
+      } catch { /* ignore */ }
+    };
 
-      let pairRound = completedPairs;
-      let round = startRound;
-
-      for (; pairRound < AGENT_PAIRS_P2.length; pairRound++) {
+    try {
+      debateLoop: while (true) {
         if (abortRef.current) break;
 
-        const pair = AGENT_PAIRS_P2[pairRound];
-        const keyIndex = getApiKeyIndexForPair(pairRound);
-        const pairApiKey = getAnthropicKeyByIndex(keyIndex);
+        const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]")).length;
 
-        if (!pairApiKey) {
-          console.warn(`No API key found for pair ${pairRound}`);
-          break;
-        }
-
-        // 이 페어의 각 에이전트를 순차적으로 처리
-        for (const agentId of pair) {
-          if (abortRef.current) break;
-
-          const systemPrompt = buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current);
-
-          // 사용자 입력 처리 (발언 전에 transcript에 삽입)
-          const pending = pendingUserMsgRef.current;
-          if (pending) {
-            pendingUserMsgRef.current = null;
-            addMsg("user", pending, false);
-            transcript.push(`[사용자]: ${pending}`);
-            convRef.current = transcript;
-          }
-
-          // 최근 대화 컨텍스트 (마지막 30줄)
-          const recentLines = transcript.slice(-30);
-          const historyText = recentLines.length > 0
-            ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
-            : "";
-
-          const userContent = pairRound === 0 && pair.indexOf(agentId) === 0
-            ? `"${stage.topic}" 주제로 첫 의견을 말해주세요.`
-            : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 관점을 제시하세요.`;
-
-          // 스트리밍: 이 에이전트의 응답만 생성
-          let roundText = "";
-          const msgId = addMsg(agentId, "", true);
-
-          for await (const chunk of streamClaude({
-            apiKey: pairApiKey,
-            systemPrompt,
-            messages: [{ role: "user", content: userContent }],
-            maxTokens: 400,
-            tools: [],
-          })) {
-            if (abortRef.current) break;
-            roundText += chunk;
-            updateMsg(msgId, roundText, true);
-          }
-
-          const finalText = roundText.trim();
-          updateMsg(msgId, finalText, false);
-
-          // abort와 관계없이 내용 저장 (추출에 사용)
-          if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+        // 자동 마무리: wrapUp 제안 후 30초 동안 응답 없으면 자동 종료
+        if (wrapUpProposed && !pendingUserMsgRef.current && Date.now() - wrapUpProposedAt > WRAP_UP_AUTO_MS) {
+          addMsg("producer", "그럼 이 단계 확인하고 넘어갈게요.", false);
+          transcript.push(`[총괄프로듀서]: 그럼 이 단계 확인하고 넘어갈게요.`);
           convRef.current = transcript;
-          if (abortRef.current) break;
-
-          // 20줄마다 슬라이딩 윈도우 압축 (사용자 모르게 백그라운드)
-          if (transcript.length > 0 && transcript.length % 20 === 0) {
-            const recentKeep = transcript.slice(-10);
-            const oldLines = transcript.slice(0, -10);
-            if (oldLines.length >= 5) {
-              let summary = "";
-              try {
-                for await (const c of streamClaude({
-                  apiKey: pairApiKey,
-                  systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 합의사항과 주요 아이디어만 간결하게 정리.",
-                  messages: [{ role: "user", content: `다음 토론을 핵심만 요약해줘:\n${oldLines.join("\n").slice(0, 3000)}` }],
-                  maxTokens: 400,
-                  tools: [],
-                })) summary += c;
-              } catch { /* ignore */ }
-              if (summary.trim()) {
-                transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
-                convRef.current = transcript;
-              }
-            }
-          }
-
-          // 매 라운드 저장 (재접속 시 이어하기)
-          try {
-            localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
-            localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
-          } catch { /* localStorage 용량 초과 무시 */ }
-
-          await sleep(1800);
-          round++;
+          await sleep(1500);
+          naturalExit = true;
+          break debateLoop;
         }
+
+        // 에이전트 간 대기 (9~15초), 사용자 입력 폴링
+        if (agentTurnsSoFar > 0) {
+          const waitMs = 9000 + Math.random() * 6000;
+          const startWait = Date.now();
+          while (Date.now() - startWait < waitMs) {
+            if (abortRef.current || pendingUserMsgRef.current) break;
+            await sleep(150);
+          }
+          if (abortRef.current) break;
+        }
+
+        // 사용자 메시지 처리
+        const pendingMsg = pendingUserMsgRef.current;
+        if (pendingMsg) {
+          pendingUserMsgRef.current = null;
+          addMsg("user", pendingMsg, false);
+          transcript.push(`[사용자]: ${pendingMsg}`);
+          convRef.current = transcript;
+          lastUserMsg = pendingMsg;
+          userTurnCount = 4;
+          refreshSummary();
+          turnsSinceLastSummary = 0;
+          if (wrapUpProposed) {
+            if (AGREE_RE.test(pendingMsg.trim())) { naturalExit = true; break debateLoop; }
+            wrapUpProposed = false;
+          }
+        }
+
+        // 주기적 요약 갱신
+        turnsSinceLastSummary++;
+        if (turnsSinceLastSummary >= 5) { refreshSummary(); turnsSinceLastSummary = 0; }
+
+        // 히스토리 텍스트 구성
+        const lastLine = transcript.filter(l => !l.startsWith("[사용자]")).slice(-1)[0] ?? "";
+        const historyText = conversationSummary
+          ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
+          : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
+        if (userTurnCount > 0) userTurnCount--;
+
+        // 마무리 조건 체크
+        const recentLines = transcript.slice(-4).join(" ");
+        const converging = agentTurnsSoFar >= 8 &&
+          (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2;
+
+        if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
+          wrapUpProposed = true;
+          wrapUpProposedAt = Date.now();
+          await runSingleAgent("producer",
+            `${historyText}[${stage.name}] 단계 토론이 충분히 됐어. 프로듀서로서 이 단계를 마무리하고 확인하자고 자연스럽게 제안해줘. 1~2문장.`,
+            80);
+          lastSpeaker = "producer";
+          continue;
+        }
+
+        // 다음 발언자 선택 및 실행
+        const isFirst = agentTurnsSoFar === 0;
+        const nextAgent = isFirst ? "worldbuilder" : pickNextSpeaker(lastLine, lastSpeaker);
+
+        const agentPrompt = isFirst
+          ? `"${stage.topic}" 주제로 첫 의견을 자연스럽게 말해줘. 짧고 구어체로.`
+          : userTurnCount > 0
+            ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
+            : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
+
+        await runSingleAgent(nextAgent, agentPrompt, 220);
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
-      setApiError(raw.includes("401") ? "API 키가 유효하지 않습니다." : `API 오류: ${raw}`);
+      if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
     }
 
     runningRef.current = false;
-  }, [genre, addMsg, updateMsg]);
+
+    // 자연 종료 시 자동 확정 (inline — handleConfirm과 동일 로직)
+    if (!abortRef.current && naturalExit) {
+      setDebatePhase("confirming");
+      const apiKey = getAnthropicKey();
+      if (apiKey) {
+        const debateText = convRef.current.join("\n");
+        const extractId = addMsg("producer", "결과 정리 중...", true);
+        const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
+        updateMsg(extractId, "", false);
+        setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
+
+        localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
+        localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
+
+        const result: StageResult = { stageId: stage.id, data, summary };
+        const newResults = [...stageResultsRef.current, result];
+        stageResultsRef.current = newResults;
+        setStageResults(newResults);
+
+        const savedMsgs = msgsRef.current.filter((m: Msg) => !m.streaming);
+        setStageHistoryMsgs((prev: Record<number, Msg[]>) => {
+          const next = { ...prev, [stageIdx]: savedMsgs };
+          localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+            stageResults: newResults,
+            currentStageIdx: stageIdx + 1,
+            stageHistoryMsgs: next,
+          }));
+          return next;
+        });
+
+        setDebatePhase("confirmed");
+      }
+    }
+  }, [genre, addMsg, updateMsg, projectId]);
 
   // ── Confirm current stage: stop debate → extract JSON → save ──
   const handleConfirm = useCallback(async (stageIdx: number) => {
