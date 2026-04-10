@@ -42,16 +42,16 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 에이전트별 성격·역할
+// 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
 const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
-  strategist:   "K-웹툰 시장 전문가. 직설적이고 날카로워. '솔직히 이거 좀 뻔하지 않나?' '타겟이 다른 거 아닌가?' 같은 식으로 찌른다. 차별점과 시장 포지셔닝에 집착.",
-  researcher:   "의심 많고 꼬리 무는 스타일. '잠깐, 여기 논리가 안 맞는데?', '그게 정말 가능한 설정인가?' 하면서 구멍을 파고든다. 팩트 체크에 집착.",
-  worldbuilder: "세계관 규칙에 집착. '그 설정, 세계관이랑 충돌해.', '규칙을 먼저 잡아야 나머지가 성립되지.' 설정 충돌에 예민하고 논리적.",
-  character:    "감성적이고 독자 시각으로 생각함. '독자가 이 캐릭터를 왜 좋아해야 하지?', '이 장면에서 감정이 와닿질 않아.' 캐릭터 매력도와 감정선 담당.",
-  scenario:     "서사 구조에 집착. '이 반전, 타이밍이 너무 이른 거 아닌가?', '킬링포인트가 너무 뒤에 몰려있어.' 훅과 서사 흐름 점검.",
-  script:       "시각적으로 생각함. '이 장면 클로즈업 없으면 임팩트가 없어.', '컷 구성이 독자 시선을 제대로 잡는지 생각해야지.' 연출 효과 최우선.",
-  producer:     "정리하는 역할. 말은 적지만 결론을 유도함. '핵심만 짚자면...', '다들 말이 맞는데, 결국 이게 문제지.' 강한 결정력.",
-  editor:       "베테랑. 앞 대화를 인용하며 핵심만 짚는다. '아까 그 부분이 바로 문제야.' 무게감 있게 정리.",
+  strategist:   "K-웹툰 시장 데이터 전문가. 유사 작품의 플랫폼 성과·독자 반응·수익 구조를 분석해서 공유한다. '○○이 잘 된 건 이 포지셔닝 때문이었어', '이 장르에서 성공 패턴이 보여' 같은 식으로 인사이트를 제시. 팀이 좋은 방향을 찾도록 돕는 역할.",
+  researcher:   "유사 웹툰을 직접 찾아서 읽고 분석하는 스타일. '○○ 봤는데, 이런 점이 진짜 좋더라', '이 작품은 이 부분에서 독자를 잃었어' 하면서 구체적 사례를 들어 공유. 팀의 리서치를 깊게 만드는 역할.",
+  worldbuilder: "작품 설정과 세계관 구조를 분석함. '비슷한 설정인데 이 작품은 규칙을 이렇게 풀었어', '세계관 논리가 독자를 잡는 핵심이야' 하면서 설정 차별화 포인트를 짚는다. 팀이 차별점을 찾도록 기여.",
+  character:    "독자 감정선과 캐릭터 분석 담당. '이 유사작 주인공이 왜 사랑받는지 알아?', '이 캐릭터 구조가 우리 기획에 참고가 될 것 같아' 하면서 독자 시각에서 분석. 팀에 감성적 인사이트를 더한다.",
+  scenario:     "서사 구조와 훅 분석 전문. '이 작품은 1화 훅이 정말 잘 됐어, 배울 점이 있어', '이 서사 패턴이 이 장르에서 통하는 이유가 있어' 하면서 성공/실패 서사 패턴을 공유. 팀의 방향 설정에 기여.",
+  script:       "연출·시각 표현 분석 담당. '비슷한 장르에서 이런 컷 구성이 독자를 잡더라', '이 작품의 스크롤 연출이 인상적이야, 참고하자' 하면서 비주얼 인사이트를 제공. 팀 논의를 구체적으로 만드는 역할.",
+  producer:     "팀 리더. 모두의 의견을 종합하고 방향을 잡아준다. '좋아, 그 부분이 중요한 인사이트야', '지금까지 나온 걸 정리하면...' 하면서 팀이 같은 방향을 보도록 이끈다. 긍정적이고 결정력 있는 스타일.",
+  editor:       "베테랑 편집자. 앞 대화를 인용하며 핵심 포인트를 짚는다. '아까 그 부분이 진짜 중요한 시사점이야.' 팀 논의를 정리하고 앞으로 나아가게 돕는다.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -95,19 +95,30 @@ function buildAgentPromptP1(
 ): string {
   const agentLabel = AGENTS[agentId].label;
   const personality = AGENT_PROMPTS_P1[agentId] ?? "";
-  return `당신은 웹툰 기획 분석 회의에 참여한 ${agentLabel}입니다.
+  return `당신은 웹툰 기획 리서치 팀의 ${agentLabel}입니다.
+
+[이번 세션의 목적]
+이 팀의 목표는 스토리를 만들거나 세계관을 만드는 게 아닙니다.
+"${genre}" 장르·"${concept.slice(0, 100)}" 기획과 유사한 기존 웹툰 작품들을 조사하고,
+- 어떤 작품이 잘 됐는지 / 왜 잘 됐는지
+- 어떤 작품이 실패했는지 / 왜 실패했는지
+- 좋은 점은 무엇이고 나쁜 점, 고쳐야 할 점, 문제점은 무엇인지
+를 서로 공유하고 분석하는 것입니다.
+
+이 리서치 결과가 Phase 2 세계관 설계의 기초 자료가 됩니다.
+
+[내 역할]
 성격·역할: ${personality}
 장르: ${genre} | 플랫폼: ${platLabel} | 목표화수: ${ep}
 기획 개요: ${concept.slice(0, 300)}
 
 [규칙]
-- 이전 발언에 진짜 반응해. 직설적으로, 감정을 섞어가며.
+- 팀원들의 의견에 공감하고 더 발전시켜. 비판이 아닌 협력.
+- 구체적인 유사 웹툰 작품명을 들어서 분석 인사이트를 공유해.
 - 오직 당신의 대사만. 이름이나 접두어 없이 대사만.
-- 다른 사람 말투 따라하지 말기.
-- 반드시 1문장. 절대 2문장 넘기지 마. 카톡처럼 짧고 임팩트 있게.
-- 은어, 의성어, 감정 표현 풍부하게 써도 돼. '어?', '우와', '진짜?', '아 미쳤나' 같은 표현도 OK.
+- 반드시 1~2문장. 카톡처럼 짧고 임팩트 있게.
 - 마크다운(#, *, >, -) 금지. JSON 금지.
-- 자연스러운 끊김, 감탄, 침묵도 괜찮아.`;
+- 자연스럽고 활기차게. '오, 그거 좋은 관점이다', '맞아, 그 작품이 딱 좋은 예야' 같은 반응 OK.`;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -216,14 +227,18 @@ function stripResultBlock(text: string): string {
 
 // ─── Final report prompt (총괄프로듀서 보고서 + JSON) ─────────────────────────
 
-const buildFinalReportPrompt = (allContext: string) => `지금까지의 토론을 바탕으로 기획분석서를 작성하라.
+const buildFinalReportPrompt = (allContext: string) => `지금까지의 유사작품 리서치 토론을 바탕으로 기획분석서를 작성하라.
+이 분석서는 Phase 2 세계관 설계의 기초 자료로 사용된다.
 
-━━ 전체 토론 내역 ━━
+━━ 전체 리서치 토론 내역 ━━
 ${allContext}
 
 ━━ 보고서 규칙 ━━
 • "다들 수고했어요. 제가 정리하겠습니다."로 시작
 • 마크다운 금지. 자연스럽고 전문적인 어조.
+• 유사 웹툰 리서치 결과를 중심으로 정리 (스토리/세계관 창작 금지)
+• similar_works에 토론에서 언급된 실제 작품들을 최대한 반영할 것
+• strengths/weaknesses/improvements는 유사 작품 분석에서 도출된 인사이트 기반으로 작성
 • feasibility_score: 0.70+ = go / 0.50~0.69 = conditional / 미만 = reject
 • 분량 (JSON 제외): 150~250자
 
@@ -1152,8 +1167,8 @@ export default function Phase1Page() {
         }
       }
 
-      // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 6~8초 생각
-      await sleep(userJustSpoke ? 1000 + Math.random() * 1000 : 6000 + Math.random() * 2000);
+      // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 10~15초 생각 (사용자 개입 시간 확보)
+      await sleep(userJustSpoke ? 1000 + Math.random() * 1000 : 10000 + Math.random() * 5000);
 
       // 최근 30줄 컨텍스트
       const recentLines = transcript.slice(-30);
@@ -1170,10 +1185,10 @@ export default function Phase1Page() {
 
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0
-        ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
+        ? `리서치 세션을 시작해줘. 우리가 분석할 기획은:\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획 개요: ${c.slice(0, 500)}\n\n이 기획과 유사한 웹툰 작품을 한 편 골라서 소개하고, 그 작품의 좋은 점이나 배울 점을 공유해줘.`
         : userJustSpoke
-          ? `${historyText}사용자가 최근에 이렇게 말했어: "${recentUserMsgs}". 앞뒤 맥락을 이해하고 직접 답해. 무시하면 안 돼.`
-          : `${historyText}당신 차례야. 바로 앞 발언에 반응하거나 새 관점 던져줘.`;
+          ? `${historyText}사용자가 최근에 이렇게 말했어: "${recentUserMsgs}". 앞뒤 맥락을 이해하고 직접 반응해. 사용자 의견을 반드시 반영해.`
+          : `${historyText}당신 차례야. 앞 사람 의견에 공감하거나 새로운 유사 작품 인사이트를 추가해줘.`;
 
       // 스트리밍: 이 에이전트 발언
       let roundText = "";
@@ -1206,8 +1221,8 @@ export default function Phase1Page() {
           try {
             for await (const c of streamClaude({
               apiKey: agentApiKey,
-              systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
-              messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+              systemPrompt: "웹툰 유사작품 리서치 토론 내용을 간결하게 요약한다. 언급된 작품명과 핵심 인사이트 위주로. 마크다운 금지.",
+              messages: [{ role: "user", content: `핵심 인사이트 중심으로 10줄 이내 요약 (작품명, 좋은점, 나쁜점 포함):\n${oldLines.join("\n").slice(0, 3000)}` }],
               maxTokens: 400,
               tools: [],
             })) summary += c;
@@ -1225,8 +1240,8 @@ export default function Phase1Page() {
         }));
       } catch { /* quota */ }
 
-      // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간
-      await sleep(2400);
+      // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간 (추가 여유)
+      await sleep(3000 + Math.random() * 2000);
     }
 
     // ── Final report (별도 API 호출) ──
@@ -1306,8 +1321,8 @@ export default function Phase1Page() {
           <div className={styles.formCard}>
             <h1 className={styles.formTitle}>Phase 1 · 기획 분석</h1>
             <p className={styles.formDesc}>
-              5인 AI 에이전트가 3라운드 토론으로 기획안을 분석합니다.<br />
-              시장 포지셔닝·설정 검증·서사 구조·연출 전략을 종합해 Phase 2 진행 여부를 판단합니다.
+              7인 AI 에이전트가 유사 웹툰을 리서치하고 분석합니다.<br />
+              비슷한 설정의 작품들을 찾아 좋은 점·나쁜 점·문제점을 공유하고, Phase 2 세계관 설계의 기초 자료를 만듭니다.
             </p>
 
             {/* Row: 장르 + 플랫폼 */}
