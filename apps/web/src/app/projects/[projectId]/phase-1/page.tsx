@@ -492,7 +492,7 @@ function ImageSearchCard({ query }: { query: string }) {
       )}
 
       {!loading && !error && images.length > 0 && (
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
           {images.map((img, idx) => (
             <a
               key={idx}
@@ -500,12 +500,12 @@ function ImageSearchCard({ query }: { query: string }) {
               target="_blank"
               rel="noopener noreferrer"
               title={img.tags}
-              style={{ flexShrink: 0, borderRadius: 6, overflow: "hidden", display: "block", border: "1px solid rgba(96,165,250,0.2)" }}
+              style={{ borderRadius: 8, overflow: "hidden", display: "block", border: "1px solid rgba(96,165,250,0.2)" }}
             >
               <img
-                src={img.previewURL}
+                src={img.webformatURL}
                 alt={img.tags}
-                style={{ width: 96, height: 68, objectFit: "cover", display: "block" }}
+                style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
                 loading="lazy"
               />
             </a>
