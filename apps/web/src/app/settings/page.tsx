@@ -103,6 +103,9 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
     try {
       if (cfg.id === "anthropic") {
         // Direct browser test against Anthropic API
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -115,14 +118,22 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
             model: "claude-haiku-4-5-20251001",
             max_tokens: 10,
             messages: [{ role: "user", content: "hi" }],
+            stream: true,
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeout);
+
         if (res.ok) {
           ok = true;
         } else {
-          const data = await res.json() as { error?: { message?: string } };
-          msg = data.error?.message ?? `HTTP ${res.status}`;
+          try {
+            const data = await res.json() as { error?: { message?: string } };
+            msg = data.error?.message ?? `HTTP ${res.status}`;
+          } catch {
+            msg = `HTTP ${res.status}`;
+          }
         }
       } else {
         // Format-only validation for other services (no direct test available)
