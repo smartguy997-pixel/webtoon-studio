@@ -1126,6 +1126,7 @@ export default function Phase1Page() {
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
+  const pendingUserMsgIdRef = useRef<string | null>(null);
   const savedTranscriptRef = useRef<string[]>([]);
   const isComposingRef = useRef(false);
 
@@ -1363,7 +1364,14 @@ export default function Phase1Page() {
       let matchedCommand = null as ReturnType<typeof matchCommand>;
       if (pendingMsg) {
         pendingUserMsgRef.current = null;
-        addMsg("user", round, pendingMsg, false);
+        // 이미 UI에 표시된 경우 round만 업데이트, 아니면 새로 추가
+        const shownId = pendingUserMsgIdRef.current;
+        pendingUserMsgIdRef.current = null;
+        if (shownId) {
+          setMsgs(prev => prev.map((m: Msg) => m.id === shownId ? { ...m, round } : m));
+        } else {
+          addMsg("user", round, pendingMsg, false);
+        }
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
         userJustSpoke = true;
@@ -1905,7 +1913,11 @@ export default function Phase1Page() {
             onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
               if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && chatInput.trim()) {
                 e.preventDefault();
-                pendingUserMsgRef.current = chatInput.trim();
+                const text = chatInput.trim();
+                const id = `user_${Date.now()}_${Math.random()}`;
+                pendingUserMsgRef.current = text;
+                pendingUserMsgIdRef.current = id;
+                setMsgs(prev => [...prev, { id, agent: "user" as AgentId, round: 0, text, streaming: false }]);
                 setChatInput("");
               }
             }}
@@ -1916,7 +1928,11 @@ export default function Phase1Page() {
             className={styles.chatSendBtn}
             onClick={() => {
               if (chatInput.trim()) {
-                pendingUserMsgRef.current = chatInput.trim();
+                const text = chatInput.trim();
+                const id = `user_${Date.now()}_${Math.random()}`;
+                pendingUserMsgRef.current = text;
+                pendingUserMsgIdRef.current = id;
+                setMsgs(prev => [...prev, { id, agent: "user" as AgentId, round: 0, text, streaming: false }]);
                 setChatInput("");
               }
             }}
