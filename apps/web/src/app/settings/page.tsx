@@ -647,14 +647,15 @@ export default function SettingsPage() {
 
       <div className={s.sectionLabel}>API 키 관리</div>
 
-      <div style={{ padding: "16px", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: "8px", marginBottom: "12px" }}>
-        <strong style={{ color: "#34d399" }}>✓ 다중 API 키 시스템 활성화됨</strong>
+      {/* Temporarily disabled for debugging */}
+      {/* <AnthropicMultiKeyCard onSaved={countSaved} /> */}
+
+      <div style={{ padding: "16px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "8px", marginBottom: "12px" }}>
+        <strong style={{ color: "#f87171" }}>⚠ AnthropicMultiKeyCard 비활성화됨 (디버깅 중)</strong>
         <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "8px" }}>
-          localStorage에서 wts_anthropic_key_1, wts_anthropic_key_2 등으로 저장됩니다.
+          기존 KeyCard 컴포넌트만 표시됩니다.
         </div>
       </div>
-
-      <AnthropicMultiKeyCard onSaved={countSaved} />
 
       {OTHER_KEYS.map((cfg) => (
         <KeyCard key={cfg.id} cfg={cfg} onSaved={countSaved} />
