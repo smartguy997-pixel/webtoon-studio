@@ -80,6 +80,7 @@ async function callClaudeOnce(
   apiKey: string,
   messages: Array<{ role: string; content: unknown }>,
   withSearch: boolean,
+  _retryLeft = 2,
 ): Promise<ApiResponse> {
   const body: Record<string, unknown> = {
     model: "claude-haiku-4-5-20251001",
@@ -108,7 +109,14 @@ async function callClaudeOnce(
     });
   }
 
+  // 429 → 10초 대기 후 재시도 (최대 2회)
+  if (res.status === 429 && _retryLeft > 0) {
+    await new Promise<void>((r) => setTimeout(r, 10_000));
+    return callClaudeOnce(apiKey, messages, withSearch, _retryLeft - 1);
+  }
+
   if (!res.ok) throw new Error(`Claude API ${res.status}`);
+  return res.json() as Promise<ApiResponse>;
   return res.json() as Promise<ApiResponse>;
 }
 

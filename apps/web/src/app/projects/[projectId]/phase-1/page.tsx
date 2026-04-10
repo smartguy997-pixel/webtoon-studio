@@ -1400,19 +1400,22 @@ export default function Phase1Page() {
           /[.!?~。！？～…♪ㅎㅋ]\s*$/.test(t.trim()) || t.trim().length === 0;
         for (let cont = 0; cont <= 3; cont++) {
           let stopReason = "end_turn";
-          for await (const chunk of streamClaude({
-            apiKey: key,
-            systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
-            messages: msgs,
-            maxTokens: tokens,
-            tools: [],
-            onStopReason: (r) => { stopReason = r; },
-            onRateLimit: (msg) => { updateMsg(msgId, text + `\n\n${msg}`, true); },
-          })) {
-            text += chunk;
-            const now = Date.now();
-            if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
-          }
+          try {
+            for await (const chunk of streamClaude({
+              apiKey: key,
+              systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
+              messages: msgs,
+              maxTokens: tokens,
+              tools: [],
+              onStopReason: (r) => { stopReason = r; },
+              onRateLimit: (msg) => { updateMsg(msgId, text + `\n\n${msg}`, true); },
+            })) {
+              text += chunk;
+              const now = Date.now();
+              if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
+            }
+          } catch { /* 429 소진 등 → 지금까지 텍스트로 마무리 */ }
+          updateMsg(msgId, text, true); // ⏳ 잔여 텍스트 즉시 정리
           if (cont === 3) break;
           const truncated = stopReason === "max_tokens" || !isSentenceEnd(text);
           if (!truncated) break;
@@ -1501,24 +1504,28 @@ export default function Phase1Page() {
       const MAX_CONT = 3;
       for (let cont = 0; cont <= MAX_CONT; cont++) {
         let stopReason = "end_turn";
-        for await (const chunk of streamClaude({
-          apiKey: agentApiKey,
-          systemPrompt,
-          messages: contMessages,
-          maxTokens: 500,
-          tools: [],
-          onStopReason: (r) => { stopReason = r; },
-          onRateLimit: (msg) => {
-            updateMsg(msgId, roundText + `\n\n${msg}`, true);
-          },
-        })) {
-          roundText += chunk;
-          const now = Date.now();
-          if (now - lastUpdateTime >= 80) {
-            updateMsg(msgId, roundText, true);
-            lastUpdateTime = now;
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: agentApiKey,
+            systemPrompt,
+            messages: contMessages,
+            maxTokens: 500,
+            tools: [],
+            onStopReason: (r) => { stopReason = r; },
+            onRateLimit: (msg) => {
+              updateMsg(msgId, roundText + `\n\n${msg}`, true);
+            },
+          })) {
+            roundText += chunk;
+            const now = Date.now();
+            if (now - lastUpdateTime >= 80) {
+              updateMsg(msgId, roundText, true);
+              lastUpdateTime = now;
+            }
           }
-        }
+        } catch { /* 429 재시도 소진 등 → 지금까지 모은 텍스트로 마무리 */ }
+        // 스트림 종료 후 ⏳ 텍스트가 남지 않도록 즉시 정리
+        updateMsg(msgId, roundText, true);
         // 최대 횟수 도달하면 무조건 중단
         if (cont === MAX_CONT) break;
         // stop_reason이 max_tokens이거나, 문장이 끝나지 않았으면 이어서 계속
