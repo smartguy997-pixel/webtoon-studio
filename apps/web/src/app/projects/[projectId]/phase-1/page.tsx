@@ -1137,19 +1137,23 @@ export default function Phase1Page() {
 
       // ── 사용자 입력 처리: 발언 전에 transcript에 삽입 ──
       const pendingMsg = pendingUserMsgRef.current;
+      let userJustSpoke = false;
+      let userText = "";
       if (pendingMsg) {
         pendingUserMsgRef.current = null;
         addMsg("user", round, pendingMsg, false);
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
+        userJustSpoke = true;
+        userText = pendingMsg;
 
         if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
           break debateLoop;
         }
       }
 
-      // 상대 대화 읽고 생각하는 시간 (6~8초)
-      await sleep(6000 + Math.random() * 2000);
+      // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 6~8초 생각
+      await sleep(userJustSpoke ? 1000 + Math.random() * 1000 : 6000 + Math.random() * 2000);
 
       // 최근 30줄 컨텍스트
       const recentLines = transcript.slice(-30);
@@ -1157,15 +1161,11 @@ export default function Phase1Page() {
         ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
         : "";
 
-      // 사용자 발언 여부에 따라 지시 다르게
-      const lastLine = transcript[transcript.length - 1] ?? "";
-      const userJustSpoke = lastLine.startsWith("[사용자]");
-
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0
         ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
         : userJustSpoke
-          ? `${historyText}사용자가 방금 의견을 냈어. 사용자 발언에 직접 반응해줘.`
+          ? `${historyText}지금 사용자가 "${userText}"라고 했어. 반드시 이 말에 직접 답해. 무시하면 안 돼.`
           : `${historyText}당신 차례야. 바로 앞 발언에 반응하거나 새 관점 던져줘.`;
 
       // 스트리밍: 이 에이전트 발언
@@ -1505,18 +1505,20 @@ export default function Phase1Page() {
       {/* ── User chat input (during debate) ── */}
       {debatePhase === "running" && (
         <div className={styles.chatInputRow}>
-          <input
+          <textarea
             className={styles.chatInputBox}
             value={chatInput}
-            onChange={(e: { target: HTMLInputElement }) => setChatInput(e.target.value)}
-            onKeyDown={(e: { key: string; preventDefault: () => void }) => {
-              if (e.key === "Enter" && chatInput.trim()) {
+            rows={2}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setChatInput(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === "Enter" && !e.shiftKey && chatInput.trim()) {
                 e.preventDefault();
                 pendingUserMsgRef.current = chatInput.trim();
                 setChatInput("");
               }
             }}
-            placeholder="아무 때나 끼어들어도 돼! · 끝내려면 '끝내자' 입력"
+            placeholder={"아무 때나 끼어들어도 돼! (Enter 전송 · Shift+Enter 줄바꿈)\n끝내려면 '끝내자' 입력"}
+            style={{ resize: "none" }}
           />
           <button
             className={styles.chatSendBtn}

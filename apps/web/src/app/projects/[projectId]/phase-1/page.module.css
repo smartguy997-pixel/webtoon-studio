@@ -1684,6 +1684,10 @@
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
+  min-height: 56px;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: none;
 }
 
 .chatInputBox:focus {
