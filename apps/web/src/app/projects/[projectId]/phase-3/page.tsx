@@ -26,6 +26,19 @@ const NAME_TO_AGENT: Record<string, AgentId> = {
   "사용자":       "user",
 };
 
+// ─── 에이전트 페어링 (각 쌍이 하나의 API 키 공유) ─────────────────────────────
+const AGENT_PAIRS_P3: Array<AgentId[]> = [
+  ["scenario", "researcher"],  // Pair 1 (Key 1)
+  ["worldbuilder", "producer"], // Pair 2 (Key 2)
+];
+
+// API 키 할당 (페어 인덱스 → 키 인덱스)
+function getApiKeyIndexForPair(pairIndex: number): number {
+  const keys = getAllAnthropicKeys();
+  if (keys.length === 0) return 0;
+  return (pairIndex % Math.max(1, keys.length)) + 1;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface EpisodeDetail {
