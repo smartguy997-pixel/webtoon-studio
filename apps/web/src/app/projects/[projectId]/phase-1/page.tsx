@@ -1247,11 +1247,14 @@ export default function Phase1Page() {
     // ── Final report (별도 API 호출) ──
     await sleep(500);
     setTurnCount(round + 1);
+
+    // 프로듀서 공지 — 채팅에만 표시. 보고서 내용 자체는 채팅에 안 보임.
+    addMsg("producer", round + 1, "다들 수고했어요. 제가 정리하겠습니다.", false);
+    await sleep(1500);
+
     setIsWritingReport(true);
 
     const allDebateText = transcript.join("\n");
-
-    const reportId = addMsg("producer", round + 1, "", true);
     let reportText = "";
 
     for await (const chunk of streamClaude({
@@ -1262,9 +1265,9 @@ export default function Phase1Page() {
       tools: [],
     })) {
       reportText += chunk;
-      updateMsg(reportId, stripResultBlock(reportText), true);
+      // 채팅 버블에 표시 안 함 — "보고서 작성 중..." 인디케이터만 표시됨
     }
-    updateMsg(reportId, stripResultBlock(reportText), false);
+
     setIsWritingReport(false);
 
     const parsed = parsePhase1Result(reportText);
