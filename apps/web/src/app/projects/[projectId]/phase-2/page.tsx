@@ -67,6 +67,15 @@ interface StageResult {
   summary: string;
 }
 
+// Phase 1 → Phase 2 인계 데이터 타입 (최소한만)
+interface P1Data {
+  concept?: string;
+  worldbuilding_notes?: Array<{ issue: string; suggestion: string; priority: string }>;
+  similar_works?: Array<{ title: string; lesson: string }>;
+  strengths?: string[];
+  weaknesses?: string[];
+}
+
 // Msg는 현재 단계 채팅 메시지만 담음 (단계 구분선/결과카드는 별도 렌더)
 interface Msg {
   id: string;
@@ -86,6 +95,37 @@ function parseBlock<T>(text: string, tag: string): T | null {
   const m = text.match(re);
   if (!m) return null;
   try { return JSON.parse(m[1]) as T; } catch { return null; }
+}
+
+// ─── Phase 1 결과를 Phase 2 컨텍스트로 변환 ──────────────────────────────────
+
+function buildPhase1Context(p1: P1Data): string {
+  const parts: string[] = [];
+
+  if (p1.concept) {
+    parts.push(`[기획 개요]\n${p1.concept.slice(0, 150)}`);
+  }
+
+  if (p1.worldbuilding_notes?.length) {
+    const order = { high: 0, medium: 1, low: 2 };
+    const sorted = [...p1.worldbuilding_notes]
+      .sort((a, b) => (order[a.priority as keyof typeof order] ?? 2) - (order[b.priority as keyof typeof order] ?? 2))
+      .slice(0, 3);
+    parts.push(`[Phase 1→2 인계 사항 — 반드시 반영]\n${sorted.map(n => `· ${n.issue}: ${n.suggestion}`).join("\n")}`);
+  }
+
+  const lines = [
+    ...(p1.strengths?.slice(0, 2).map(s => `+ ${s}`) ?? []),
+    ...(p1.weaknesses?.slice(0, 2).map(w => `- ${w}`) ?? []),
+  ];
+  if (lines.length) parts.push(`[기획 강점/약점]\n${lines.join("\n")}`);
+
+  if (p1.similar_works?.length) {
+    const works = p1.similar_works.slice(0, 2).map(w => `· ${w.title}: ${w.lesson}`).join("\n");
+    parts.push(`[참고 유사 작품]\n${works}`);
+  }
+
+  return parts.join("\n\n");
 }
 
 // ─── Prompt builders (단계별 독립 API 호출 + 이전 결과 컨텍스트) ──────────────
@@ -133,15 +173,17 @@ function buildSingleAgentPrompt(
   genre: string,
   agentId: AgentId,
   prevResults: StageResult[],
+  p1Data?: P1Data | null,
 ): string {
   const agentLabel = AGENTS[agentId].label;
   const roleDesc = AGENT_ROLE_DESC[agentId] ?? "";
   const context = buildContext(stageId, prevResults);
+  const p1Context = p1Data ? buildPhase1Context(p1Data) : "";
 
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
 성격: ${roleDesc}
 장르: ${genre}
-${context ? `\n[이미 확정된 내용 — 참고만]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
+${p1Context ? `\n[Phase 1 분석 결과 — 반드시 참고]\n${p1Context}\n` : ""}${context ? `\n[이미 확정된 내용 — 참고만]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
 
 [대화 방식]
 - 앞 사람 말 받아서 자연스럽게 이어가.
@@ -379,12 +421,22 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const stageResultsRef = useRef<StageResult[]>([]);
   const msgsRef = useRef<Msg[]>([]); // msgs의 최신값 추적용
   const resumeDataRef = useRef<{ transcript: string[]; msgs: Msg[] } | null>(null);
+  const p1DataRef = useRef<P1Data | null>(null); // Phase 1 분석 결과 인계용
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
+      if (p1?.data) {
+        p1DataRef.current = {
+          concept:             p1.data.concept,
+          worldbuilding_notes: p1.data.worldbuilding_notes,
+          similar_works:       p1.data.similar_works,
+          strengths:           p1.data.strengths,
+          weaknesses:          p1.data.weaknesses,
+        };
+      }
 
       const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
       if (savedData) {
@@ -531,7 +583,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       try {
         for await (const chunk of streamClaude({
           apiKey: key,
-          systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current),
+          systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current, p1DataRef.current),
           messages: [{ role: "user", content: userContent }],
           maxTokens: tokens,
           tools: [],
