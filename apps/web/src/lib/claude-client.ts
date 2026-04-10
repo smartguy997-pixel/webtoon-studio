@@ -62,6 +62,8 @@ export interface StreamClaudeOptions {
   /** Tools to enable. Pass [] to disable all tools. */
   tools?: Array<{ type: string; name: string; allowed_callers?: string[] }>;
   model?: string;
+  /** stop_reason이 결정되면 호출됩니다. "max_tokens" 이면 말이 잘린 것. */
+  onStopReason?: (reason: string) => void;
 }
 
 // ─── Image search via Claude (non-streaming, with tool-use fallback) ─────────
@@ -333,6 +335,13 @@ export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<s
             blockType = null;
             toolName = null;
             toolInputBuf = "";
+          }
+
+          // ── Message delta (stop_reason 포함) ──
+          if (type === "message_delta") {
+            const delta = event.delta as Record<string, unknown> | undefined;
+            const stopReason = delta?.stop_reason as string | undefined;
+            if (stopReason && opts.onStopReason) opts.onStopReason(stopReason);
           }
 
           // ── Top-level error ──

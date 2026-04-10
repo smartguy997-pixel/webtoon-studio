@@ -1393,16 +1393,26 @@ export default function Phase1Page() {
         const msgId = addMsg(agentId, round, "", true);
         let text = "";
         let lastUpdate = 0;
-        for await (const chunk of streamClaude({
-          apiKey: key,
-          systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
-          messages: [{ role: "user", content: prompt }],
-          maxTokens: tokens,
-          tools: [],
-        })) {
-          text += chunk;
-          const now = Date.now();
-          if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
+        const msgs: Array<{ role: "user" | "assistant"; content: string }> = [
+          { role: "user", content: prompt },
+        ];
+        for (let cont = 0; cont <= 3; cont++) {
+          let stopReason = "end_turn";
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
+            messages: msgs,
+            maxTokens: tokens,
+            tools: [],
+            onStopReason: (r) => { stopReason = r; },
+          })) {
+            text += chunk;
+            const now = Date.now();
+            if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
+          }
+          if (stopReason !== "max_tokens" || cont === 3) break;
+          msgs.push({ role: "assistant", content: text });
+          msgs.push({ role: "user", content: "계속 이어서 말해줘." });
         }
         updateMsg(msgId, text.trim(), false);
         if (text.trim()) transcript.push(`[${AGENTS[agentId].label}]: ${text.trim()}`);
@@ -1475,19 +1485,33 @@ export default function Phase1Page() {
       let lastUpdateTime = 0;
       const msgId = addMsg(agentId, round, "", true);
 
-      for await (const chunk of streamClaude({
-        apiKey: agentApiKey,
-        systemPrompt,
-        messages: [{ role: "user", content: userContent }],
-        maxTokens: 320,
-        tools: [],
-      })) {
-        roundText += chunk;
-        const now = Date.now();
-        if (now - lastUpdateTime >= 80) {
-          updateMsg(msgId, roundText, true);
-          lastUpdateTime = now;
+      // 말이 잘리면 같은 에이전트가 이어서 계속 (최대 3회 연속)
+      const contMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+        { role: "user", content: userContent },
+      ];
+      const MAX_CONT = 3;
+      for (let cont = 0; cont <= MAX_CONT; cont++) {
+        let stopReason = "end_turn";
+        for await (const chunk of streamClaude({
+          apiKey: agentApiKey,
+          systemPrompt,
+          messages: contMessages,
+          maxTokens: 320,
+          tools: [],
+          onStopReason: (r) => { stopReason = r; },
+        })) {
+          roundText += chunk;
+          const now = Date.now();
+          if (now - lastUpdateTime >= 80) {
+            updateMsg(msgId, roundText, true);
+            lastUpdateTime = now;
+          }
         }
+        // 자연스럽게 끝났거나 최대 연속 횟수 도달 → 중단
+        if (stopReason !== "max_tokens" || cont === MAX_CONT) break;
+        // 잘렸으면: 지금까지 내용을 assistant 턴으로 추가하고 "계속해줘" 요청
+        contMessages.push({ role: "assistant", content: roundText });
+        contMessages.push({ role: "user", content: "계속 이어서 말해줘." });
       }
 
       const finalText = roundText.trim();
