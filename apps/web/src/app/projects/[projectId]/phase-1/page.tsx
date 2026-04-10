@@ -1536,8 +1536,9 @@ export default function Phase1Page() {
               lastUpdate = now;
             }
           }
-        } catch {
+        } catch (err) {
           streamFailed = true;
+          console.error(`[Debate] ${AGENTS[agentId].label} stream error:`, err);
         }
 
         const trimmed = bubbleText.trim();
