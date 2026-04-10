@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
+import { streamClaude, fetchImagesWithClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
 import styles from "./page.module.css";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
@@ -417,46 +417,36 @@ function ThinkingDots() {
   );
 }
 
-// ─── Image Search Card (Pixabay API) ──────────────────────────────────────────
-
-interface PixabayHit { previewURL: string; webformatURL: string; pageURL: string; tags: string; }
+// ─── Image Search Card (Claude web_search) ────────────────────────────────────
 
 function ImageSearchCard({ query }: { query: string }) {
-  const [images, setImages] = useState<PixabayHit[]>([]);
+  const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const apiKey = localStorage.getItem("wts_pixabay_key");
+    const apiKey = getAnthropicKey();
     if (!apiKey) {
-      setError("no_key");
+      setError("Anthropic API 키가 없습니다.");
       setLoading(false);
       return;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    let cancelled = false;
 
-    fetch(
-      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&image_type=illustration&per_page=4&safesearch=true`,
-      { signal: controller.signal }
-    )
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<{ hits?: PixabayHit[]; error?: string }>;
-      })
-      .then(data => {
-        if (data.error) throw new Error(data.error);
-        setImages((data.hits ?? []).slice(0, 4));
+    fetchImagesWithClaude(query, apiKey)
+      .then(urls => {
+        if (cancelled) return;
+        setImages(urls);
         setLoading(false);
       })
       .catch((e: Error) => {
-        if (e.name !== "AbortError") setError(e.message);
+        if (cancelled) return;
+        setError(e.message);
         setLoading(false);
-      })
-      .finally(() => clearTimeout(timeout));
+      });
 
-    return () => { controller.abort(); };
+    return () => { cancelled = true; };
   }, [query]);
 
   return (
@@ -471,42 +461,39 @@ function ImageSearchCard({ query }: { query: string }) {
       </div>
 
       {loading && (
-        <div style={{ fontSize: 12, color: "#64748b", padding: "4px 0" }}>
+        <div style={{ fontSize: 12, color: "#64748b", padding: "4px 0", display: "flex", alignItems: "center", gap: 6 }}>
           <ThinkingDots />
+          <span>이미지 탐색 중...</span>
         </div>
       )}
 
-      {error === "no_key" && (
-        <div style={{ fontSize: 12, color: "#fbbf24" }}>
-          ⚠ Pixabay API 키가 없습니다.{" "}
-          <a href="/settings" style={{ color: "#60a5fa", textDecoration: "underline" }}>설정에서 입력해주세요 →</a>
-        </div>
-      )}
-
-      {error && error !== "no_key" && (
-        <div style={{ fontSize: 12, color: "#f87171" }}>이미지 로딩 실패: {error}</div>
+      {error && (
+        <div style={{ fontSize: 12, color: "#f87171" }}>⚠ {error}</div>
       )}
 
       {!loading && !error && images.length === 0 && (
-        <div style={{ fontSize: 12, color: "#64748b" }}>검색 결과 없음</div>
+        <div style={{ fontSize: 12, color: "#64748b" }}>관련 이미지를 찾지 못했습니다.</div>
       )}
 
       {!loading && !error && images.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-          {images.map((img, idx) => (
+          {images.map((url, idx) => (
             <a
               key={idx}
-              href={img.pageURL}
+              href={url}
               target="_blank"
               rel="noopener noreferrer"
-              title={img.tags}
               style={{ borderRadius: 8, overflow: "hidden", display: "block", border: "1px solid rgba(96,165,250,0.2)" }}
             >
               <img
-                src={img.webformatURL}
-                alt={img.tags}
+                src={url}
+                alt={query}
                 style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
                 loading="lazy"
+                onError={(e) => {
+                  // 이미지 로딩 실패 시 숨김
+                  (e.currentTarget.parentElement as HTMLElement).style.display = "none";
+                }}
               />
             </a>
           ))}

@@ -64,6 +64,83 @@ export interface StreamClaudeOptions {
   model?: string;
 }
 
+// ─── Image search via Claude web_search (non-streaming) ──────────────────────
+
+/**
+ * Claude가 web_search 툴로 이미지 URL을 직접 찾아서 반환.
+ * Pixabay 키 불필요 — 기존 Anthropic API 키만 사용.
+ */
+export async function fetchImagesWithClaude(
+  query: string,
+  apiKey: string,
+): Promise<string[]> {
+  const body = {
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 800,
+    tools: [WEB_SEARCH_TOOL],
+    messages: [
+      {
+        role: "user",
+        content: `Search the web for images related to: "${query} webtoon manhwa korean comic art style reference"
+
+Find pages on sites like artstation.com, deviantart.com, pinterest.com, or similar art/image hosting sites.
+Extract 4 direct image file URLs from the search results (URLs ending in .jpg .jpeg .png .webp .gif or containing image CDN paths).
+
+Return ONLY a raw JSON array of the 4 URLs — no explanation, no markdown, no other text:
+["https://...", "https://...", "https://...", "https://..."]`,
+      },
+    ],
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(PROXY_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    res = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  if (!res.ok) throw new Error(`Claude API ${res.status}`);
+
+  const data = await res.json() as {
+    content?: Array<{ type: string; text?: string }>;
+  };
+
+  const text = (data.content ?? [])
+    .filter((b): b is { type: "text"; text: string } => b.type === "text" && !!b.text)
+    .map(b => b.text)
+    .join("");
+
+  // JSON 배열 추출 시도
+  const jsonMatch = text.match(/\[[\s\S]*?\]/);
+  if (jsonMatch) {
+    try {
+      const urls = JSON.parse(jsonMatch[0]) as unknown[];
+      const filtered = urls.filter(
+        (u): u is string => typeof u === "string" && u.startsWith("http"),
+      );
+      if (filtered.length > 0) return filtered.slice(0, 4);
+    } catch { /* fallthrough */ }
+  }
+
+  // regex fallback: URL 패턴 직접 추출
+  const matches =
+    text.match(/https?:\/\/[^\s"'\],]+\.(jpg|jpeg|png|webp|gif)(\?[^\s"'\],]*)?/gi) ?? [];
+  return matches.slice(0, 4);
+}
+
 // ─── Streaming generator (with 429 auto-retry) ───────────────────────────────
 
 /**
