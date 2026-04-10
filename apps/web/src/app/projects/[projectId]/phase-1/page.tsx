@@ -97,7 +97,7 @@ function buildAgentPromptP1(
 - 이전 발언에 진짜 반응해. 직설적으로, 감정을 섞어가며.
 - 오직 당신의 대사만. 이름이나 접두어 없이 대사만.
 - 다른 사람 말투 따라하지 말기.
-- 1~2문장. 카톡처럼 짧고 자연스러운 구어체.
+- 반드시 1문장. 절대 2문장 넘기지 마. 카톡처럼 짧고 임팩트 있게.
 - 은어, 의성어, 감정 표현 풍부하게 써도 돼. '어?', '우와', '진짜?', '아 미쳤나' 같은 표현도 OK.
 - 마크다운(#, *, >, -) 금지. JSON 금지.
 - 자연스러운 끊김, 감탄, 침묵도 괜찮아.`;
@@ -996,8 +996,6 @@ export default function Phase1Page() {
     let shouldContinue = true;
     // agentIndex는 위에서 이미 초기화됨
 
-    console.log(`[DEBUG] Starting debate: agentIndex=${agentIndex}, transcript lines=${transcript.length}`);
-
     debateLoop: while (shouldContinue) {
       shouldContinue = false; // 기본값: 끝냄
 
@@ -1007,10 +1005,8 @@ export default function Phase1Page() {
         const keyIndex = getApiKeyIndexForAgent(agentIndex);
         const agentApiKey = getAnthropicKeyByIndex(keyIndex);
 
-        console.log(`[DEBUG] Round ${roundsInCycle + 1}: agent=${agentId}, keyIndex=${keyIndex}, hasKey=${!!agentApiKey}`);
-
         if (!agentApiKey) {
-          console.error(`No API key found for agent ${agentIndex} (keyIndex=${keyIndex})`);
+          console.warn(`No API key found for agent ${agentIndex} (keyIndex=${keyIndex})`);
           break debateLoop;
         }
 
@@ -1028,8 +1024,8 @@ export default function Phase1Page() {
           }
         }
 
-        // 상대 대화 읽고 생각하는 시간 (3~4초) - 자연스러운 대화 속도
-        await sleep(3000 + Math.random() * 1000);
+        // 상대 대화 읽고 생각하는 시간 (6~8초) - 자연스러운 대화 속도
+        await sleep(6000 + Math.random() * 2000);
 
         // 최근 30줄 컨텍스트
         const recentLines = transcript.slice(-30);
@@ -1050,7 +1046,7 @@ export default function Phase1Page() {
           apiKey: agentApiKey,
           systemPrompt,
           messages: [{ role: "user", content: userContent }],
-          maxTokens: 400,
+          maxTokens: 120,
           tools: [],
         })) {
           roundText += chunk;
@@ -1094,7 +1090,7 @@ export default function Phase1Page() {
         } catch { /* quota */ }
 
         // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간
-        await sleep(1200);
+        await sleep(2400);
       }
 
       // 15라운드 완료 후: 계속할지 물어보기
@@ -1120,14 +1116,14 @@ export default function Phase1Page() {
             }
           }, 100);
 
-          // 10초 후 자동으로 진행 (사용자 입력 없으면)
+          // 30초 후 자동으로 진행 (사용자 입력 없으면)
           setTimeout(() => {
             clearInterval(checkInterval);
             addMsg("user", round, "좋아, 계속해", false);
             transcript.push(`[사용자]: 좋아, 계속해`);
             round++;
             resolve();
-          }, 10000);
+          }, 30000);
         });
 
         // 다음 사이클 준비
@@ -1195,8 +1191,13 @@ export default function Phase1Page() {
   }, [projectId]);
 
   // ── Continue interrupted debate ──
-  const handleContinue = useCallback(() => {
+  const handleContinue = useCallback(async () => {
     setMsgs((prev: Msg[]) => prev.filter((m: Msg) => !m.streaming));
+    // "저장 중" 안내 메시지 잠깐 표시
+    const tmpId = Math.random().toString(36).slice(2);
+    setMsgs((prev: Msg[]) => [...prev, { id: tmpId, agent: "producer" as AgentId, round: 0, text: "💾 기존 대화 저장 중...", streaming: true }]);
+    await new Promise<void>(r => setTimeout(r, 1200));
+    setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== tmpId));
     runDebate(genre, concept, platform, episodeCount, savedTranscriptRef.current);
   }, [genre, concept, platform, episodeCount, runDebate]);
 
