@@ -1501,12 +1501,11 @@ export default function Phase1Page() {
       let lastUpdateTime = 0;
       // 문장 끝 판단: 한국어 어미 + 서양 문장부호
       const SENTENCE_END_RE = /[.!?。！？～…]\s*$|[다요야지해네죠나까]\s*$/;
-      const isSentenceEnd = (t: string) => SENTENCE_END_RE.test(t.trim()) || t.trim().length === 0;
+      const isSentenceEnd = (t: string) => SENTENCE_END_RE.test(t.trim());
 
       // 같은 에이전트가 문장이 완전히 끝날 때까지 말풍선을 이어서 생성 (최대 4개)
-      // 각 말풍선은 독립 addMsg → 자연스럽게 말풍선 분리
       let currentMsgId = addMsg(agentId, round, "", true);
-      let allText = ""; // transcript 기록용 전체 텍스트
+      let allText = "";
       const contMessages: Array<{ role: "user" | "assistant"; content: string }> = [
         { role: "user", content: userContent },
       ];
@@ -1516,6 +1515,7 @@ export default function Phase1Page() {
         let stopReason = "end_turn";
         let bubbleText = "";
         let lastUpdate = 0;
+        let streamFailed = false;
         try {
           for await (const chunk of streamClaude({
             apiKey: agentApiKey,
@@ -1536,19 +1536,29 @@ export default function Phase1Page() {
               lastUpdate = now;
             }
           }
-        } catch { /* 429 소진 → 현재까지 내용으로 마무리 */ }
+        } catch {
+          streamFailed = true;
+        }
+
+        const trimmed = bubbleText.trim();
+
+        // 스트림 실패 + 빈 텍스트 → 빈 말풍선 제거 후 중단
+        if (streamFailed && !trimmed) {
+          setMsgs(prev => prev.filter(m => m.id !== currentMsgId));
+          break;
+        }
 
         // ⏳ 잔여 텍스트 제거 후 확정
-        updateMsg(currentMsgId, bubbleText.trim(), false);
-        allText += (allText ? " " : "") + bubbleText.trim();
+        updateMsg(currentMsgId, trimmed, false);
+        allText += (allText ? " " : "") + trimmed;
 
-        // 문장이 완전히 끝났거나 max_tokens가 아니면 종료
-        const truncated = stopReason === "max_tokens" || !isSentenceEnd(bubbleText);
+        // 문장이 완전히 끝났으면 종료
+        const truncated = stopReason === "max_tokens" || (trimmed.length > 0 && !isSentenceEnd(trimmed));
         if (!truncated || bubble === MAX_BUBBLES - 1) break;
 
         // 잘렸으면: 새 말풍선 열고 이어서
         await sleep(600);
-        contMessages.push({ role: "assistant", content: bubbleText.trim() });
+        contMessages.push({ role: "assistant", content: trimmed });
         contMessages.push({ role: "user", content: "방금 말을 이어서 다음 문장을 완성해줘." });
         currentMsgId = addMsg(agentId, round, "", true);
         lastUpdateTime = 0;
