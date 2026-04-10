@@ -59,7 +59,7 @@ const STAGES = [
   { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·해결 방향",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","resolution_hint":"해결 방향"}' },
   { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
   { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
-  { id: 5 as const, name: "복선·암시",  topic: "복선과 암시 — 설치 장면·회수 장면·시각적 모티프·상징 오브젝트·훼이크·복선 타임라인",  tag: "FORESHADOWING", color: "#f87171", schema: '{"foreshadowing":[{"setup":"복선 설치 장면 (몇 화, 상황, 오브젝트/대사)","payoff":"회수 장면 (감정적 충격)","visual_marker":"시각적 표식"}],"motifs":["반복 시각 모티프"],"symbols":[{"object":"오브젝트","meaning":"상징 의미"}],"red_herrings":["훼이크와 그 효과"]}' },
+  { id: 5 as const, name: "소품·장비",  topic: "소품·장비·도구 — 탈것·무기·특수 아이템·장비·일상용품 등 이야기에서 중요한 모든 물건의 시각적 설계",  tag: "PROPS", color: "#e879f9", schema: '{"props":[{"name":"소품명","type":"유형(탈것/무기/장비/아이템/일상용품)","visual":"시각적 묘사 (색상·형태·재질·크기)","condition":"상태 (낡음/새것/특별히 장식됨 등)","function":"기능/용도","story_role":"이야기에서의 역할","symbolic_meaning":"상징적 의미","owner":"주요 소유자/사용자"}]}' },
 ];
 type StageId = 1 | 2 | 3 | 4 | 5;
 
@@ -137,7 +137,7 @@ const STAGE_PROMPTS: Record<StageId, string> = {
   2: "시놉시스 — 로그라인·전제·핵심 갈등·3막 구조·해결 방향. 나중에 100화 로드맵을 짤 수 있을 만큼 구체적으로.",
   3: "등장인물 — 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 쓸 수 있을 만큼 시각적으로 구체적으로. 인물당 충분히 깊이 파고들어.",
   4: "주요 장소 — 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로 묘사해. 시각적 이미지가 눈에 그려져야 해.",
-  5: "복선과 암시 — 설치 장면·회수 장면·시각적 모티프·상징 오브젝트·훼이크. 독자가 재독 시 '아 이때 이미 나왔었구나' 하는 순간을 설계해. 타임라인과 시각적 표식까지 구체적으로.",
+  5: "소품·장비·도구 — 탈것(택배차·오토바이·전함 등)·무기·특수 아이템·장비·일상용품. 이야기에서 의미 있는 모든 물건을 이미지로 그릴 수 있을 만큼 시각적으로 설계해. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
 };
 
 // 단계별 구조화 데이터 → 에이전트용 풍부한 다줄 요약 (모든 필드 포함)
@@ -196,23 +196,21 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
           ).join("\n\n");
         }
         break;
-      case 5: {
-        const fw = Array.isArray(data.foreshadowing)
-          ? (data.foreshadowing as Record<string, string>[])
-              .map((f, i) => line(`  ${i + 1}.`, f.setup && `설치: ${f.setup}`, f.payoff && `→ 회수: ${f.payoff}`, f.visual_marker && `[표식: ${f.visual_marker}]`))
-              .join("\n")
-          : "";
-        const motifs = Array.isArray(data.motifs)
-          ? `반복 모티프: ${(data.motifs as string[]).join(", ")}`
-          : "";
-        const symbols = Array.isArray(data.symbols)
-          ? `상징 오브젝트:\n${(data.symbols as Record<string,string>[]).map(s => `  · ${s.object}: ${s.meaning}`).join("\n")}`
-          : "";
-        const rh = Array.isArray(data.red_herrings)
-          ? `훼이크: ${(data.red_herrings as string[]).join(", ")}`
-          : "";
-        return [fw && `복선:\n${fw}`, motifs, symbols, rh].filter(Boolean).join("\n");
-      }
+      case 5:
+        if (Array.isArray(data.props)) {
+          return (data.props as Record<string, string>[]).map(p =>
+            [
+              `▸ ${p.name}${p.type ? ` (${p.type})` : ""}`,
+              p.visual     && `  시각: ${p.visual}`,
+              p.condition  && `  상태: ${p.condition}`,
+              p.function   && `  기능: ${p.function}`,
+              p.story_role && `  역할: ${p.story_role}`,
+              p.symbolic_meaning && `  상징: ${p.symbolic_meaning}`,
+              p.owner      && `  소유자: ${p.owner}`,
+            ].filter(Boolean).join("\n")
+          ).join("\n\n");
+        }
+        break;
     }
   } catch { /* ignore */ }
   return Object.entries(data).slice(0, 8)
@@ -421,31 +419,32 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
 
 서술형 문단과 구체적 묘사를 섞어 작성하세요.`,
 
-  5: `다음 토론에서 합의된 복선·암시 체계를 시나리오 작가가 실제로 사용할 수 있는 수준으로 상세히 정리해주세요.
+  5: `다음 토론에서 합의된 소품·장비·도구를 영화·애니메이션 프랍 디자이너가 실제로 제작할 수 있는 수준으로 상세히 정리해주세요.
+각 소품마다 이미지 생성에 바로 활용할 수 있는 수준의 시각적 묘사가 필요합니다.
 
-반드시 포함할 내용:
-■ 핵심 복선 체계 (각 복선 상세)
-  - 설치 장면: 몇 화쯤, 어떤 상황에서, 어떤 오브젝트/대사/장면으로 심는가
-  - 회수 장면: 어떤 감정적 충격을 주는가, 독자의 반응
-  - 시각적 표식: 독자가 나중에 돌아봤을 때 알아볼 수 있는 시각적 단서
-  - 설치-회수 사이의 간격 (몇 화, 어느 시점)
+각 소품·장비·도구마다 반드시 포함할 내용:
+■ 기본 정보
+  - 이름과 유형 (탈것 / 무기 / 장비 / 특수 아이템 / 일상용품 / 기타)
+  - 주요 소유자 또는 사용자
 
-■ 반복 시각 모티프
-  - 작품 전체를 관통하는 반복 이미지 (색, 형태, 오브젝트)
-  - 각 모티프의 의미와 변주 방식
+■ 시각적 설계 (이미지 생성 가능 수준)
+  - 전체적인 형태와 구조
+  - 색상: 주조색, 보조색, 강조색
+  - 재질과 질감 (금속 광택, 낡은 천, 녹슨 철, 나무결 등)
+  - 크기와 비례 (사람과의 상대적 크기)
+  - 상태: 새것/낡음/손상/특별히 개조됨/장식됨
+  - 눈에 띄는 특징적 디테일 (로고, 흠집, 개조 부위, 특수 장치 등)
 
-■ 상징 오브젝트 체계
-  - 특정 오브젝트가 가진 상징적 의미
-  - 오브젝트가 등장할 때마다 달라지는 의미의 레이어
+■ 기능과 용도
+  - 실제 기능 (어떻게 작동하는가)
+  - 이야기 속에서의 구체적 사용 방식
 
-■ 의도적 훼이크 (Red Herring)
-  - 독자를 잘못된 방향으로 유도하는 장치
-  - 훼이크가 드러나는 순간의 효과
+■ 서사적 역할과 상징
+  - 이야기에서 어떤 역할을 하는가
+  - 상징적 의미 (있다면)
+  - 소유자와의 관계 (왜 이 인물이 이것을 가지고 있는가)
 
-■ 복선 전체 타임라인
-  - 설치 → 강화 → 회수 흐름을 일목요연하게
-
-서술형으로 풍부하게 작성하세요.`,
+서술형 문장으로 풍부하게, 각 항목을 충분히 작성하세요.`,
 };
 
 // ─── 단계 결과 추출 ────────────────────────────────────────────────────────────
@@ -583,18 +582,15 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
           {row("시각", loc.visual)}{row("구조", loc.architecture)}{row("조명", loc.lighting)}{row("색채", loc.color_palette)}{row("분위기", loc.atmosphere)}{row("소리", loc.sound)}{row("서사적 의미", loc.significance)}{row("주요 장면", loc.key_scenes)}{row("상징", loc.symbolic_meaning)}
         </div>
       ))}
-      {result.stageId === 5 && <>
-        {Array.isArray(data.foreshadowing) && (data.foreshadowing as Record<string,string>[]).map((f, i) => (
-          <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #2a2a3d" }}>
-            {row(`복선 ${i+1} 설치`, f.setup)}{row("회수", f.payoff)}{row("시각 표식", f.visual_marker)}
+      {result.stageId === 5 && Array.isArray(data.props) && (data.props as Record<string,string>[]).map((p, i) => (
+        <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>
+            {p.name} <span style={{ fontSize:11, color:"#7878a0" }}>({p.type})</span>
+            {p.owner && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>· {p.owner}</span>}
           </div>
-        ))}
-        {Array.isArray(data.motifs) && row("반복 모티프", (data.motifs as string[]).join(" · "))}
-        {Array.isArray(data.symbols) && (data.symbols as Record<string,string>[]).map((s, i) => (
-          <div key={i}>{row(`상징 오브젝트`, `${s.object} — ${s.meaning}`)}</div>
-        ))}
-        {Array.isArray(data.red_herrings) && row("훼이크", (data.red_herrings as string[]).join(", "))}
-      </>}
+          {row("시각", p.visual)}{row("상태", p.condition)}{row("기능", p.function)}{row("역할", p.story_role)}{row("상징", p.symbolic_meaning)}
+        </div>
+      ))}
       {/* Fallback: 구조화 실패 시 단계별 상세 요약 */}
       {data.raw_summary && (
         <div style={{ fontSize:13, color:"#d4d4e8", lineHeight:1.85, whiteSpace:"pre-wrap" as const, background:"#12121c", borderRadius:8, padding:"12px 14px" }}>
