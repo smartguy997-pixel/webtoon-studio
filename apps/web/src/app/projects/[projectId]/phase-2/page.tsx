@@ -363,8 +363,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         for (const [agentId, id] of roundMsgIds)
           updateMsg(id, finalParsed.find(m => m.agentId === agentId)?.text ?? "", false);
 
+        // abort 여부와 관계없이 내용 저장 (나중에 JSON 추출에 사용)
+        if (roundText.trim()) conv.push({ role: "assistant", content: roundText });
         if (abortRef.current) break;
-        conv.push({ role: "assistant", content: roundText });
 
         // Compress every 10 rounds
         if (round % 10 === 0 && conv.length > 12) {
@@ -442,9 +443,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         stageResults: newResults,
         currentStageIdx: stageIdx + 1,
       }));
+      setDebatePhase("confirmed");
+    } else {
+      // 추출 실패 — 토론이 너무 짧거나 LLM이 형식을 지키지 않은 경우
+      setApiError(`${stage.name} 결과 정리 실패. 토론을 조금 더 진행한 뒤 다시 확정해주세요.`);
+      // 토론 재개
+      abortRef.current = false;
+      void runDebate(stageIdx);
     }
-
-    setDebatePhase("confirmed");
   }, [genre, projectId, addMsg, updateMsg]);
 
   // ── Move to next stage (only via button) ──
