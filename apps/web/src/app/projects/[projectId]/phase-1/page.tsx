@@ -1381,9 +1381,10 @@ export default function Phase1Page() {
         if (matchedCommand?.handler === "end") break debateLoop;
       }
 
-      // 사용자가 말했으면 1초, 아니면 최대 12초 대기 — 대기 중 사용자 메시지 오면 즉시 깨어남
+      // 에이전트 발언 후 사용자 개입 대기 — 메시지 오면 즉시 깨어남
+      // 사용자가 방금 말했으면 1.5초, 아니면 최대 20초 (사용자가 타이핑할 충분한 시간)
       {
-        const maxWait = userJustSpoke ? 1000 : 12000;
+        const maxWait = userJustSpoke ? 1500 : 20000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
           if (pendingUserMsgRef.current) break;
@@ -1534,7 +1535,7 @@ export default function Phase1Page() {
             apiKey: agentApiKey,
             systemPrompt,
             messages: contMessages,
-            maxTokens: 500,
+            maxTokens: 180,
             tools: [],
             onStopReason: (r) => { stopReason = r; },
             onRateLimit: (msg) => {
