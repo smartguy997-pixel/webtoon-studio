@@ -1542,7 +1542,7 @@ export default function Phase1Page() {
             apiKey: agentApiKey,
             systemPrompt,
             messages: contMessages,
-            maxTokens: 180,
+            maxTokens: 100,
             tools: [],
             onStopReason: (r) => { stopReason = r; },
             onRateLimit: (msg) => {
