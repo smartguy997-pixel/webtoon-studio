@@ -28,18 +28,22 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-// ─── Name → AgentId mapping ───────────────────────────────────────────────────
+// ─── 라운드당 한 명씩 순서대로 발언 (Phase 2와 동일한 방식) ─────────────────────
 
-const NAME_TO_AGENT: Record<string, AgentId> = {
-  "전략기획자": "strategist",
-  "심층조사자": "researcher",
-  "세계관설계자": "worldbuilder",
-  "캐릭터디자이너": "character",
-  "시나리오작가": "scenario",
-  "연출작가": "script",
-  "총괄프로듀서": "producer",
-  "편집자": "editor",
-  "사용자": "user",
+const DEBATE_AGENTS_P1: AgentId[] = [
+  "strategist", "researcher", "worldbuilder", "character", "scenario", "script", "producer",
+];
+
+// 에이전트별 성격·역할 (이전 DEBATE_SYSTEM_PROMPT에서 분리)
+const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
+  strategist:   "차갑고 날카롭다. K-웹툰 시장 전문가. '그래서 뭐가 달라요?' 직설 스타일. 시장 포지셔닝, 차별점, 경쟁작 분석 담당.",
+  researcher:   "의심 많고 꼬리 무는 스타일. 논리 모순 탐지. '잠깐, 그게 가능해요?' 스타일. 설정 허점과 검증 가능성을 파고든다.",
+  worldbuilder: "규칙 집착. 설정 충돌에 민감. '그 설정, 세계 규칙이랑 안 맞아요.' 스타일.",
+  character:    "감성적, 감정이입형. '독자가 이 캐릭터 왜 좋아해야 해요?' 스타일.",
+  scenario:     "서사 집착. 훅 타이밍 강박. '이거 너무 일찍 터뜨리는 거 아니에요?' 스타일.",
+  script:       "시각적 사고. '이 장면, 클로즈업 아니면 임팩트 없어요.' 스타일.",
+  producer:     "중재자. 갈등 정리, 합의 유도. 말이 많지 않지만 나올 때는 결론을 유도한다.",
+  editor:       "베테랑 출판 편집자. 말수 적고 무게감 있음. 앞 대화에서 실제 발언을 인용하며 핵심을 짚는다.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -65,69 +69,30 @@ interface Phase1Result {
 type Stage = "form" | "debate";
 type DebatePhase = "idle" | "running" | "paused" | "done";
 
-// ─── Single system prompt (all 7 agents, one conversation) ───────────────────
+// ─── 에이전트 1명용 시스템 프롬프트 빌더 ─────────────────────────────────────────
 
-const DEBATE_SYSTEM_PROMPT = `너는 8명의 창작 전문가가 참여하는 웹툰 기획 분석 회의를 진행한다.
+function buildAgentPromptP1(
+  agentId: AgentId,
+  genre: string,
+  concept: string,
+  platLabel: string,
+  ep: string,
+): string {
+  const agentLabel = AGENTS[agentId].label;
+  const personality = AGENT_PROMPTS_P1[agentId] ?? "";
+  return `당신은 웹툰 기획 분석 회의에 참여한 ${agentLabel}입니다.
+성격·역할: ${personality}
+장르: ${genre} | 플랫폼: ${platLabel} | 목표화수: ${ep}
+기획 개요: ${concept.slice(0, 300)}
 
-### 참여자와 성격
-- [전략기획자]: 차갑고 날카로움. K-웹툰 시장 전문가. "그래서 뭐가 달라요?" 직설 스타일.
-- [심층조사자]: 의심 많고 꼬리 무는 스타일. 논리 모순 탐지. "잠깐, 그게 가능해요?" 스타일.
-- [세계관설계자]: 규칙 집착. 설정 충돌에 민감. "그 설정, 세계 규칙이랑 안 맞아요." 스타일.
-- [캐릭터디자이너]: 감성적, 감정이입형. "독자가 이 캐릭터 왜 좋아해야 해요?" 스타일.
-- [시나리오작가]: 서사 집착. 훅 타이밍 강박. "이거 너무 일찍 터뜨리는 거 아니에요?" 스타일.
-- [연출작가]: 시각적 사고. "이 장면, 클로즈업 아니면 임팩트 없어요." 스타일.
-- [총괄프로듀서]: 중재자. 갈등 정리, 합의 유도만 담당.
-- [편집자]: 베테랑 출판 편집자. 말수 적고 무게감 있음. 평소엔 침묵. 등장할 때는 반드시 앞 대화에서 실제 발언된 내용을 언급하거나 인용하면서 자연스럽게 마무리를 유도한다. 고정된 문구 없이 그날 대화 흐름에 맞게 반응한다.
-
-### 출력 형식
-[이름]: 대사
-
-### 출력 규칙 (반드시 준수)
-- 매 응답마다 직전 발언을 읽고, 그 내용에 직접 반응하는 사람 1명만 말한다.
-- 반드시 앞 발언을 인식했음을 드러내야 한다. (예: "방금 말씀하신 거..." "그건 맞는데...")
-- 각 대사는 1~2문장. 마크다운(#, *, >, -) 절대 금지.
-- 카카오톡 메시지처럼 짧고 자연스러운 한국어.
-- 침묵 표현 가능: [세계관설계자]: (잠시 생각하다가) 그건...
-- 말 끊기 표현 가능: [전략기획자]: 잠깐—
-- 완전한 문장 아니어도 됨.
-- [사용자]: 가 발언하면 반드시 그 내용에 직접 반응한다.
-
-### 총괄프로듀서 규칙 (엄격히 준수)
-- "토론을 마무리합니다" 절대 금지.
-- 결론은 모든 에이전트가 동의했을 때만 가능. 반박이 남아있으면 계속 토론한다.
-- [PHASE1_RESULT] 같은 JSON 출력 절대 금지.
-- [사용자]가 "끝내자" 또는 "결론 내자"고 할 때만 마무리 단계로 넘어간다.
-- 그 전까지는 갈등이 길어질 때만 등장해 중재한다.
-
-### 편집자 등장 조건
-- [시스템: 마무리 단계]라는 신호가 오면 반드시 [편집자]가 등장한다.
-- 등장 후에는 다른 에이전트들이 하나씩 핵심 의견을 정리하며 수렴한다.`;
-
-// ─── Parse helpers ────────────────────────────────────────────────────────────
-
-function parseAgentMessages(text: string): Array<{ agentId: AgentId; text: string }> {
-  // Split by lines that start with [이름]:
-  const lines = text.split(/\n/);
-  const results: Array<{ agentId: AgentId; text: string }> = [];
-  let current: { agentId: AgentId; lines: string[] } | null = null;
-
-  for (const line of lines) {
-    const match = line.match(/^\[([^\]]+)\]:\s*([\s\S]*)/);
-    if (match) {
-      if (current && current.lines.join(" ").trim()) {
-        results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
-      }
-      const name = match[1].trim();
-      const agentId = NAME_TO_AGENT[name] ?? "producer";
-      current = { agentId, lines: [match[2]] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current && current.lines.join(" ").trim()) {
-    results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
-  }
-  return results;
+[규칙]
+- 이전 발언을 읽고 직접 반응하거나, 분석 관점을 새로 제시하세요.
+- 오직 당신의 대사만 출력. [이름]: 같은 접두어 없이 대사만.
+- 다른 참여자 대사를 대신 쓰지 마세요.
+- 1~2문장, 카카오톡처럼 짧고 자연스러운 구어체 한국어.
+- 마크다운(#, *, >, -) 절대 금지.
+- [PHASE1_RESULT] JSON 출력 절대 금지.
+- 침묵·말 끊기·감탄 등 자연스러운 표현 허용.`;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -806,7 +771,7 @@ export default function Phase1Page() {
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
-  const savedConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const savedTranscriptRef = useRef<string[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -830,10 +795,10 @@ export default function Phase1Page() {
     if (rawConv) {
       try {
         const saved = JSON.parse(rawConv) as {
-          conv: Array<{ role: "user" | "assistant"; content: string }>;
+          transcript: string[];
           genre: string; concept: string; platform: string; episodeCount: string;
         };
-        savedConvRef.current = saved.conv ?? [];
+        savedTranscriptRef.current = saved.transcript ?? [];
         if (saved.genre) setGenre(saved.genre);
         if (saved.concept) setConcept(saved.concept);
         if (saved.platform) setPlatform(saved.platform as PlatformValue);
@@ -945,10 +910,10 @@ export default function Phase1Page() {
     }
   }, [projectId]);
 
-  // ── Run debate (single system prompt, all 7 agents in one conversation) ──
+  // ── Run debate: 에이전트 1명씩 별도 API 호출 (Phase 2와 동일한 방식) ──
   const runDebate = useCallback(async (
     g: string, c: string, plat: string, ep: string,
-    resumeConv?: Array<{ role: "user" | "assistant"; content: string }>
+    resumeTranscript?: string[]
   ) => {
     if (runningRef.current) return;
     runningRef.current = true;
@@ -973,15 +938,15 @@ export default function Phase1Page() {
       setTurnCount(0);
 
       const MOCK_LINES: Array<{ agent: AgentId; text: string }> = [
-        { agent: "strategist", text: `이미 비슷한 거 세 개 있는데, 이 기획은 뭐가 다르죠?` },
-        { agent: "researcher", text: `잠깐, 주인공이 갑자기 강해지는 건데... 이유가 있어요?` },
-        { agent: "character",  text: `그게 제일 중요한 거 아니에요? 독자가 왜 이 캐릭터를 좋아해야 해요?` },
-        { agent: "strategist", text: `포지셔닝 봐요. 감성 서사 + 도덕 딜레마 조합, 이 영역이 비어 있어요.` },
-        { agent: "researcher", text: `(잠시 생각하다가) 그건... 맞는 말인데, 설정 모순은요?` },
+        { agent: "strategist",   text: `이미 비슷한 거 세 개 있는데, 이 기획은 뭐가 다르죠?` },
+        { agent: "researcher",   text: `잠깐, 주인공이 갑자기 강해지는 건데... 이유가 있어요?` },
+        { agent: "character",    text: `그게 제일 중요한 거 아니에요? 독자가 왜 이 캐릭터를 좋아해야 해요?` },
+        { agent: "strategist",   text: `포지셔닝 봐요. 감성 서사 + 도덕 딜레마 조합, 이 영역이 비어 있어요.` },
+        { agent: "researcher",   text: `(잠시 생각하다가) 그건... 맞는 말인데, 설정 모순은요?` },
         { agent: "worldbuilder", text: `능력 체계가 정해지면 자연스럽게 해결되는 문제예요.` },
-        { agent: "scenario",   text: `1화에 봉인 암시 컷 하나 넣으면 되잖아요. 이탈률 잡을 수 있어요.` },
-        { agent: "script",     text: `그 장면, 클로즈업 아니면 임팩트 없어요. 표정으로만 가야 해요.` },
-        { agent: "producer",   text: `좋아요, 정리할게요. 이 기획, 진행합시다.` },
+        { agent: "scenario",     text: `1화에 봉인 암시 컷 하나 넣으면 되잖아요. 이탈률 잡을 수 있어요.` },
+        { agent: "script",       text: `그 장면, 클로즈업 아니면 임팩트 없어요. 표정으로만 가야 해요.` },
+        { agent: "producer",     text: `좋아요, 정리할게요. 이 기획, 진행합시다.` },
       ];
 
       for (let i = 0; i < MOCK_LINES.length; i++) {
@@ -1001,154 +966,103 @@ export default function Phase1Page() {
 
     // ── REAL API MODE ──
     setDebatePhase("running");
-    setTurnCount(1);
-
-    const convHistory: Array<{ role: "user" | "assistant"; content: string }> =
-      resumeConv ? [...resumeConv] : [];
-
-    if (!resumeConv || resumeConv.length === 0) {
-      convHistory.push({
-        role: "user",
-        content: `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`,
-      });
-    } else {
-      // Resuming after reload — tell agents to continue
-      convHistory.push({
-        role: "user",
-        content: "페이지를 다시 열었어. 이전 논의를 기억하고 토론을 계속해줘.",
-      });
-    }
-
-    // ── Helper: silent sliding-window compression ──
-    const compressHistory = async () => {
-      if (convHistory.length < 14) return; // not enough to compress
-      const initial = convHistory[0]; // keep original topic prompt
-      const recent = convHistory.slice(-8); // keep last 4 pairs
-      const oldAssistant = convHistory.slice(1, -8).filter(m => m.role === "assistant");
-      if (oldAssistant.length === 0) return;
-
-      let summaryText = "";
-      for await (const chunk of streamClaude({
-        apiKey,
-        systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
-        messages: [{
-          role: "user",
-          content: `다음 토론 내용을 핵심 이슈 중심으로 10줄 이내로 요약해줘:\n\n${oldAssistant.map(m => m.content).join("\n\n").slice(0, 3000)}`,
-        }],
-        maxTokens: 400,
-        tools: [],
-      })) {
-        summaryText += chunk;
-      }
-
-      convHistory.length = 0;
-      convHistory.push(
-        initial,
-        { role: "assistant", content: `[이전 토론 요약]\n${summaryText}` },
-        { role: "user", content: "위 요약을 참고하여 토론을 계속해줘." },
-        ...recent,
-      );
-    };
 
     const END_TRIGGERS = ["끝내자", "결론 내자", "마무리해", "결론내자"];
-    const MAX_ROUNDS = 120;
-    let round = 0;
+    const MAX_ROUNDS = 100;
 
-    debateLoop: for (round = 1; round <= MAX_ROUNDS; round++) {
+    // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
+    let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
+    // startRound: 사용자 발언 제외한 에이전트 발언 수 기준
+    let startRound = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
+
+    let round = startRound;
+    setTurnCount(round);
+
+    debateLoop: for (; round <= MAX_ROUNDS; round++) {
       setTurnCount(round);
 
-      // ── Stream one round (Claude speaks as 1~3 agents) ──
-      let roundText = "";
-      const roundMsgIds = new Map<AgentId, string>();
+      // 이번 발언자 결정
+      const agentId = DEBATE_AGENTS_P1[(round - 1) % DEBATE_AGENTS_P1.length];
+      const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
 
-      for await (const chunk of streamClaude({
-        apiKey,
-        systemPrompt: DEBATE_SYSTEM_PROMPT,
-        messages: convHistory,
-        maxTokens: 150,
-        tools: [],
-      })) {
-        roundText += chunk;
-
-        // Incrementally update bubbles as lines stream in
-        for (const { agentId, text } of parseAgentMessages(roundText)) {
-          if (!roundMsgIds.has(agentId)) {
-            roundMsgIds.set(agentId, addMsg(agentId, round, text, true));
-          } else {
-            updateMsg(roundMsgIds.get(agentId)!, text, true);
-          }
-        }
-      }
-
-      // Finalize streaming bubbles
-      const finalParsed = parseAgentMessages(roundText);
-      for (const [agentId, id] of roundMsgIds) {
-        updateMsg(id, finalParsed.find(m => m.agentId === agentId)?.text ?? "", false);
-      }
-
-      convHistory.push({ role: "assistant", content: roundText });
-
-      // ── Sliding window: compress every 10 rounds (silent background) ──
-      // At round 100 the editor appears and says the summary aloud — skip silent
-      // compression that round since the editor's spoken summary IS the context.
-      if (round % 10 === 0 && round !== 100) {
-        await compressHistory();
-      }
-      if (round === 100) {
-        // Editor just spoke — use that visible summary as the compressed context too
-        await compressHistory();
-      }
-
-      // ── Save conv history for resume after reload ──
-      localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
-        conv: convHistory,
-        genre: g, concept: c, platform: plat, episodeCount: ep,
-      }));
-
-      // ── Wait for user input (4 s pause — natural turn-taking) ──
-      await sleep(4000);
-
+      // 사용자 입력 처리 (이번 발언 전에 transcript에 삽입)
       const pendingMsg = pendingUserMsgRef.current;
       if (pendingMsg) {
         pendingUserMsgRef.current = null;
         addMsg("user", round, pendingMsg, false);
+        transcript.push(`[사용자]: ${pendingMsg}`);
 
         if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
-          // User triggered end — exit loop and generate final report
           break debateLoop;
         }
-
-        // Bug fix: inject as 'user' role so Claude reacts immediately
-        convHistory.push({
-          role: "user",
-          content: `[사용자]: ${pendingMsg}\n위 사용자 의견에 에이전트들이 즉시 반응해줘.`,
-        });
-      } else if (round === 100) {
-        // Editor enters — must reference actual things said in the conversation
-        convHistory.push({
-          role: "user",
-          content: "[시스템: 마무리 단계] [편집자]가 처음으로 발언한다. 지금까지 대화를 실제로 읽었음을 드러내야 한다. 특정 발언을 직접 언급하거나 인용하면서 자연스럽게 마무리를 유도해줘. 고정된 도입 문구 없이, 방금 들은 대화에서 가장 인상 깊었던 부분을 짚는 것으로 시작해.",
-        });
-      } else if (round > 100) {
-        // After editor appeared — agents wrap up naturally
-        convHistory.push({
-          role: "user",
-          content: "편집자 발언에 반응하면서, 아직 최종 입장을 말하지 않은 에이전트가 한 명 자신의 결론을 정리해줘.",
-        });
-      } else {
-        convHistory.push({ role: "user", content: "계속 토론해줘." });
       }
+
+      // 최근 30줄 컨텍스트
+      const recentLines = transcript.slice(-30);
+      const historyText = recentLines.length > 0
+        ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+        : "";
+
+      const userContent = round === 1
+        ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
+        : `${historyText}당신의 차례입니다. 이전 발언에 반응하거나 새 분석 관점을 제시하세요.`;
+
+      // 스트리밍: 이 에이전트만 발언
+      let roundText = "";
+      const msgId = addMsg(agentId, round, "", true);
+
+      for await (const chunk of streamClaude({
+        apiKey,
+        systemPrompt,
+        messages: [{ role: "user", content: userContent }],
+        maxTokens: 400,
+        tools: [],
+      })) {
+        roundText += chunk;
+        updateMsg(msgId, roundText, true);
+      }
+
+      const finalText = roundText.trim();
+      updateMsg(msgId, finalText, false);
+      if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+
+      // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
+      if (transcript.length > 0 && transcript.length % 20 === 0) {
+        const recentKeep = transcript.slice(-10);
+        const oldLines = transcript.slice(0, -10);
+        if (oldLines.length >= 5) {
+          let summary = "";
+          try {
+            for await (const c of streamClaude({
+              apiKey,
+              systemPrompt: "웹툰 기획 토론 핵심 쟁점을 간결하게 요약한다. 마크다운 금지.",
+              messages: [{ role: "user", content: `핵심 이슈 중심으로 10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+              maxTokens: 400,
+              tools: [],
+            })) summary += c;
+          } catch { /* ignore */ }
+          if (summary.trim()) {
+            transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+          }
+        }
+      }
+
+      // 재접속 대비 저장
+      try {
+        localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
+          transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
+        }));
+      } catch { /* quota */ }
+
+      await sleep(1800);
     }
 
-    // ── Final report (separate call, clean system prompt) ──
+    // ── Final report (별도 API 호출) ──
     await sleep(500);
     setTurnCount(round + 1);
     setIsWritingReport(true);
 
-    const allDebateText = convHistory
-      .filter(m => m.role === "assistant")
-      .map(m => m.content)
-      .join("\n\n");
+    const allDebateText = transcript.join("\n");
 
     const reportId = addMsg("producer", round + 1, "", true);
     let reportText = "";
@@ -1179,7 +1093,7 @@ export default function Phase1Page() {
   const handleStart = useCallback(() => {
     if (!concept.trim()) return;
     localStorage.removeItem(`p1_conv_${projectId}`);
-    savedConvRef.current = [];
+    savedTranscriptRef.current = [];
     setMsgs([]);
     setResult(null);
     setIsMock(false);
@@ -1192,7 +1106,7 @@ export default function Phase1Page() {
     localStorage.removeItem(`p1_msgs_${projectId}`);
     localStorage.removeItem(`p1_conv_${projectId}`);
     localStorage.removeItem(`wts_phase1_${projectId}`);
-    savedConvRef.current = [];
+    savedTranscriptRef.current = [];
     setSavedAt(null);
     setMsgs([]);
     setResult(null);
@@ -1203,7 +1117,7 @@ export default function Phase1Page() {
   // ── Continue interrupted debate ──
   const handleContinue = useCallback(() => {
     setMsgs((prev: Msg[]) => prev.filter((m: Msg) => !m.streaming));
-    runDebate(genre, concept, platform, episodeCount, savedConvRef.current);
+    runDebate(genre, concept, platform, episodeCount, savedTranscriptRef.current);
   }, [genre, concept, platform, episodeCount, runDebate]);
 
 
