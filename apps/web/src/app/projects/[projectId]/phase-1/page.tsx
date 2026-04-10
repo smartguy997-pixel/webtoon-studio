@@ -1405,6 +1405,7 @@ export default function Phase1Page() {
             maxTokens: tokens,
             tools: [],
             onStopReason: (r) => { stopReason = r; },
+            onRateLimit: (msg) => { updateMsg(msgId, text + `\n\n${msg}`, true); },
           })) {
             text += chunk;
             const now = Date.now();
@@ -1413,6 +1414,7 @@ export default function Phase1Page() {
           if (stopReason !== "max_tokens" || cont === 3) break;
           msgs.push({ role: "assistant", content: text });
           msgs.push({ role: "user", content: "계속 이어서 말해줘." });
+          await sleep(1000);
         }
         updateMsg(msgId, text.trim(), false);
         if (text.trim()) transcript.push(`[${AGENTS[agentId].label}]: ${text.trim()}`);
@@ -1499,6 +1501,10 @@ export default function Phase1Page() {
           maxTokens: 320,
           tools: [],
           onStopReason: (r) => { stopReason = r; },
+          // 429 대기 메시지는 말풍선에 섞지 않고 말풍선 하단에 별도 표시
+          onRateLimit: (msg) => {
+            updateMsg(msgId, roundText + `\n\n${msg}`, true);
+          },
         })) {
           roundText += chunk;
           const now = Date.now();
@@ -1512,6 +1518,7 @@ export default function Phase1Page() {
         // 잘렸으면: 지금까지 내용을 assistant 턴으로 추가하고 "계속해줘" 요청
         contMessages.push({ role: "assistant", content: roundText });
         contMessages.push({ role: "user", content: "계속 이어서 말해줘." });
+        await sleep(1000); // 연속 호출 사이 짧은 딜레이
       }
 
       const finalText = roundText.trim();

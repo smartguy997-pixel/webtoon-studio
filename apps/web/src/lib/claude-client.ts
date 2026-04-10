@@ -64,6 +64,11 @@ export interface StreamClaudeOptions {
   model?: string;
   /** stop_reason이 결정되면 호출됩니다. "max_tokens" 이면 말이 잘린 것. */
   onStopReason?: (reason: string) => void;
+  /**
+   * 지정 시 429 대기 메시지를 stream에 yield하지 않고 이 콜백으로만 전달합니다.
+   * debate 모드처럼 말풍선에 섞이면 안 되는 경우에 사용하세요.
+   */
+  onRateLimit?: (message: string) => void;
 }
 
 // ─── Image search via Claude (non-streaming, with tool-use fallback) ─────────
@@ -230,13 +235,22 @@ export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<s
     if (attempt > 0) {
       const wait = BACKOFF[attempt - 1];
       const secs = Math.round(wait / 1000);
-      yield `\n\n⏳ API 요청이 너무 많아요. ${secs}초 후 재시도합니다... (${attempt}/${BACKOFF.length})\n\n`;
-      // Countdown yield every 5s so UI doesn't look frozen
+      const waitMsg = `⏳ API 요청이 너무 많아요. ${secs}초 후 재시도합니다... (${attempt}/${BACKOFF.length})`;
+      if (opts.onRateLimit) {
+        // debate 모드: 말풍선에 섞지 않고 콜백으로만 전달
+        opts.onRateLimit(waitMsg);
+      } else {
+        yield `\n\n${waitMsg}\n\n`;
+      }
+      // Countdown every 5s
       const steps = Math.floor(wait / 5000);
       for (let s = 1; s <= steps; s++) {
         await new Promise<void>((r) => setTimeout(r, 5000));
         const remaining = secs - s * 5;
-        if (remaining > 0) yield `⏳ ${remaining}초...\n`;
+        if (remaining > 0) {
+          if (opts.onRateLimit) opts.onRateLimit(`⏳ ${remaining}초...`);
+          else yield `⏳ ${remaining}초...\n`;
+        }
       }
       const leftover = wait % 5000;
       if (leftover > 0) await new Promise<void>((r) => setTimeout(r, leftover));
