@@ -286,7 +286,7 @@ function StreamCursor() {
   return <span style={{ display: "inline-block", width: 2, height: 13, background: "#7c6cfc", marginLeft: 2, verticalAlign: "middle", borderRadius: 1, animation: "blink 0.9s step-start infinite" }} />;
 }
 
-function StageResultCard({ result }: { key?: StageId; result: StageResult }) {
+function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: StageId; result: StageResult; onViewDebate?: () => void; isViewingDebate?: boolean }) {
   const stage = STAGES.find(s => s.id === result.stageId)!;
   const { data } = result;
   const c = stage.color;
@@ -299,7 +299,16 @@ function StageResultCard({ result }: { key?: StageId; result: StageResult }) {
 
   return (
     <div style={{ background:`${c}08`, border:`1px solid ${c}30`, borderRadius:10, padding:"14px 16px", marginBottom:6 }}>
-      <div style={{ fontSize:10, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.7px", marginBottom:10 }}>✓ {stage.name} 완료</div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+        <div style={{ fontSize:10, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.7px" }}>✓ {stage.name} 완료</div>
+        {onViewDebate && (
+          <button
+            onClick={onViewDebate}
+            style={{ fontSize:11, fontWeight:700, color: isViewingDebate ? c : "#4a4a6a", background: isViewingDebate ? `${c}18` : "transparent", border:`1px solid ${isViewingDebate ? c : "#2a2a3d"}`, borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
+            {isViewingDebate ? "▲ 닫기" : "💬 토론 보기"}
+          </button>
+        )}
+      </div>
       {result.stageId === 1 && <>{row("시대/배경", data.era)}{row("분위기", data.atmosphere)}{row("세계 규칙", data.world_rules)}{row("특수 설정", data.special_elements)}</>}
       {result.stageId === 2 && <>{row("로그라인", data.logline)}{row("전제", data.premise)}{row("갈등", data.conflict)}{row("해결 방향", data.resolution_hint)}</>}
       {result.stageId === 3 && Array.isArray(data.characters) && (data.characters as Record<string,string>[]).map((ch, i) => (
@@ -366,6 +375,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [currentStageIdx, setCurrentStageIdx] = useState(0); // index into STAGES
   const [stageResults, setStageResults] = useState<StageResult[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
+  const [viewingStageIdx, setViewingStageIdx] = useState<number | null>(null); // 열람 중인 이전 단계
 
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -374,6 +385,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const pendingUserMsgRef = useRef<string | null>(null);
   const convRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const stageResultsRef = useRef<StageResult[]>([]);
+  const msgsRef = useRef<Msg[]>([]); // msgs의 최신값 추적용
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -383,10 +395,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
       const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
       if (savedData) {
-        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number };
+        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]> };
         if (parsed.stageResults?.length) {
           stageResultsRef.current = parsed.stageResults;
           setStageResults(parsed.stageResults);
+          if (parsed.stageHistoryMsgs) setStageHistoryMsgs(parsed.stageHistoryMsgs);
           const idx = parsed.currentStageIdx ?? 0;
           setCurrentStageIdx(idx);
           if (idx >= STAGES.length) {
@@ -400,6 +413,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     } catch { /* ignore */ }
   }, [projectId]);
 
+  useEffect(() => { msgsRef.current = msgs; }, [msgs]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
 
   useEffect(() => {
@@ -532,10 +546,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const newResults = [...stageResultsRef.current, result];
     stageResultsRef.current = newResults;
     setStageResults(newResults);
-    localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
-      stageResults: newResults,
-      currentStageIdx: stageIdx + 1,
-    }));
+
+    // 현재 단계 토론 메시지 저장
+    const savedMsgs = msgsRef.current.filter((m: Msg) => !m.streaming);
+    setStageHistoryMsgs((prev: Record<number, Msg[]>) => {
+      const next = { ...prev, [stageIdx]: savedMsgs };
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+        stageResults: newResults,
+        currentStageIdx: stageIdx + 1,
+        stageHistoryMsgs: next,
+      }));
+      return next;
+    });
+
     setDebatePhase("confirmed");
   }, [genre, projectId, addMsg, updateMsg]);
 
@@ -560,6 +583,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     stageResultsRef.current = [];
     runningRef.current = false;
     setMsgs([]); setStageResults([]); setCurrentStageIdx(0); setApiError(null);
+    setStageHistoryMsgs({}); setViewingStageIdx(null);
     setDebatePhase("idle");
   }, [projectId]);
 
@@ -621,7 +645,27 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         {/* Confirmed stage results (above chat) */}
         {stageResults.length > 0 && (
           <div style={{ padding:"12px 16px 0" }}>
-            {stageResults.map((r: StageResult) => <StageResultCard key={r.stageId} result={r} />)}
+            {stageResults.map((r: StageResult, idx: number) => (
+              <div key={r.stageId}>
+                <StageResultCard
+                  result={r}
+                  onViewDebate={() => setViewingStageIdx(viewingStageIdx === idx ? null : idx)}
+                  isViewingDebate={viewingStageIdx === idx}
+                />
+                {/* 토론 내용 인라인 뷰어 */}
+                {viewingStageIdx === idx && (
+                  <div style={{ background:"#0e0e1a", border:"1px solid #2a2a3d", borderRadius:10, padding:"12px 16px", marginBottom:8, maxHeight:400, overflowY:"auto" as const }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:"#4a4a6a", marginBottom:10, letterSpacing:"0.05em" }}>
+                      {STAGES[idx].name} 토론 기록
+                    </div>
+                    {(stageHistoryMsgs[idx] ?? []).length === 0
+                      ? <div style={{ fontSize:13, color:"#4a4a6a" }}>저장된 토론 내용이 없습니다.</div>
+                      : (stageHistoryMsgs[idx] ?? []).map((m: Msg) => <MsgBubble key={m.id} msg={m} />)
+                    }
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
