@@ -43,6 +43,19 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
+// 사용자 메시지 키워드 기반으로 가장 적합한 에이전트 선택
+function pickBestAgent(msg: string, fallbackIndex: number): AgentId {
+  const m = msg.toLowerCase();
+  if (/캐릭터|주인공|감정|인물|성격|매력/.test(m)) return "character";
+  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프/.test(m)) return "scenario";
+  if (/세계관|설정|배경|규칙|시스템|마법|능력/.test(m)) return "worldbuilder";
+  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오/.test(m)) return "strategist";
+  if (/유사|비슷|참고|작품|웹툰|레퍼런스/.test(m)) return "researcher";
+  if (/그림|비주얼|스타일|연출|색감|컷|그림체/.test(m)) return "script";
+  if (/정리|요약|방향|결론|다음/.test(m)) return "producer";
+  return AGENT_SPEAKING_ORDER_P1[fallbackIndex % AGENT_SPEAKING_ORDER_P1.length];
+}
+
 // 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
 // 페르소나/규칙/명령패턴은 debate-config.ts 에서 관리
 
@@ -1344,8 +1357,6 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
 
-    // 사용자가 말한 후 몇 명의 에이전트가 반응해야 하는지 카운트
-    let userSpokeRecentlyCount = 0;
 
     debateLoop: while (true) {
       // 에이전트를 돌아가며 선택 (API 키도 자동으로 로테이션)
@@ -1377,7 +1388,6 @@ export default function Phase1Page() {
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
         userJustSpoke = true;
-        userSpokeRecentlyCount = 3; // 이후 3명 에이전트가 사용자 메시지 우선 반응
 
         // debate-config.ts의 USER_COMMAND_PATTERNS으로 명령 매칭
         matchedCommand = matchCommand(pendingMsg);
@@ -1459,6 +1469,18 @@ export default function Phase1Page() {
         agentIndex++;
       };
 
+      // 사용자가 방금 말했으면 — 가장 적합한 에이전트 1명만 반응, 나머지 스킵
+      if (userJustSpoke && !matchedCommand) {
+        const bestAgent = pickBestAgent(pendingMsg ?? "", agentIndex);
+        const recentHistory = transcript.slice(-20).join("\n");
+        await runSingleAgent(
+          bestAgent,
+          `[지금까지 대화]\n${recentHistory}\n\n사용자가 방금 이렇게 말했어: "${pendingMsg}". 이걸 받아서 네 관점으로 짧게 반응해줘.`,
+          150
+        );
+        continue;
+      }
+
       // single_turn: 지정 에이전트만 발언, 나머지 스킵
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
         const prompt = matchedCommand.promptOverride
@@ -1513,12 +1535,9 @@ export default function Phase1Page() {
       )].join(", ");
 
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
-      const lastUserMsg = [...transcript].reverse().find(l => l.startsWith("[사용자]"))?.replace("[사용자]: ", "") ?? "";
       const userContent = agentIndex === 0
         ? `리서치 세션을 시작해줘. 우리가 분석할 기획은:\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획 개요: ${c.slice(0, 500)}\n\n이 기획과 유사한 웹툰 작품을 한 편 골라서 소개하고, 그 작품의 좋은 점이나 배울 점을 공유해줘.`
-        : userSpokeRecentlyCount > 0
-          ? `${historyText}사용자가 방금 이렇게 말했어: "${lastUserMsg}". 이걸 먼저 받아서 네 관점으로 짧게 반응해줘.`
-          : `${historyText}네 차례야. 새로운 인사이트 하나만 짧게.${mentionedWorks ? ` (이미 언급된 내용 피해줘: ${mentionedWorks})` : ""}`;
+        : `${historyText}네 차례야. 새로운 인사이트 하나만 짧게.${mentionedWorks ? ` (이미 언급된 내용 피해줘: ${mentionedWorks})` : ""}`;
 
       // 스트리밍: 이 에이전트 발언
       let roundText = "";
@@ -1594,7 +1613,6 @@ export default function Phase1Page() {
 
       round++;
       agentIndex++;
-      if (userSpokeRecentlyCount > 0) userSpokeRecentlyCount--;
 
       // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
       if (transcript.length > 0 && transcript.length % 20 === 0) {
