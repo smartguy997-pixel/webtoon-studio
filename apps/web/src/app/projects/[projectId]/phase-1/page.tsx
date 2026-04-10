@@ -1409,6 +1409,33 @@ export default function Phase1Page() {
       agentIndex++;
     };
 
+    // ── 대화 요약 (5턴마다 백그라운드 자동 갱신) ──
+    // 에이전트는 전체 원문 대신 요약 + 직전 발언 1줄만 받는다
+    let conversationSummary = "";
+    let turnsSinceLastSummary = 0;
+
+    const refreshSummary = () => {
+      if (transcript.length < 3) return;
+      const summaryKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!summaryKey) return;
+      void (async () => {
+        let next = "";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: summaryKey,
+            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
+            messages: [{
+              role: "user",
+              content: `${conversationSummary ? `이전 요약: ${conversationSummary}\n\n` : ""}최근 대화:\n${transcript.slice(-5).join("\n")}\n\n합쳐서 2문장 이내 요약. 언급된 작품명·핵심 의견 포함. 마크다운 금지.`,
+            }],
+            maxTokens: 120,
+            tools: [],
+          })) next += chunk;
+        } catch { /* ignore */ }
+        if (next.trim()) conversationSummary = next.trim();
+      })();
+    };
+
     // ── 메인 대화 루프 ──
     debateLoop: while (true) {
 
@@ -1443,7 +1470,12 @@ export default function Phase1Page() {
       }
 
       setTurnCount(round);
-      const historyText = `[대화 내용]\n${transcript.slice(-6).join("\n")}\n\n`;
+
+      // historyText: 요약 있으면 요약+직전 1줄, 없으면 최근 3줄 (초반)
+      const lastLine = transcript[transcript.length - 1] ?? "";
+      const historyText = conversationSummary
+        ? `[지금까지]: ${conversationSummary}\n[직전 발언]: ${lastLine}\n\n`
+        : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
 
       // 3) 명령 핸들러
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
@@ -1471,40 +1503,24 @@ export default function Phase1Page() {
         continue;
       }
 
-      // 4) 다음 발언자: 마지막 대화 맥락 기반으로 선택
-      const lastLine = transcript[transcript.length - 1] ?? "";
+      // 4) 다음 발언자: 직전 발언 맥락 기반으로 선택
       const nextAgent = pickNextSpeaker(lastLine, lastSpeaker);
 
       // 5) 프롬프트 구성
       const isFirst = transcript.length <= 1;
       const agentPrompt = isFirst
-        ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 300)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
+        ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
         : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
       // 6) 에이전트 발언
       await runSingleAgent(nextAgent, agentPrompt, 100);
       lastSpeaker = nextAgent;
 
-      // 7) 슬라이딩 윈도우: 20줄마다 압축
-      if (transcript.length > 0 && transcript.length % 20 === 0) {
-        const recentKeep = transcript.slice(-10);
-        const oldLines = transcript.slice(0, -10);
-        if (oldLines.length >= 5) {
-          const slidingKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
-          if (slidingKey) {
-            let summary = "";
-            try {
-              for await (const c of streamClaude({
-                apiKey: slidingKey,
-                systemPrompt: "웹툰 유사작품 리서치 토론 내용을 간결하게 요약한다. 작품명과 핵심 인사이트 위주로. 마크다운 금지.",
-                messages: [{ role: "user", content: `10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
-                maxTokens: 400,
-                tools: [],
-              })) summary += c;
-            } catch { /* ignore */ }
-            if (summary.trim()) transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
-          }
-        }
+      // 7) 5턴마다 요약 갱신 (백그라운드, 비차단)
+      turnsSinceLastSummary++;
+      if (turnsSinceLastSummary >= 5) {
+        turnsSinceLastSummary = 0;
+        refreshSummary();
       }
 
       // 8) 저장
