@@ -909,6 +909,7 @@ export default function Phase1Page() {
   const runningRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
   const savedTranscriptRef = useRef<string[]>([]);
+  const isComposingRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -1170,17 +1171,22 @@ export default function Phase1Page() {
 
       // 스트리밍: 이 에이전트 발언
       let roundText = "";
+      let lastUpdateTime = 0;
       const msgId = addMsg(agentId, round, "", true);
 
       for await (const chunk of streamClaude({
         apiKey: agentApiKey,
         systemPrompt,
         messages: [{ role: "user", content: userContent }],
-        maxTokens: 120,
+        maxTokens: 220,
         tools: [],
       })) {
         roundText += chunk;
-        updateMsg(msgId, roundText, true);
+        const now = Date.now();
+        if (now - lastUpdateTime >= 80) {
+          updateMsg(msgId, roundText, true);
+          lastUpdateTime = now;
+        }
       }
 
       const finalText = roundText.trim();
@@ -1510,8 +1516,10 @@ export default function Phase1Page() {
             value={chatInput}
             rows={2}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setChatInput(e.target.value)}
+            onCompositionStart={() => { isComposingRef.current = true; }}
+            onCompositionEnd={() => { isComposingRef.current = false; }}
             onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-              if (e.key === "Enter" && !e.shiftKey && chatInput.trim()) {
+              if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && chatInput.trim()) {
                 e.preventDefault();
                 pendingUserMsgRef.current = chatInput.trim();
                 setChatInput("");
