@@ -290,8 +290,11 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
     setKeys(loadedKeys);
   }, []);
 
-  async function testKey(val: string): Promise<boolean> {
+  async function testKey(val: string): Promise<{ ok: boolean; error?: string }> {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -304,12 +307,28 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
           model: "claude-haiku-4-5-20251001",
           max_tokens: 10,
           messages: [{ role: "user", content: "hi" }],
+          stream: true,
         }),
-        signal: AbortSignal.timeout(10000),
+        signal: controller.signal,
       });
-      return res.ok;
-    } catch {
-      return false;
+
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        return { ok: true };
+      } else {
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const data = await res.json() as { error?: { message?: string } };
+          errMsg = data.error?.message ?? errMsg;
+        } catch {
+          // body가 JSON이 아닐 수 있음
+        }
+        return { ok: false, error: errMsg };
+      }
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : "연결 실패";
+      return { ok: false, error: errMsg };
     }
   }
 
@@ -330,16 +349,16 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
     newKeys[index] = { ...state, status: "testing", errorMsg: "" };
     setKeys(newKeys);
 
-    const ok = await testKey(val);
+    const result = await testKey(val);
 
-    if (ok) {
+    if (result.ok) {
       const storageKey = `wts_anthropic_key_${index + 1}`;
       localStorage.setItem(storageKey, val);
       newKeys[index] = { value: val, saved: val, visible: false, status: "ok", errorMsg: "", dirty: false };
       setKeys(newKeys);
       onSaved();
     } else {
-      newKeys[index] = { ...state, status: "error", errorMsg: "API 테스트 실패" };
+      newKeys[index] = { ...state, status: "error", errorMsg: result.error || "API 테스트 실패" };
       setKeys(newKeys);
     }
   }
@@ -612,11 +631,6 @@ function FirebaseCard({ onSaved }: { onSaved: () => void }) {
 
 // ── Page ──────────────────────────────────────────────────
 export default function SettingsPage() {
-  // 파일 로드 확인용
-  if (typeof window !== "undefined") {
-    console.log("✓ Settings page loaded - file version 2026-04-10");
-  }
-
   const [savedCount, setSavedCount] = useState(0);
 
   const countSaved = useCallback(() => {
@@ -652,15 +666,7 @@ export default function SettingsPage() {
 
       <div className={s.sectionLabel}>API 키 관리</div>
 
-      {/* Temporarily disabled for debugging */}
-      {/* <AnthropicMultiKeyCard onSaved={countSaved} /> */}
-
-      <div style={{ padding: "16px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: "8px", marginBottom: "12px" }}>
-        <strong style={{ color: "#f87171" }}>⚠ AnthropicMultiKeyCard 비활성화됨 (디버깅 중)</strong>
-        <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "8px" }}>
-          기존 KeyCard 컴포넌트만 표시됩니다.
-        </div>
-      </div>
+      <AnthropicMultiKeyCard onSaved={countSaved} />
 
       {OTHER_KEYS.map((cfg) => (
         <KeyCard key={cfg.id} cfg={cfg} onSaved={countSaved} />
