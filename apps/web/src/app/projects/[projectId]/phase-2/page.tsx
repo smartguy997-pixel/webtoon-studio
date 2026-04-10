@@ -86,20 +86,26 @@ function buildStageSystemPrompt(stageId: StageId, genre: string, stageResults: S
     .map(r => `[${STAGES.find(s => s.id === r.stageId)?.name}] ${r.summary}`)
     .join("\n");
   const stageName = STAGES.find(s => s.id === stageId)?.name ?? "";
-  return `너는 웹툰 기획팀 전문가들이 참여하는 Phase 2 "${stageName}" 회의를 진행한다.
+  return `너는 웹툰 기획팀 전문가들이 참여하는 Phase 2 ${stageId}단계 "${stageName}" 회의를 진행한다.
+
+### ⚠️ 단계 고정 규칙 (최우선)
+- 지금은 오직 ${stageId}단계 "${stageName}"만 토론한다.
+- 다른 단계 내용을 미리 언급하거나 진행하는 것을 절대 금지한다.
+- "다음 단계", "이후 단계" 등 다른 단계 언급 금지.
+- 사용자가 명시적으로 승인하기 전까지 절대 다음 단계로 넘어가지 않는다.
 
 ### 현재 단계
 ${STAGE_GUIDES[stageId]}
 장르: ${genre}
-${prevCtx ? `\n### 이전 단계 결과 (반드시 반영)\n${prevCtx}` : ""}
+${prevCtx ? `\n### 이전 단계 결과 (참고)\n${prevCtx}` : ""}
 
 ### 참여자와 성격
 - [세계관설계자]: 설정 규칙 집착. 논리적 근거 요구.
 - [캐릭터디자이너]: 외형과 감정 우선.
 - [시나리오작가]: 서사 연결 관점.
 - [연출작가]: 시각적 구현 관점.
-- [총괄프로듀서]: 중재자. 팀 합의가 충분하면 반드시 "이 단계 합의 완료"라고 선언한다.
-- [편집자]: 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 마무리를 유도한다.
+- [총괄프로듀서]: 중재자. 현재 단계 논의가 충분하다고 판단되면 "이 단계 정리됐습니다. 다음으로 넘어갈까요?" 라고만 묻는다. 절대 다음 단계를 선언하거나 자동 진행하지 않는다. 사용자 응답을 기다린다.
+- [편집자]: 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 현재 단계 마무리를 유도한다.
 
 ### 출력 형식
 [이름]: 대사
@@ -534,8 +540,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       convHistory.push({ role: "user", content: "이전 논의를 이어서 계속해주세요." });
     }
 
-    const END_TRIGGERS = ["합의 완료", "이 단계 합의 완료", "다음 단계", "완료됐어", "완료됐습니다", "정리하자", "끝내자"];
-    const MAX_ROUNDS = 60;
+    // 사용자가 명시적으로 입력해야만 단계 전환 — AI 발언으로는 절대 전환 금지
+    const USER_ADVANCE_TRIGGERS = ["다음 단계", "넘어가자", "넘어가", "다음으로", "진행해"];
+    const MAX_ROUNDS = 80;
     let round = 0;
 
     try {
@@ -573,7 +580,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         localStorage.setItem(`p2_conv_${projectId}`, JSON.stringify(convHistory));
         stageConvRef.current = convHistory;
 
-        if (END_TRIGGERS.some(t => roundText.includes(t))) break debateLoop;
+        // ← AI 발언으로는 단계 전환하지 않음
 
         await sleep(3500);
 
@@ -581,10 +588,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         if (pending) {
           pendingUserMsgRef.current = null;
           addMsg("user", round, pending, false);
-          if (END_TRIGGERS.some(t => pending.includes(t))) break debateLoop;
+          // 사용자가 명시적으로 승인할 때만 단계 종료
+          if (USER_ADVANCE_TRIGGERS.some(t => pending.includes(t))) break debateLoop;
           convHistory.push({ role: "user", content: `[사용자]: ${pending}\n위 내용에 직접 반응해줘.` });
         } else if (round === 40) {
-          convHistory.push({ role: "user", content: "[시스템: 마무리] 편집자가 앞 대화를 인용하며 마무리를 유도하고, 총괄프로듀서가 합의 완료를 선언해줘." });
+          // 40라운드: 편집자가 마무리 유도, 프로듀서가 사용자에게 묻도록 (선언 X)
+          convHistory.push({ role: "user", content: "[시스템] 편집자가 앞 대화를 인용해 현재 단계 논의를 정리하고, 총괄프로듀서가 '이 단계 정리됐습니다. 다음으로 넘어갈까요?' 라고만 물어봐. 절대 다음 단계를 선언하거나 진행하지 마." });
         } else {
           convHistory.push({ role: "user", content: "계속 토론해줘." });
         }
@@ -761,12 +770,27 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             <div style={{ padding:"10px 20px", fontSize:13, color:"#fbbf24" }}>📝 단계 결과 정리 중...</div>
           )}
 
+          {/* 이 단계 완료 버튼 — 사용자가 명시적으로 클릭해야만 다음 단계로 이동 */}
+          {debatePhase === "running" && turnCount >= 3 && (
+            <div style={{ padding:"6px 16px 0" }}>
+              <button
+                onClick={() => { pendingUserMsgRef.current = "다음 단계"; }}
+                style={{
+                  width:"100%", background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)",
+                  borderRadius:8, color:"#34d399", fontSize:13, fontWeight:700,
+                  padding:"9px 0", cursor:"pointer", letterSpacing:"0.02em",
+                }}>
+                ✓ {currentStage}단계 완료 — 다음 단계로 →
+              </button>
+            </div>
+          )}
+
           {/* Chat input during running */}
           {(debatePhase === "running" || debatePhase === "extracting") && (
             <div className={s.inputRow}>
               <textarea
                 className={s.chatInput} rows={1}
-                placeholder="의견 입력 (Enter) · &quot;다음 단계&quot; 입력 시 단계 완료"
+                placeholder={`의견 입력 (Enter) · "넘어가자" 또는 버튼 클릭 시 ${currentStage}단계 완료`}
                 value={chatInput}
                 onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
                 onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
