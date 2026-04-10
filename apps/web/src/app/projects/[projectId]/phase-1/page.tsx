@@ -996,6 +996,8 @@ export default function Phase1Page() {
     let shouldContinue = true;
     // agentIndex는 위에서 이미 초기화됨
 
+    console.log(`[DEBUG] Starting debate: agentIndex=${agentIndex}, transcript lines=${transcript.length}`);
+
     debateLoop: while (shouldContinue) {
       shouldContinue = false; // 기본값: 끝냄
 
@@ -1005,8 +1007,10 @@ export default function Phase1Page() {
         const keyIndex = getApiKeyIndexForAgent(agentIndex);
         const agentApiKey = getAnthropicKeyByIndex(keyIndex);
 
+        console.log(`[DEBUG] Round ${roundsInCycle + 1}: agent=${agentId}, keyIndex=${keyIndex}, hasKey=${!!agentApiKey}`);
+
         if (!agentApiKey) {
-          console.warn(`No API key found for agent ${agentIndex}`);
+          console.error(`No API key found for agent ${agentIndex} (keyIndex=${keyIndex})`);
           break debateLoop;
         }
 
