@@ -1396,6 +1396,8 @@ export default function Phase1Page() {
         const msgs: Array<{ role: "user" | "assistant"; content: string }> = [
           { role: "user", content: prompt },
         ];
+        const isSentenceEnd = (t: string) =>
+          /[.!?~。！？～…♪ㅎㅋ]\s*$/.test(t.trim()) || t.trim().length === 0;
         for (let cont = 0; cont <= 3; cont++) {
           let stopReason = "end_turn";
           for await (const chunk of streamClaude({
@@ -1411,10 +1413,12 @@ export default function Phase1Page() {
             const now = Date.now();
             if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
           }
-          if (stopReason !== "max_tokens" || cont === 3) break;
+          if (cont === 3) break;
+          const truncated = stopReason === "max_tokens" || !isSentenceEnd(text);
+          if (!truncated) break;
           msgs.push({ role: "assistant", content: text });
-          msgs.push({ role: "user", content: "계속 이어서 말해줘." });
-          await sleep(1000);
+          msgs.push({ role: "user", content: "방금 하던 말을 문장 끝까지 이어서 완성해줘." });
+          await sleep(800);
         }
         updateMsg(msgId, text.trim(), false);
         if (text.trim()) transcript.push(`[${AGENTS[agentId].label}]: ${text.trim()}`);
@@ -1491,6 +1495,9 @@ export default function Phase1Page() {
       const contMessages: Array<{ role: "user" | "assistant"; content: string }> = [
         { role: "user", content: userContent },
       ];
+      // 문장이 완전히 끝났는지 체크 (마침표/느낌표/물음표 등으로 끝나야 함)
+      const isSentenceComplete = (t: string) =>
+        /[.!?~。！？～…♪ㅎㅋ]\s*$/.test(t.trim()) || t.trim().length === 0;
       const MAX_CONT = 3;
       for (let cont = 0; cont <= MAX_CONT; cont++) {
         let stopReason = "end_turn";
@@ -1498,10 +1505,9 @@ export default function Phase1Page() {
           apiKey: agentApiKey,
           systemPrompt,
           messages: contMessages,
-          maxTokens: 320,
+          maxTokens: 500,
           tools: [],
           onStopReason: (r) => { stopReason = r; },
-          // 429 대기 메시지는 말풍선에 섞지 않고 말풍선 하단에 별도 표시
           onRateLimit: (msg) => {
             updateMsg(msgId, roundText + `\n\n${msg}`, true);
           },
@@ -1513,12 +1519,14 @@ export default function Phase1Page() {
             lastUpdateTime = now;
           }
         }
-        // 자연스럽게 끝났거나 최대 연속 횟수 도달 → 중단
-        if (stopReason !== "max_tokens" || cont === MAX_CONT) break;
-        // 잘렸으면: 지금까지 내용을 assistant 턴으로 추가하고 "계속해줘" 요청
+        // 최대 횟수 도달하면 무조건 중단
+        if (cont === MAX_CONT) break;
+        // stop_reason이 max_tokens이거나, 문장이 끝나지 않았으면 이어서 계속
+        const truncated = stopReason === "max_tokens" || !isSentenceComplete(roundText);
+        if (!truncated) break;
         contMessages.push({ role: "assistant", content: roundText });
-        contMessages.push({ role: "user", content: "계속 이어서 말해줘." });
-        await sleep(1000); // 연속 호출 사이 짧은 딜레이
+        contMessages.push({ role: "user", content: "방금 하던 말을 문장 끝까지 이어서 완성해줘." });
+        await sleep(800);
       }
 
       const finalText = roundText.trim();
