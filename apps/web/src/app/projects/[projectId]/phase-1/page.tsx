@@ -1363,7 +1363,8 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
     let lastSpeaker: AgentId | null = null;
-    let lastUserMsg = ""; // 가장 최근 사용자 발언 (프롬프트에 직접 주입)
+    let lastUserMsg = "";   // 가장 최근 사용자 발언
+    let userTurnCount = 0;  // > 0 이면 "사용자 응답 모드" — 에이전트가 사용자에게만 집중
 
     // ── 에이전트 한 번 발언 헬퍼 ──
     // 1) 스트리밍은 백그라운드에서 조용히 받고 (ThinkingDots 표시)
@@ -1447,7 +1448,10 @@ export default function Phase1Page() {
 
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
-        const minWait = 7000 + Math.random() * 5000;
+        // 사용자가 방금 말했으면 더 오래 기다려서 계속 이야기할 공간 줌
+        const minWait = userTurnCount > 0
+          ? 13000 + Math.random() * 7000   // 13~20s: 사용자 응답 모드
+          : 7000 + Math.random() * 5000;   // 7~12s: 일반 토론 모드
         const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
@@ -1471,7 +1475,8 @@ export default function Phase1Page() {
         }
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
-        lastUserMsg = pendingMsg; // 다음 에이전트 프롬프트에 주입
+        lastUserMsg = pendingMsg;
+        userTurnCount = 2; // 사용자 말 후 2턴 동안 사용자에게 집중
         matchedCommand = matchCommand(pendingMsg);
         if (matchedCommand?.handler === "end") break debateLoop;
       }
@@ -1517,14 +1522,19 @@ export default function Phase1Page() {
       const isFirst = transcript.length <= 1;
       const agentPrompt = isFirst
         ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
-        : lastUserMsg
-          ? `${historyText}사용자가 방금 말했어: "${lastUserMsg}"\n사용자한테 직접 짧게 대답해줘.`
+        : userTurnCount > 0
+          ? `${historyText}지금 사용자가 대화에 끼어들었어: "${lastUserMsg}"\n에이전트끼리 논의는 잠깐 멈추고, 사용자 말에 직접 반응해줘. 사용자한테 말하는 거야.`
           : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
       // 6) 에이전트 발언
       await runSingleAgent(nextAgent, agentPrompt, 100);
       lastSpeaker = nextAgent;
-      lastUserMsg = ""; // 다음 턴부터는 다시 일반 흐름으로
+
+      // 사용자 응답 모드 카운트다운
+      if (userTurnCount > 0) {
+        userTurnCount--;
+        if (userTurnCount === 0) lastUserMsg = "";
+      }
 
       // 7) 5턴마다 요약 갱신 (백그라운드, 비차단)
       turnsSinceLastSummary++;
