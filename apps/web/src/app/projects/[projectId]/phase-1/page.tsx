@@ -1363,6 +1363,7 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
     let lastSpeaker: AgentId | null = null;
+    let lastUserMsg = ""; // 가장 최근 사용자 발언 (프롬프트에 직접 주입)
 
     // ── 에이전트 한 번 발언 헬퍼 ──
     // 1) 스트리밍은 백그라운드에서 조용히 받고 (ThinkingDots 표시)
@@ -1470,6 +1471,7 @@ export default function Phase1Page() {
         }
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
+        lastUserMsg = pendingMsg; // 다음 에이전트 프롬프트에 주입
         matchedCommand = matchCommand(pendingMsg);
         if (matchedCommand?.handler === "end") break debateLoop;
       }
@@ -1515,11 +1517,14 @@ export default function Phase1Page() {
       const isFirst = transcript.length <= 1;
       const agentPrompt = isFirst
         ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
-        : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
+        : lastUserMsg
+          ? `${historyText}사용자가 방금 말했어: "${lastUserMsg}"\n사용자한테 직접 짧게 대답해줘.`
+          : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
       // 6) 에이전트 발언
       await runSingleAgent(nextAgent, agentPrompt, 100);
       lastSpeaker = nextAgent;
+      lastUserMsg = ""; // 다음 턴부터는 다시 일반 흐름으로
 
       // 7) 5턴마다 요약 갱신 (백그라운드, 비차단)
       turnsSinceLastSummary++;
