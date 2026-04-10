@@ -23,11 +23,33 @@ export const WEB_SEARCH_TOOL = {
 
 export function getAnthropicKey(): string | null {
   if (typeof window === "undefined") return null;
+  // Try new multi-key format first (wts_anthropic_key_1, etc.)
+  for (let i = 1; i <= 10; i++) {
+    const key = localStorage.getItem(`wts_anthropic_key_${i}`);
+    if (key?.trim()) return key;
+  }
+  // Fallback to old single-key format
   const raw =
     localStorage.getItem("wts_anthropic_key") ||
     localStorage.getItem("ANTHROPIC_API_KEY") ||
     "";
   return raw.trim() || null;
+}
+
+export function getAnthropicKeyByIndex(keyIndex: number): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(`wts_anthropic_key_${keyIndex}`) || "";
+  return raw.trim() || null;
+}
+
+export function getAllAnthropicKeys(): string[] {
+  if (typeof window === "undefined") return [];
+  const keys: string[] = [];
+  for (let i = 1; i <= 10; i++) {
+    const key = localStorage.getItem(`wts_anthropic_key_${i}`);
+    if (key?.trim()) keys.push(key);
+  }
+  return keys;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────

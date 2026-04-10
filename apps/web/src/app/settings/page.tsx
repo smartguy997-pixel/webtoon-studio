@@ -16,18 +16,7 @@ interface KeyConfig {
   docsHref: string;
 }
 
-const KEYS: KeyConfig[] = [
-  {
-    id: "anthropic",
-    label: "Anthropic API Key",
-    storageKey: "wts_anthropic_key",
-    placeholder: "sk-ant-api03-...",
-    hint: "Claude 에이전트 7인 실행에 사용됩니다. Phase 1~4 모든 단계에 필요합니다.",
-    required: true,
-    validatePrefix: "sk-ant-",
-    docsLabel: "console.anthropic.com",
-    docsHref: "https://console.anthropic.com",
-  },
+const OTHER_KEYS: KeyConfig[] = [
   {
     id: "whisk",
     label: "Whisk API Key",
@@ -267,6 +256,254 @@ const FIREBASE_FIELDS = [
   { key: "wts_firebase_app_id",              label: "App ID",              placeholder: "1:123456789012:web:abc123..." },
 ];
 
+// ── Anthropic Multi-Key Card ─────────────────────────────
+interface AnthropicKeyState {
+  value: string;
+  saved: string;
+  visible: boolean;
+  status: TestStatus;
+  errorMsg: string;
+  dirty: boolean;
+}
+
+function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
+  const [keys, setKeys] = useState<AnthropicKeyState[]>([]);
+  const [addingNew, setAddingNew] = useState(false);
+
+  useEffect(() => {
+    // Load all existing Anthropic keys (wts_anthropic_key_1, wts_anthropic_key_2, etc.)
+    const loadedKeys: AnthropicKeyState[] = [];
+    for (let i = 1; i <= 10; i++) {
+      const storageKey = `wts_anthropic_key_${i}`;
+      const saved = localStorage.getItem(storageKey) ?? "";
+      if (saved) {
+        loadedKeys.push({
+          value: saved,
+          saved,
+          visible: false,
+          status: "ok",
+          errorMsg: "",
+          dirty: false,
+        });
+      }
+    }
+    setKeys(loadedKeys);
+  }, []);
+
+  async function testKey(val: string): Promise<boolean> {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": val,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 10,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function handleSave(index: number) {
+    const state = keys[index];
+    const val = state.value.trim();
+    if (!val) return;
+
+    const fmtErr = validateFormat({ validatePrefix: "sk-ant-" } as KeyConfig, val);
+    if (fmtErr) {
+      const newKeys = [...keys];
+      newKeys[index] = { ...state, status: "error", errorMsg: fmtErr };
+      setKeys(newKeys);
+      return;
+    }
+
+    const newKeys = [...keys];
+    newKeys[index] = { ...state, status: "testing", errorMsg: "" };
+    setKeys(newKeys);
+
+    const ok = await testKey(val);
+
+    if (ok) {
+      const storageKey = `wts_anthropic_key_${index + 1}`;
+      localStorage.setItem(storageKey, val);
+      newKeys[index] = { value: val, saved: val, visible: false, status: "ok", errorMsg: "", dirty: false };
+      setKeys(newKeys);
+      onSaved();
+    } else {
+      newKeys[index] = { ...state, status: "error", errorMsg: "API 테스트 실패" };
+      setKeys(newKeys);
+    }
+  }
+
+  function handleChange(index: number, newValue: string) {
+    const newKeys = [...keys];
+    newKeys[index] = { ...newKeys[index], value: newValue, dirty: true, status: "idle", errorMsg: "" };
+    setKeys(newKeys);
+  }
+
+  function handleClear(index: number) {
+    const storageKey = `wts_anthropic_key_${index + 1}`;
+    localStorage.removeItem(storageKey);
+    const newKeys = keys.filter((_, i) => i !== index);
+    setKeys(newKeys);
+    onSaved();
+  }
+
+  function handleAddNew() {
+    if (keys.length < 5) {
+      setKeys([...keys, { value: "", saved: "", visible: false, status: "idle", errorMsg: "", dirty: false }]);
+      setAddingNew(true);
+    }
+  }
+
+  const savedCount = keys.filter((k) => k.status === "ok").length;
+
+  return (
+    <div className={`${s.keyCard} ${savedCount > 0 ? s.hasKey : ""}`}>
+      <div className={s.keyHeader}>
+        <div className={s.keyMeta}>
+          <div className={s.keyLabel}>
+            Anthropic API Keys
+            <span className={s.keyRequired}>필수</span>
+          </div>
+          <div className={s.keyHint}>
+            다중 API 키를 설정하여 에이전트 페어링의 비용을 절감합니다.
+            예: Key 1 (전략가+조사자), Key 2 (세계관+캐릭터), Key 3 (시나리오+대본)
+          </div>
+        </div>
+        {savedCount > 0 && (
+          <div className={`${s.statusBadge} ${s.statusSaved}`}>✓ {savedCount}개 설정됨</div>
+        )}
+        {savedCount === 0 && (
+          <div className={`${s.statusBadge} ${s.statusNone}`}>미설정</div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {keys.map((keyState, idx) => {
+          const isSaved = !!keyState.saved && keyState.status === "ok" && !keyState.dirty;
+          const formatError = keyState.value ? validateFormat({ validatePrefix: "sk-ant-" } as KeyConfig, keyState.value) : null;
+
+          return (
+            <div
+              key={idx}
+              style={{
+                border: "1px solid var(--border-color)",
+                borderRadius: 8,
+                padding: 12,
+                backgroundColor: keyState.status === "error" ? "rgba(248, 113, 113, 0.05)" : undefined,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)" }}>Key #{idx + 1}</span>
+                {keyState.status === "testing" && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>테스트 중…</span>
+                )}
+                {isSaved && (
+                  <span style={{ fontSize: 11, color: "#10b981" }}>✓ 연결됨</span>
+                )}
+                {keyState.status === "error" && (
+                  <span style={{ fontSize: 11, color: "#f87171" }}>✗ 실패</span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: formatError ? 8 : 0 }}>
+                <input
+                  className={`${s.keyInput} ${isSaved && !keyState.visible ? s.masked : ""}`}
+                  type={keyState.visible || !isSaved ? "text" : "password"}
+                  value={isSaved && !keyState.visible ? mask(keyState.saved) : keyState.value}
+                  onChange={(e) => handleChange(idx, e.target.value)}
+                  placeholder="sk-ant-api03-..."
+                  spellCheck={false}
+                  autoComplete="off"
+                  style={{ flex: 1 }}
+                />
+
+                <button
+                  className={s.btnIcon}
+                  onClick={() => {
+                    const newKeys = [...keys];
+                    newKeys[idx] = { ...newKeys[idx], visible: !newKeys[idx].visible };
+                    setKeys(newKeys);
+                  }}
+                  title={keyState.visible ? "숨기기" : "표시"}
+                  type="button"
+                >
+                  {keyState.visible ? "🙈" : "👁"}
+                </button>
+
+                <button
+                  className={s.btnSave}
+                  onClick={() => handleSave(idx)}
+                  disabled={keyState.status === "testing" || !keyState.value.trim()}
+                  type="button"
+                >
+                  {keyState.status === "testing" ? "테스트 중…" : "저장 & 테스트"}
+                </button>
+
+                {keyState.saved && (
+                  <button
+                    className={s.btnClear}
+                    onClick={() => handleClear(idx)}
+                    type="button"
+                    style={{ marginTop: 0, width: "auto", padding: "8px 12px" }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {formatError && keyState.value && (
+                <div style={{ fontSize: 12, color: "#f87171", marginBottom: 8 }}>⚠ {formatError}</div>
+              )}
+              {keyState.status === "error" && keyState.errorMsg && (
+                <div style={{ fontSize: 12, color: "#f87171" }}>✗ {keyState.errorMsg}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+        {keys.length < 5 && (
+          <button
+            onClick={handleAddNew}
+            type="button"
+            style={{
+              padding: "8px 16px",
+              fontSize: 12,
+              backgroundColor: "var(--bg-hover)",
+              border: "1px solid var(--border-color)",
+              borderRadius: 6,
+              cursor: "pointer",
+              color: "var(--text-primary)",
+            }}
+          >
+            + 키 추가
+          </button>
+        )}
+      </div>
+
+      <div className={s.docsLink} style={{ marginTop: 12 }}>
+        발급처:&nbsp;
+        <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">
+          console.anthropic.com ↗
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ── Firebase config card ──────────────────────────────
 function FirebaseCard({ onSaved }: { onSaved: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
@@ -378,9 +615,13 @@ export default function SettingsPage() {
   const [savedCount, setSavedCount] = useState(0);
 
   const countSaved = useCallback(() => {
-    const apiKeys = KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
+    let anthropicCount = 0;
+    for (let i = 1; i <= 10; i++) {
+      if (localStorage.getItem(`wts_anthropic_key_${i}`)) anthropicCount++;
+    }
+    const otherKeys = OTHER_KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
     const fbSaved = FIREBASE_FIELDS.some((f) => !!localStorage.getItem(f.key)) ? 1 : 0;
-    setSavedCount(apiKeys + fbSaved);
+    setSavedCount(Math.min(1, anthropicCount) + otherKeys + fbSaved);
   }, []);
 
   useEffect(() => {
@@ -396,13 +637,19 @@ export default function SettingsPage() {
       </p>
 
       <div className={s.infoBox}>
-        <strong>ANTHROPIC_API_KEY</strong>가 설정되면 실제 AI 에이전트가 동작합니다.
+        <strong>Anthropic API Keys</strong>가 설정되면 실제 AI 에이전트가 동작합니다.
         키가 없으면 Phase 페이지에서 <strong>mock 데이터</strong>로 미리보기 할 수 있습니다.
+        <br />
+        <span style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, display: "block" }}>
+          💡 다중 API 키를 설정하면 에이전트 페어링의 비용을 절감할 수 있습니다. 예를 들어 3개의 키로 6개의 에이전트를 커버할 수 있습니다.
+        </span>
       </div>
 
       <div className={s.sectionLabel}>API 키 관리</div>
 
-      {KEYS.map((cfg) => (
+      <AnthropicMultiKeyCard onSaved={countSaved} />
+
+      {OTHER_KEYS.map((cfg) => (
         <KeyCard key={cfg.id} cfg={cfg} onSaved={countSaved} />
       ))}
 
