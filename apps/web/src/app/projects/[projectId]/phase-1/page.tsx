@@ -111,11 +111,10 @@ function buildAgentPromptP1(
 [이미지 서치 방법 — 연출작가는 반드시 사용, 다른 에이전트도 필요시 사용]
 비주얼 레퍼런스를 공유할 때는 반드시 다음 형식으로 출력:
 🖼️ 이미지 서치: "검색어"
+⚠️ 중요: 한 번의 발언에 이미지 서치는 딱 1개만. 여러 개 금지.
 언어 규칙: 한국/일본 작품 → 한글로 검색, 미국/유럽 작품 → 영어로 검색
 예(한국): 🖼️ 이미지 서치: "나 혼자만 레벨업 던전 배경 컷"
-예(한국): 🖼️ 이미지 서치: "이태원 클라쓰 감성 도시 배경"
 예(영어): 🖼️ 이미지 서치: "manhwa noir alley surveillance aesthetic"
-예(영어): 🖼️ 이미지 서치: "webtoon urban decay detailed background"
 
 ${DEBATE_RULES}`;
 }
@@ -407,7 +406,7 @@ function ThinkingDots() {
 
 // ─── Image Search Card (Claude web_search) ────────────────────────────────────
 
-function ImageSearchCard({ query }: { query: string }) {
+function ImageSearchCard({ query, delayMs = 0 }: { query: string; delayMs?: number }) {
   const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -422,20 +421,24 @@ function ImageSearchCard({ query }: { query: string }) {
 
     let cancelled = false;
 
-    fetchImagesWithClaude(query, apiKey)
-      .then(urls => {
-        if (cancelled) return;
-        setImages(urls);
-        setLoading(false);
-      })
-      .catch((e: Error) => {
-        if (cancelled) return;
-        setError(e.message);
-        setLoading(false);
-      });
+    // 순서대로 하나씩 — delayMs만큼 기다렸다가 서치 시작
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      fetchImagesWithClaude(query, apiKey)
+        .then(urls => {
+          if (cancelled) return;
+          setImages(urls);
+          setLoading(false);
+        })
+        .catch((e: Error) => {
+          if (cancelled) return;
+          setError(e.message);
+          setLoading(false);
+        });
+    }, delayMs);
 
-    return () => { cancelled = true; };
-  }, [query]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [query, delayMs]);
 
   return (
     <div style={{
@@ -531,13 +534,14 @@ function renderMsgLine(line: string, i: number, agentColor: string) {
       </div>
     );
   }
-  // 🖼️ Image search — renders real images from Pixabay
+  // 🖼️ Image search — 말풍선 내 순서(i)에 따라 딜레이를 줘서 하나씩 순차 실행
   if (line.startsWith("🖼️")) {
     const raw = line
       .replace(/^🖼️\s*이미지\s*서치\s*:\s*/i, "")
       .replace(/^🖼️\s*이미지\s*검색\s*:\s*/i, "")
       .replace(/"/g, "").trim();
-    return <ImageSearchCard key={i} query={raw} />;
+    // i번째 이미지 서치: i * 12초 딜레이로 순차 실행 (동시 429 방지)
+    return <ImageSearchCard key={i} query={raw} delayMs={i * 12000} />;
   }
   // ⏳ Rate-limit wait indicator
   if (line.includes("⏳") && line.includes("레이트 리밋")) {
