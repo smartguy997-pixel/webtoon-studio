@@ -83,11 +83,14 @@ function buildContext(stageId: StageId, prevResults: StageResult[]): string {
 
   return relevant.map(r => {
     const stageName = STAGES.find(s => s.id === r.stageId)?.name ?? "";
-    // data를 사람이 읽기 쉬운 형태로 변환
+    // raw_summary(평문 fallback)는 그대로 사용
+    if (r.data.raw_summary) {
+      return `[${stageName} — 확정됨]\n${String(r.data.raw_summary)}`;
+    }
+    // 구조화 data를 사람이 읽기 쉬운 형태로 변환
     const detail = Object.entries(r.data)
       .map(([k, v]) => {
         if (Array.isArray(v)) {
-          // 배열이면 각 항목을 줄로 나열
           const items = (v as unknown[]).map(item =>
             typeof item === "object" && item !== null
               ? Object.entries(item as Record<string, unknown>).map(([ik, iv]) => `${ik}: ${String(iv)}`).join(", ")
@@ -150,6 +153,48 @@ ${stage.schema}
 }
 
 
+// ─── 단계별 상세 요약 프롬프트 (fallback용) ──────────────────────────────────────
+
+const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
+  1: `다음 토론에서 합의된 세계관을 상세히 정리해주세요.
+반드시 포함할 내용:
+- 시대와 배경 (구체적인 시대/장소/문명 수준)
+- 세계의 핵심 규칙 또는 법칙 (마법, 기술, 사회 질서 등)
+- 세계의 분위기와 톤
+- 독특한 설정이나 특수 요소
+다음 단계(시놉시스)에서 활용할 수 있도록 빠짐없이 정리하세요.`,
+
+  2: `다음 토론에서 합의된 시놉시스를 상세히 정리해주세요.
+반드시 포함할 내용:
+- 로그라인 (한 줄 핵심 요약)
+- 이야기의 전제와 출발점
+- 주인공이 직면하는 핵심 갈등
+- 이야기가 향하는 해결 방향
+다음 단계(캐릭터 설정)에서 활용할 수 있도록 구체적으로 정리하세요.`,
+
+  3: `다음 토론에서 합의된 등장인물을 상세히 정리해주세요.
+각 인물마다 반드시 포함할 내용:
+- 이름과 역할 (주인공/빌런/조력자 등)
+- 성격과 말투의 특징
+- 행동 동기와 목표
+- 외형적 특징
+다음 단계(장소 설정)에서 활용할 수 있도록 빠짐없이 정리하세요.`,
+
+  4: `다음 토론에서 합의된 주요 장소를 상세히 정리해주세요.
+각 장소마다 반드시 포함할 내용:
+- 장소 이름과 유형
+- 분위기와 시각적 특징
+- 이야기에서의 서사적 의미와 역할
+다음 단계(복선/암시)에서 활용할 수 있도록 구체적으로 정리하세요.`,
+
+  5: `다음 토론에서 합의된 복선과 암시 장치를 상세히 정리해주세요.
+반드시 포함할 내용:
+- 주요 복선 장치와 회수 장면
+- 독자에게 던지는 암시
+- 의도적인 훼이크(red herring)
+이후 시나리오 작성 시 활용할 수 있도록 구체적으로 정리하세요.`,
+};
+
 // ─── 단계 결과 추출 (3단계 fallback — 반드시 StageResult 반환) ───────────────────
 
 async function extractStageData(
@@ -173,7 +218,7 @@ async function extractStageData(
   const structured = parseBlock<Record<string, unknown>>(fullText, stage.tag);
   if (structured) {
     const summary = Object.entries(structured)
-      .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 60)}`)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 80)}`)
       .join(" / ");
     return { data: structured, summary };
   }
@@ -184,27 +229,27 @@ async function extractStageData(
     try {
       const loose = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
       const summary = Object.entries(loose)
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 60)}`)
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 80)}`)
         .join(" / ");
       return { data: loose, summary };
     } catch { /* ignore */ }
   }
 
-  // ③ 평문 요약 (최후 fallback — 항상 성공)
+  // ③ 단계별 상세 평문 요약 (최후 fallback — 항상 성공)
   let summaryText = "";
   try {
     for await (const chunk of streamClaude({
       apiKey,
-      systemPrompt: "회의 결과 요약 전문가. 핵심 합의 내용만 간결하게 정리합니다.",
+      systemPrompt: `당신은 웹툰 기획 전문가입니다. 장르: ${genre}. 토론 결과를 다음 단계 작업에 바로 활용할 수 있도록 상세하고 정확하게 정리합니다.`,
       messages: [{
         role: "user",
-        content: `다음 "${stage.name}" 토론에서 합의된 핵심 내용을 3~5줄로 정리해주세요:\n\n${debateText.slice(0, 3000)}`,
+        content: `${STAGE_SUMMARY_PROMPTS[stage.id]}\n\n[토론 내용]\n${debateText.slice(0, 4000)}`,
       }],
-      maxTokens: 600,
+      maxTokens: 1200,
     })) summaryText += chunk;
   } catch { summaryText = "(요약 실패 — 토론 내용을 직접 확인해주세요)"; }
 
-  return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 200) };
+  return { data: { raw_summary: summaryText }, summary: summaryText.slice(0, 300) };
 }
 
 // ─── Parse [이름]: 대사 format ────────────────────────────────────────────────
@@ -278,9 +323,9 @@ function StageResultCard({ result }: { key?: StageId; result: StageResult }) {
         {Array.isArray(data.hints) && row("암시", (data.hints as string[]).join(", "))}
         {Array.isArray(data.red_herrings) && row("훼이크", (data.red_herrings as string[]).join(", "))}
       </>}
-      {/* Fallback: 구조화 실패 시 평문 요약 */}
+      {/* Fallback: 구조화 실패 시 단계별 상세 요약 */}
       {data.raw_summary && (
-        <div style={{ fontSize:13, color:"#eeeef5", lineHeight:1.7, whiteSpace:"pre-wrap" as const }}>
+        <div style={{ fontSize:13, color:"#d4d4e8", lineHeight:1.85, whiteSpace:"pre-wrap" as const, background:"#12121c", borderRadius:8, padding:"12px 14px" }}>
           {String(data.raw_summary)}
         </div>
       )}
