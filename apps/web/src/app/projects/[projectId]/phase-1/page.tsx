@@ -1404,8 +1404,8 @@ export default function Phase1Page() {
       const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
       if (!clean) { setMsgs(prev => prev.filter(m => m.id !== msgId)); return; }
       // 타자 효과: 사람 타이핑 속도로 재생
-      const CHARS = 8;
-      const TICK = 55; // ~145자/초 — 빠른 타이핑이지만 눈으로 따라갈 수 있는 속도
+      const CHARS = 3;
+      const TICK = 90; // ~33자/초 — 읽으면서 따라갈 수 있는 속도 (60자 → 약 1.8초)
       for (let i = CHARS; i < clean.length; i += CHARS) {
         updateMsg(msgId, clean.slice(0, i), true);
         await sleep(TICK);
@@ -1448,7 +1448,7 @@ export default function Phase1Page() {
 
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
-        const minWait = 7000 + Math.random() * 5000; // 7~12s
+        const minWait = 9000 + Math.random() * 6000; // 9~15s
         const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
