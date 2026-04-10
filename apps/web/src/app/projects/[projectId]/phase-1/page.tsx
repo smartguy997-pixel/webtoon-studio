@@ -1448,10 +1448,7 @@ export default function Phase1Page() {
 
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
-        // 사용자가 방금 말했으면 더 오래 기다려서 계속 이야기할 공간 줌
-        const minWait = userTurnCount > 0
-          ? 13000 + Math.random() * 7000   // 13~20s: 사용자 응답 모드
-          : 7000 + Math.random() * 5000;   // 7~12s: 일반 토론 모드
+        const minWait = 7000 + Math.random() * 5000; // 7~12s
         const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
@@ -1476,7 +1473,9 @@ export default function Phase1Page() {
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
         lastUserMsg = pendingMsg;
-        userTurnCount = 2; // 사용자 말 후 2턴 동안 사용자에게 집중
+        userTurnCount = 4; // 4턴 동안 사용자 의견을 context에 유지
+        refreshSummary();  // 즉시 요약 갱신 — 사용자 발언 바로 반영
+        turnsSinceLastSummary = 0;
         matchedCommand = matchCommand(pendingMsg);
         if (matchedCommand?.handler === "end") break debateLoop;
       }
@@ -1485,8 +1484,9 @@ export default function Phase1Page() {
 
       // historyText: 요약 있으면 요약+직전 1줄, 없으면 최근 3줄 (초반)
       const lastLine = transcript[transcript.length - 1] ?? "";
+      // 사용자 발언이 활성 상태면 historyText에 고정으로 유지 (밀려나지 않게)
       const historyText = conversationSummary
-        ? `[지금까지]: ${conversationSummary}\n[직전 발언]: ${lastLine}\n\n`
+        ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
         : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
 
       // 3) 명령 핸들러
@@ -1523,7 +1523,7 @@ export default function Phase1Page() {
       const agentPrompt = isFirst
         ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
         : userTurnCount > 0
-          ? `${historyText}지금 사용자가 대화에 끼어들었어: "${lastUserMsg}"\n에이전트끼리 논의는 잠깐 멈추고, 사용자 말에 직접 반응해줘. 사용자한테 말하는 거야.`
+          ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
           : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
       // 6) 에이전트 발언
