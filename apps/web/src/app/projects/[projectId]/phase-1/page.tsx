@@ -1404,8 +1404,8 @@ export default function Phase1Page() {
       const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
       if (!clean) { setMsgs(prev => prev.filter(m => m.id !== msgId)); return; }
       // 타자 효과: 사람 타이핑 속도로 재생
-      const CHARS = 3;
-      const TICK = 90; // ~33자/초 — 읽으면서 따라갈 수 있는 속도 (60자 → 약 1.8초)
+      const CHARS = 2;
+      const TICK = 120; // ~17자/초 — 자연스러운 타이핑 속도 (60자 → 약 3.6초)
       for (let i = CHARS; i < clean.length; i += CHARS) {
         updateMsg(msgId, clean.slice(0, i), true);
         await sleep(TICK);
