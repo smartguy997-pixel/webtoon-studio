@@ -30,35 +30,34 @@ const NAME_TO_AGENT: Record<string, AgentId> = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface CharSheet {
-  name: string; role: string;
-  appearance: { face: string; eyes: string; nose: string; mouth: string; hair: string; body: string; outfit: string };
-  personality: string; speech: string; abilities: string[]; trauma: string;
-}
-interface WorldCard { era: string; atmosphere: string; rules: string[] }
-interface MstCard {
-  line_weight: string; coloring: string; perspective: string;
-  forbidden_tags: string[]; style_keywords: string[];
-}
-interface AbCard { options: Array<{ label: string; style: string; keywords: string[]; desc: string }>; chosen?: string }
+const STAGES = [
+  { id: 1 as const, name: "세계관 형성",    desc: "시대·배경·세계 규칙",         tag: "WORLD"           },
+  { id: 2 as const, name: "시놉시스 제작",  desc: "로그라인·전제·갈등",           tag: "SYNOPSIS"        },
+  { id: 3 as const, name: "관계 구조",      desc: "대립·발전·상생·최종목표",      tag: "RELATIONS"       },
+  { id: 4 as const, name: "등장인물 설정",  desc: "주요 캐릭터 상세",             tag: "CHARACTERS"      },
+  { id: 5 as const, name: "장소 설정",      desc: "주요 배경 공간",               tag: "LOCATIONS"       },
+  { id: 6 as const, name: "시놉시스 구체화",desc: "전체 시놉시스 완성",           tag: "SYNOPSIS_DETAIL" },
+];
+type StageId = 1 | 2 | 3 | 4 | 5 | 6;
 
-type CardType = "world" | "character" | "mst" | "ab";
+interface StageResult {
+  stageId: StageId;
+  data: Record<string, unknown>;
+  summary: string;
+}
 
 interface Msg {
   id: string;
   agent: AgentId;
   text: string;
-  type: "text" | "card";
-  cardType?: CardType;
-  world?: WorldCard;
-  character?: CharSheet;
-  mst?: MstCard;
-  ab?: AbCard;
+  type: "text" | "stage_divider" | "stage_result";
   streaming: boolean;
   round?: number;
+  stageId?: StageId;
+  stageData?: Record<string, unknown>;
 }
 
-type DebatePhase = "idle" | "running" | "paused" | "generating" | "done";
+type DebatePhase = "idle" | "running" | "paused" | "extracting" | "stage_complete" | "all_done";
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
@@ -71,42 +70,69 @@ function parseBlock<T>(text: string, tag: string): T | null {
   try { return JSON.parse(m[1]) as T; } catch { return null; }
 }
 
-function stripBlocks(text: string): string {
-  return text
-    .replace(/\[WORLD_CARD\][\s\S]*?\[\/WORLD_CARD\]/g, "")
-    .replace(/\[CHAR_CARD\][\s\S]*?\[\/CHAR_CARD\]/g, "")
-    .replace(/\[MST_CARD\][\s\S]*?\[\/MST_CARD\]/g, "")
-    .replace(/\[AB_CARD\][\s\S]*?\[\/AB_CARD\]/g, "")
-    .trim();
-}
+// ─── Stage system prompt builder ──────────────────────────────────────────────
 
-// ─── Debate system prompt ─────────────────────────────────────────────────────
+const STAGE_GUIDES: Record<StageId, string> = {
+  1: "세계관 형성 — 시대적 배경, 세계의 핵심 규칙 3가지, 분위기, 특수 설정을 논의합니다.",
+  2: "시놉시스 제작 — 이야기 한 줄 요약(로그라인), 전제, 핵심 갈등, 해결 방향을 논의합니다.",
+  3: "관계 구조 — 캐릭터 간 대립/발전/상생 관계와 시리즈 최종 목표를 논의합니다.",
+  4: "등장인물 설정 — 주요 캐릭터들의 이름·역할·성격·동기·외형·말투를 구체화합니다.",
+  5: "장소 설정 — 주요 배경 장소의 이름·유형·분위기·서사적 의미를 논의합니다.",
+  6: "시놉시스 구체화 — 전체 시놉시스, 3막 구조, 핵심 장면을 완성합니다.",
+};
 
-const DEBATE_SYSTEM_PROMPT = `너는 웹툰 기획팀 전문가 6명이 참여하는 Phase 2 세계관·에셋 설계 회의를 진행한다.
-Phase 1에서 확정된 기획안을 바탕으로 세계관, 캐릭터, 화풍을 함께 설계한다.
+function buildStageSystemPrompt(stageId: StageId, genre: string, stageResults: StageResult[]): string {
+  const prevCtx = stageResults
+    .map(r => `[${STAGES.find(s => s.id === r.stageId)?.name}] ${r.summary}`)
+    .join("\n");
+  const stageName = STAGES.find(s => s.id === stageId)?.name ?? "";
+  return `너는 웹툰 기획팀 전문가들이 참여하는 Phase 2 "${stageName}" 회의를 진행한다.
+
+### 현재 단계
+${STAGE_GUIDES[stageId]}
+장르: ${genre}
+${prevCtx ? `\n### 이전 단계 결과 (반드시 반영)\n${prevCtx}` : ""}
 
 ### 참여자와 성격
-- [세계관설계자]: 설정 규칙 집착. "이 세계에서 그게 가능하려면 근거가 있어야 해요." 스타일.
-- [캐릭터디자이너]: 외형과 감정 우선. "독자가 처음 봤을 때 어떤 인상이어야 하는지가 먼저예요." 스타일.
-- [시나리오작가]: 서사 연결. "그 설정이 실제 이야기에서 어떻게 쓰일지가 더 중요해요." 스타일.
-- [연출작가]: 시각적 구현. "이 분위기, 화면에 담으려면 화풍부터 결정해야 해요." 스타일.
-- [총괄프로듀서]: 중재자. 갈등 정리, 합의 유도만 담당.
-- [편집자]: 베테랑 편집자. 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 마무리를 유도한다.
+- [세계관설계자]: 설정 규칙 집착. 논리적 근거 요구.
+- [캐릭터디자이너]: 외형과 감정 우선.
+- [시나리오작가]: 서사 연결 관점.
+- [연출작가]: 시각적 구현 관점.
+- [총괄프로듀서]: 중재자. 팀 합의가 충분하면 반드시 "이 단계 합의 완료"라고 선언한다.
+- [편집자]: 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 마무리를 유도한다.
 
 ### 출력 형식
 [이름]: 대사
 
-### 출력 규칙 (반드시 준수)
-- 매 응답마다 직전 발언을 읽고, 그 내용에 직접 반응하는 사람 1명만 말한다.
-- 반드시 앞 발언을 인식했음을 드러내야 한다. ("방금 말씀하신..." "그건 맞는데...")
-- 각 대사는 1~2문장. 마크다운(#, *, >, -) 절대 금지.
-- 카카오톡 메시지처럼 짧고 자연스러운 한국어.
-- 침묵 표현, 말 끊기 표현, 불완전한 문장 허용.
-- [사용자]: 가 발언하면 반드시 그 내용에 직접 반응한다.
-- JSON 블록, [WORLD_CARD] 같은 출력 절대 금지. 오직 대화만.
+### 출력 규칙
+- 직전 발언에 직접 반응하는 사람 1명만 말한다.
+- 1~2문장. 마크다운 절대 금지. 카카오톡처럼 짧고 자연스러운 한국어.
+- [사용자]: 발언 시 반드시 직접 반응한다.
+- JSON 블록 출력 절대 금지. 오직 대화만.`;
+}
 
-### 편집자 등장 조건
-- [시스템: 마무리 단계] 신호가 오면 편집자가 앞 대화의 실제 발언을 언급하며 정리를 유도한다.`;
+// ─── Stage JSON extraction prompt ─────────────────────────────────────────────
+
+const STAGE_SCHEMAS: Record<StageId, string> = {
+  1: '{"era":"시대/배경","atmosphere":"분위기","world_rules":["규칙1","규칙2","규칙3"],"special_elements":"특수 설정"}',
+  2: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","resolution_hint":"해결 방향"}',
+  3: '{"opposition":[{"a":"A","b":"B","desc":"대립 이유"}],"development":[{"character":"캐릭터","arc":"성장"}],"symbiosis":[{"a":"A","b":"B","desc":"상생"}],"final_goal":"최종 목표"}',
+  4: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","age":"나이","personality":"성격","motivation":"동기","appearance":"외형","speech":"말투"}]}',
+  5: '{"locations":[{"name":"장소명","type":"유형","atmosphere":"분위기","significance":"서사적 의미"}]}',
+  6: '{"full_synopsis":"전체 시놉시스","act1":"1막","act2":"2막","act3":"3막","key_scenes":["핵심 장면1","핵심 장면2"]}',
+};
+
+function buildExtractionPrompt(stageId: StageId, genre: string, debateContext: string): string {
+  const st = STAGES.find(s => s.id === stageId)!;
+  return `당신은 Phase 2 "${st.name}" 토론 결과를 JSON으로 정리합니다.
+토론: ${debateContext.slice(0, 3000)}
+장르: ${genre}
+아래 형식으로만 출력 (JSON만, 설명 없이):
+[${st.tag}]
+${STAGE_SCHEMAS[stageId]}
+[/${st.tag}]`;
+}
+
 
 // ─── Parse [이름]: 대사 format ────────────────────────────────────────────────
 
@@ -286,136 +312,81 @@ function ThinkingDots() {
   return <div className={s.dots}><span /><span /><span /></div>;
 }
 
-function WorldCardView({ w }: { w: WorldCard }) {
-  return (
-    <div className={s.worldCard}>
-      <div className={s.cardLabel} style={{ color: "#60a5fa" }}>세계관 설계</div>
-      <div className={s.worldRow}><span className={s.wLabel}>시대/배경</span><span className={s.wVal}>{w.era}</span></div>
-      <div className={s.worldRow}><span className={s.wLabel}>분위기</span><span className={s.wVal}>{w.atmosphere}</span></div>
-      <div className={s.worldRules}>
-        <div className={s.wLabel}>세계관 규칙</div>
-        {w.rules.map((r, i) => <div key={i} className={s.ruleItem}>◆ {r}</div>)}
-      </div>
-    </div>
-  );
-}
-
-function CharCardView({ c }: { c: CharSheet }) {
-  const roleColor = c.role === "protagonist" ? "#a78bfa" : c.role === "antagonist" ? "#f87171" : "#60a5fa";
-  const roleLabel = c.role === "protagonist" ? "주인공" : c.role === "antagonist" ? "빌런" : "조력자";
-  return (
-    <div className={s.charCard}>
-      <div className={s.charHeader}>
-        <div className={s.charName}>{c.name}</div>
-        <span className={s.charRole} style={{ background: `${roleColor}20`, color: roleColor, border: `1px solid ${roleColor}40` }}>{roleLabel}</span>
-      </div>
-      <div className={s.charSection}>
-        <div className={s.charSectionTitle} style={{ color: "#fb923c" }}>외형</div>
-        <div className={s.charGrid}>
-          {Object.entries(c.appearance).map(([k, v]) => (
-            <div key={k} className={s.charField}>
-              <span className={s.fieldKey}>{({ face: "얼굴형", eyes: "눈", nose: "코", mouth: "입", hair: "헤어", body: "체형", outfit: "의상" })[k] ?? k}</span>
-              <span className={s.fieldVal}>{v}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className={s.charSection}>
-        <div className={s.charSectionTitle} style={{ color: "#fb923c" }}>내면</div>
-        <div className={s.charField}><span className={s.fieldKey}>성격</span><span className={s.fieldVal}>{c.personality}</span></div>
-        <div className={s.charField}><span className={s.fieldKey}>말투</span><span className={s.fieldVal}>{c.speech}</span></div>
-        <div className={s.charField}><span className={s.fieldKey}>트라우마</span><span className={s.fieldVal}>{c.trauma}</span></div>
-      </div>
-      <div className={s.charSection}>
-        <div className={s.charSectionTitle} style={{ color: "#fb923c" }}>능력/특기</div>
-        <div className={s.abilityList}>{c.abilities.map((a, i) => <span key={i} className={s.abilityTag}>{a}</span>)}</div>
-      </div>
-    </div>
-  );
-}
-
-function MstCardView({ m }: { m: MstCard }) {
-  return (
-    <div className={s.mstCard}>
-      <div className={s.cardLabel} style={{ color: "#a78bfa" }}>MST — 마스터 스타일 토큰</div>
-      <div className={s.mstRow}><span className={s.mLabel}>선 두께</span><code className={s.mCode}>{m.line_weight}</code></div>
-      <div className={s.mstRow}><span className={s.mLabel}>채색 방식</span><code className={s.mCode}>{m.coloring}</code></div>
-      <div className={s.mstRow}><span className={s.mLabel}>원근감</span><code className={s.mCode}>{m.perspective}</code></div>
-      <div className={s.mstRow}>
-        <span className={s.mLabel}>금지 태그</span>
-        <div className={s.tagList}>{m.forbidden_tags.map((t, i) => <span key={i} className={s.tagForbid}>{t}</span>)}</div>
-      </div>
-      <div className={s.mstRow}>
-        <span className={s.mLabel}>스타일 키워드</span>
-        <div className={s.tagList}>{m.style_keywords.map((t, i) => <span key={i} className={s.tagStyle}>{t}</span>)}</div>
-      </div>
-    </div>
-  );
-}
-
-function AbCardView({ ab, onChoose }: { ab: AbCard; onChoose: (label: string) => void }) {
-  return (
-    <div className={s.abWrap}>
-      <div className={s.cardLabel} style={{ color: "#fbbf24" }}>디자인 방향 A/B 선택</div>
-      <div className={s.abRow}>
-        {ab.options.map(opt => (
-          <div key={opt.label}
-            className={`${s.abCard} ${ab.chosen === opt.label ? s.abChosen : ""}`}
-            onClick={() => !ab.chosen && onChoose(opt.label)}>
-            <div className={s.abLabel}>{opt.label}</div>
-            <div className={s.abStyle}>{opt.style}</div>
-            <div className={s.abDesc}>{opt.desc}</div>
-            <div className={s.abKwList}>{opt.keywords.map((k, i) => <span key={i} className={s.abKw}>{k}</span>)}</div>
-            {ab.chosen === opt.label && <div className={s.abCheck}>✓ 선택됨</div>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function StreamCursor() {
   return <span style={{ display: "inline-block", width: 2, height: 13, background: "#7c6cfc", marginLeft: 2, verticalAlign: "middle", borderRadius: 1, animation: "blink 0.9s step-start infinite" }} />;
 }
 
-function MsgBubble({ msg, onAbChoose }: { key?: string; msg: Msg; onAbChoose: (id: string, label: string) => void }) {
-  const ag = AGENTS[msg.agent];
-  const isUser = msg.agent === "user";
-  const displayText = stripBlocks(msg.text);
+const STAGE_COLORS: Record<StageId, string> = { 1:"#60a5fa", 2:"#34d399", 3:"#fbbf24", 4:"#fb923c", 5:"#a78bfa", 6:"#f87171" };
+
+function StageDivider({ stageId, done }: { stageId: StageId; done?: boolean }) {
+  const st = STAGES.find(s => s.id === stageId)!;
+  const c = STAGE_COLORS[stageId];
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", margin:"8px 0" }}>
+      <div style={{ flex:1, height:1, background:"#2a2a3d" }} />
+      <span style={{ fontSize:11, fontWeight:800, color:c, border:`1px solid ${c}40`, borderRadius:99, padding:"3px 12px", background:`${c}10`, letterSpacing:"0.05em" }}>
+        {done ? "✓" : "▶"} {stageId}단계 — {st.name}
+      </span>
+      <div style={{ flex:1, height:1, background:"#2a2a3d" }} />
+    </div>
+  );
+}
+
+function StageResultCard({ stageId, data }: { stageId: StageId; data: Record<string, unknown> }) {
+  const st = STAGES.find(s => s.id === stageId)!;
+  const c = STAGE_COLORS[stageId];
+  const row = (label: string, val: unknown) => val ? (
+    <div key={label} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"6px 0", borderBottom:"1px solid #1e1e2a" }}>
+      <span style={{ fontSize:10, fontWeight:700, color:"#4a4a68", minWidth:72, flexShrink:0, paddingTop:2, textTransform:"uppercase" as const, letterSpacing:"0.4px" }}>{label}</span>
+      <span style={{ fontSize:13, color:"#eeeef5", lineHeight:1.6 }}>{Array.isArray(val) ? (val as unknown[]).join(" · ") : String(val)}</span>
+    </div>
+  ) : null;
 
   return (
+    <div style={{ background:`${c}08`, border:`1px solid ${c}30`, borderRadius:10, padding:"14px 16px", margin:"6px 0" }}>
+      <div style={{ fontSize:10, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.7px", marginBottom:10 }}>✓ {st.name} 완료</div>
+      {stageId === 1 && <>{row("시대/배경", data.era)}{row("분위기", data.atmosphere)}{row("세계 규칙", data.world_rules)}{row("특수 설정", data.special_elements)}</>}
+      {stageId === 2 && <>{row("로그라인", data.logline)}{row("전제", data.premise)}{row("갈등", data.conflict)}{row("해결 방향", data.resolution_hint)}</>}
+      {stageId === 3 && <>
+        {row("최종 목표", data.final_goal)}
+        {Array.isArray(data.opposition) && (data.opposition as Record<string,string>[]).map((o, i) => row(`대립${i+1}`, `${o.a} ↔ ${o.b}: ${o.desc}`))}
+        {Array.isArray(data.development) && (data.development as Record<string,string>[]).map((d, i) => row(`발전${i+1}`, `${d.character}: ${d.arc}`))}
+        {Array.isArray(data.symbiosis) && (data.symbiosis as Record<string,string>[]).map((sy, i) => row(`상생${i+1}`, `${sy.a} + ${sy.b}: ${sy.desc}`))}
+      </>}
+      {stageId === 4 && Array.isArray(data.characters) && (data.characters as Record<string,string>[]).map((ch, i) => (
+        <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #2a2a3d" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>{ch.name} <span style={{ fontSize:11, color:"#7878a0" }}>({ch.role})</span></div>
+          {row("성격", ch.personality)}{row("동기", ch.motivation)}{row("외형", ch.appearance)}{row("말투", ch.speech)}
+        </div>
+      ))}
+      {stageId === 5 && Array.isArray(data.locations) && (data.locations as Record<string,string>[]).map((loc, i) => (
+        <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #2a2a3d" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>{loc.name} <span style={{ fontSize:11, color:"#7878a0" }}>({loc.type})</span></div>
+          {row("분위기", loc.atmosphere)}{row("서사적 의미", loc.significance)}
+        </div>
+      ))}
+      {stageId === 6 && <>{row("시놉시스", data.full_synopsis)}{row("1막", data.act1)}{row("2막", data.act2)}{row("3막", data.act3)}{row("핵심 장면", data.key_scenes)}</>}
+    </div>
+  );
+}
+
+function MsgBubble({ msg }: { key?: string; msg: Msg }) {
+  if (msg.type === "stage_divider") return <StageDivider stageId={msg.stageId!} done />;
+  if (msg.type === "stage_result" && msg.stageData) return <StageResultCard stageId={msg.stageId!} data={msg.stageData} />;
+  const ag = AGENTS[msg.agent];
+  const isUser = msg.agent === "user";
+  return (
     <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
-      {!isUser && (
-        <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>{ag.ini}</div>
-      )}
+      {!isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>{ag.ini}</div>}
       <div className={s.msgMain}>
         {!isUser && <div className={s.agentName} style={{ color: ag.color }}>{ag.label}</div>}
-        <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`}
-          style={!isUser ? { borderLeft: `3px solid ${ag.color}60` } : {}}>
-          {msg.streaming && !msg.text ? (
-            <ThinkingDots />
-          ) : (
-            <>
-              {displayText && (
-                <div className={s.msgText} style={{ whiteSpace: "pre-wrap" }}>
-                  <span dangerouslySetInnerHTML={{ __html: displayText.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br/>") }} />
-                  {msg.streaming && <StreamCursor />}
-                </div>
-              )}
-              {msg.streaming && !displayText && <StreamCursor />}
-              {msg.type === "card" && !msg.streaming && msg.world && <WorldCardView w={msg.world} />}
-              {msg.type === "card" && !msg.streaming && msg.character && <CharCardView c={msg.character} />}
-              {msg.type === "card" && !msg.streaming && msg.mst && <MstCardView m={msg.mst} />}
-              {msg.type === "card" && !msg.streaming && msg.ab && (
-                <AbCardView ab={msg.ab} onChoose={lbl => onAbChoose(msg.id, lbl)} />
-              )}
-            </>
+        <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`} style={!isUser ? { borderLeft: `3px solid ${ag.color}60` } : {}}>
+          {msg.streaming && !msg.text ? <ThinkingDots /> : (
+            <span className={s.msgText}>{msg.text}{msg.streaming && <StreamCursor />}</span>
           )}
         </div>
       </div>
-      {isUser && (
-        <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>나</div>
-      )}
+      {isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>나</div>}
     </div>
   );
 }
@@ -426,80 +397,65 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const { projectId } = params;
   const router = useRouter();
 
+  // ── State ──
   const [genre, setGenre] = useState("판타지");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
-  const [abChosen, setAbChosen] = useState(false);
-  const [mstDone, setMstDone] = useState(false);
+  const [currentStage, setCurrentStage] = useState<StageId>(1);
+  const [stageResults, setStageResults] = useState<StageResult[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
 
+  // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
-  const savedConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
-  const contextRef = useRef<string>("");
+  const stageConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const stageResultsRef = useRef<StageResult[]>([]);
 
+  // ── Mount: restore from localStorage ──
   useEffect(() => {
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
 
-      // Restore saved conversation messages
-      let hasMsgs = false;
-      const rawMsgs = localStorage.getItem(`p2_msgs_${projectId}`);
-      if (rawMsgs) {
-        const savedMsgs = JSON.parse(rawMsgs) as Msg[];
-        if (savedMsgs.length > 0) { setMsgs(savedMsgs); hasMsgs = true; }
-      }
-
-      // Restore conv history for resume
-      const rawConv = localStorage.getItem(`p2_conv_${projectId}`);
-      if (rawConv) {
-        const saved = JSON.parse(rawConv) as { conv: Array<{ role: "user"|"assistant"; content: string }> };
-        savedConvRef.current = saved.conv ?? [];
-      }
-
-      // Restore saved Phase 2 cards
-      const saved = localStorage.getItem(`wts_phase2_${projectId}`);
-      if (saved) {
-        const { data } = JSON.parse(saved) as {
-          data: { world?: WorldCard; characters?: (CharSheet | null)[]; mst?: MstCard; ab?: AbCard };
-        };
-        if (data) {
-          const cards: Msg[] = [];
-          if (data.world) cards.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "world", world: data.world, streaming: false });
-          data.characters?.filter(Boolean).forEach(c => {
-            if (c) cards.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "character", character: c, streaming: false });
-          });
-          if (data.mst) { cards.push({ id: uid(), agent: "character", text: "", type: "card", cardType: "mst", mst: data.mst, streaming: false }); setMstDone(true); }
-          if (data.ab) cards.push({ id: uid(), agent: "worldbuilder", text: "", type: "card", cardType: "ab", ab: data.ab, streaming: false });
-          if (cards.length > 0) {
-            setMsgs((prev: Msg[]) => [...prev, ...cards]);
-            setDebatePhase("done");
-            setAbChosen(!!data.ab);
-            return;
+      const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
+      if (savedData) {
+        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStage: StageId; msgs: Msg[] };
+        if (parsed.stageResults?.length) {
+          stageResultsRef.current = parsed.stageResults;
+          setStageResults(parsed.stageResults);
+          setCurrentStage(parsed.currentStage ?? 1);
+          if (parsed.msgs?.length) setMsgs(parsed.msgs);
+          // If all 6 stages done
+          if (parsed.currentStage > 6) {
+            setDebatePhase("all_done");
+          } else {
+            setDebatePhase("paused");
           }
+          return;
         }
       }
-      if (hasMsgs) setDebatePhase("paused");
+
+      const savedMsgs = localStorage.getItem(`p2_msgs_${projectId}`);
+      if (savedMsgs) {
+        const ms = JSON.parse(savedMsgs) as Msg[];
+        if (ms.length > 0) { setMsgs(ms); setDebatePhase("paused"); }
+      }
+      const savedConv = localStorage.getItem(`p2_conv_${projectId}`);
+      if (savedConv) stageConvRef.current = JSON.parse(savedConv) as Array<{ role: "user" | "assistant"; content: string }>;
     } catch { /* ignore */ }
   }, [projectId]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
 
-  // Auto-save conversation (text msgs only) when streaming is done
   useEffect(() => {
     if (!projectId || msgs.length === 0) return;
     if (msgs.some((m: Msg) => m.streaming)) return;
-    const textOnly = msgs.filter((m: Msg) => m.type === "text");
-    if (textOnly.length > 0) localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs));
+    localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs.filter((m: Msg) => m.type === "text")));
   }, [msgs, projectId]);
 
-  // Inject blink keyframe for stream cursor
   useEffect(() => {
     const id = "wts-blink-style";
     if (!document.getElementById(id)) {
@@ -512,9 +468,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-  const addMsg = useCallback((agent: AgentId, round: number, text = "", streaming = false, type: "text"|"card" = "text", cardType?: CardType): string => {
+  // ── Message helpers ──
+  const addMsg = useCallback((agent: AgentId, round: number, text = "", streaming = false, type: Msg["type"] = "text", extra?: Partial<Msg>): string => {
     const id = uid();
-    setMsgs((prev: Msg[]) => [...prev, { id, agent, text, type, cardType, streaming, round }]);
+    setMsgs((prev: Msg[]) => [...prev, { id, agent, text, type, streaming, round, ...extra }]);
     return id;
   }, []);
 
@@ -522,279 +479,294 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === id ? { ...m, text, streaming, ...extra } : m));
   }, []);
 
-  // ── Card generation helper (runs AFTER debate ends) ──
-  const generateCards = useCallback(async (apiKey: string, debateContext: string) => {
-    setDebatePhase("generating");
-
-    let phase1Summary = `장르: ${genre}`;
+  // ── Extract stage JSON after debate ends ──
+  const extractStageResult = useCallback(async (
+    stageId: StageId,
+    apiKey: string,
+    debateText: string,
+  ): Promise<StageResult | null> => {
+    setDebatePhase("extracting");
+    const extractId = addMsg("producer", 0, "결과 정리 중...", true);
+    let fullText = "";
     try {
-      const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
-      if (p1?.data?.summary) phase1Summary += `\nPhase 1 요약: ${p1.data.summary}`;
-      if (p1?.input?.concept) phase1Summary += `\n아이디어: ${p1.input.concept}`;
+      for await (const chunk of streamClaude({
+        apiKey,
+        systemPrompt: "당신은 토론 결과를 정확한 JSON으로 변환하는 전문가입니다.",
+        messages: [{ role: "user", content: buildExtractionPrompt(stageId, genre, debateText) }],
+        maxTokens: 1500,
+      })) {
+        fullText += chunk;
+        updateMsg(extractId, `결과 정리 중... (${fullText.length}자)`, true);
+      }
     } catch { /* ignore */ }
 
-    const context = `${phase1Summary}\n\n[토론 내용 요약]\n${debateContext.slice(0, 2000)}`;
+    const st = STAGES.find(s => s.id === stageId)!;
+    const data = parseBlock<Record<string, unknown>>(fullText, st.tag);
+    updateMsg(extractId, "", false, { type: "text", text: "" });
+    // Remove loading msg, show result card instead
+    setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
 
-    const runCard = async (agent: AgentId, systemPrompt: string, userMsg: string, cardType: CardType): Promise<string> => {
-      const id = addMsg(agent, 0, "", true, "card", cardType);
-      let fullText = "";
-      for await (const chunk of streamClaude({ apiKey, systemPrompt, messages: [{ role: "user", content: userMsg }], maxTokens: 3000, tools: [{ ...WEB_SEARCH_TOOL, allowed_callers: ["direct"] }] })) {
-        fullText += chunk;
-        updateMsg(id, fullText, true);
-      }
-      const extra: Partial<Msg> = { streaming: false };
-      if (cardType === "world") { const w = parseBlock<WorldCard>(fullText, "WORLD_CARD"); if (w) extra.world = w; }
-      if (cardType === "character") { const c = parseBlock<CharSheet>(fullText, "CHAR_CARD"); if (c) extra.character = c; }
-      if (cardType === "mst") { const m = parseBlock<MstCard>(fullText, "MST_CARD"); if (m) extra.mst = m; }
-      if (cardType === "ab") { const a = parseBlock<AbCard>(fullText, "AB_CARD"); if (a) extra.ab = a; }
-      updateMsg(id, fullText, false, extra);
-      return fullText;
-    };
+    if (!data) return null;
+    const summary = Object.entries(data)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v as unknown[]).slice(0, 2).join(", ") : String(v).slice(0, 60)}`)
+      .join(" / ");
+    return { stageId, data, summary };
+  }, [genre, addMsg, updateMsg]);
 
-    try {
-      const worldText = await runCard("worldbuilder", buildWorldbuilderPrompt(genre, context), `${genre} 장르 웹툰의 세계관을 설계해주세요.\n\n${context}`, "world");
-      const worldData = parseBlock<WorldCard>(worldText, "WORLD_CARD");
-      const worldSummary = worldData ? `시대: ${worldData.era} / 분위기: ${worldData.atmosphere} / 규칙: ${worldData.rules.join(", ")}` : stripBlocks(worldText).slice(0, 200);
-      await sleep(800);
-
-      const char1Text = await runCard("character", buildCharacterPrompt("protagonist", genre, worldSummary, context), `세계관: ${worldSummary}\n주인공 캐릭터 시트를 작성해주세요.`, "character");
-      const char1Data = parseBlock<CharSheet>(char1Text, "CHAR_CARD");
-      const char1Summary = char1Data ? `${char1Data.name} (주인공): ${char1Data.personality}` : "주인공 설계 완료";
-      await sleep(800);
-
-      const char2Text = await runCard("character", buildCharacterPrompt("antagonist", genre, worldSummary, context), `세계관: ${worldSummary}\n주인공: ${char1Summary}\n빌런 캐릭터 시트를 작성해주세요.`, "character");
-      const char2Data = parseBlock<CharSheet>(char2Text, "CHAR_CARD");
-      const char2Summary = char2Data ? `${char2Data.name} (빌런): ${char2Data.personality}` : "빌런 설계 완료";
-      await sleep(800);
-
-      const mstText = await runCard("character", buildMstPrompt(genre, worldSummary, `${char1Summary}\n${char2Summary}`), `장르: ${genre}\n세계관: ${worldSummary}\nMST를 설계해주세요.`, "mst");
-      const mstData = parseBlock<MstCard>(mstText, "MST_CARD");
-      const mstSummary = mstData ? `선: ${mstData.line_weight} / 채색: ${mstData.coloring} / 키워드: ${mstData.style_keywords.join(", ")}` : "MST 설계 완료";
-      setMstDone(true);
-      await sleep(800);
-
-      const abText = await runCard("worldbuilder", buildAbPrompt(genre, worldSummary, mstSummary), `장르: ${genre}\n세계관: ${worldSummary}\nMST: ${mstSummary}\nA/B 디자인 방향을 제안해주세요.`, "ab");
-      const abData = parseBlock<AbCard>(abText, "AB_CARD");
-
-      contextRef.current = [`[세계관]\n${worldSummary}`, `[캐릭터]\n${char1Summary}\n${char2Summary}`, `[MST]\n${mstSummary}`].join("\n\n");
-
-      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
-        data: { world: worldData, characters: [char1Data, char2Data], mst: mstData, ab: abData },
-        savedAt: new Date().toISOString(),
-      }));
-
-      if (mstData) {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-        fetch(`${API_BASE}/api/style/${projectId}/registry`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: "Bearer local" }, body: JSON.stringify({ mst: mstData }) }).catch(() => {});
-      }
-      setDebatePhase("done");
-    } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err);
-      setApiError(raw.includes("401") ? "API 키가 유효하지 않습니다." : `API 오류: ${raw}`);
-      setDebatePhase("done");
-    }
-  }, [genre, projectId, addMsg, updateMsg]);
-
-  // ── Main debate loop (Phase 1 style) ──
-  const runDebate = useCallback(async (resumeConv?: Array<{ role: "user"|"assistant"; content: string }>) => {
+  // ── Single stage debate loop ──
+  const runStageDebate = useCallback(async (stageId: StageId, resumeConv?: Array<{ role: "user" | "assistant"; content: string }>) => {
     if (runningRef.current) return;
     runningRef.current = true;
+    setDebatePhase("running");
+    setApiError(null);
+
     const apiKey = getAnthropicKey();
     if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); runningRef.current = false; return; }
 
-    setApiError(null);
-    setDebatePhase("running");
-    setTurnCount(1);
+    const systemPrompt = buildStageSystemPrompt(stageId, genre, stageResultsRef.current);
+    const convHistory: Array<{ role: "user" | "assistant"; content: string }> =
+      resumeConv ? [...resumeConv] : [];
 
-    let phase1Summary = `장르: ${genre}`;
-    try {
-      const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
-      if (p1?.data?.summary) phase1Summary += `\nPhase 1 요약: ${p1.data.summary}`;
-      if (p1?.input?.concept) phase1Summary += `\n아이디어: ${p1.input.concept}`;
-    } catch { /* ignore */ }
-
-    const convHistory: Array<{ role: "user"|"assistant"; content: string }> = resumeConv ? [...resumeConv] : [];
-    if (!resumeConv || resumeConv.length === 0) {
-      convHistory.push({ role: "user", content: `Phase 2 세계관·에셋 설계를 시작해줘.\n${phase1Summary}` });
+    const st = STAGES.find(s => s.id === stageId)!;
+    if (convHistory.length === 0) {
+      convHistory.push({ role: "user", content: `${stageId}단계 "${st.name}" 토론을 시작합니다. 장르: ${genre}` });
     } else {
-      convHistory.push({ role: "user", content: "이전 논의를 이어서 계속해줘." });
+      convHistory.push({ role: "user", content: "이전 논의를 이어서 계속해주세요." });
     }
 
-    const END_TRIGGERS = ["정리하자", "확정하자", "결정하자", "끝내자", "카드 만들어"];
-    const MAX_ROUNDS = 120;
+    const END_TRIGGERS = ["합의 완료", "이 단계 합의 완료", "다음 단계", "완료됐어", "완료됐습니다", "정리하자", "끝내자"];
+    const MAX_ROUNDS = 60;
     let round = 0;
 
-    const compressHistory = async () => {
-      if (convHistory.length < 14) return;
-      const initial = convHistory[0];
-      const recent = convHistory.slice(-8);
-      const old = convHistory.slice(1, -8).filter(m => m.role === "assistant");
-      if (!old.length) return;
-      let summary = "";
-      for await (const chunk of streamClaude({ apiKey, systemPrompt: "토론 요약 전문가. 핵심 쟁점만 간결하게.", messages: [{ role: "user", content: `요약:\n\n${old.map(m => m.content).join("\n\n").slice(0, 3000)}` }], maxTokens: 400, tools: [] })) summary += chunk;
-      convHistory.length = 0;
-      convHistory.push(initial, { role: "assistant", content: `[이전 토론 요약]\n${summary}` }, { role: "user", content: "위 요약을 참고해서 계속해줘." }, ...recent);
-    };
+    try {
+      debateLoop: for (round = 1; round <= MAX_ROUNDS; round++) {
+        setTurnCount(round);
+        let roundText = "";
+        const roundMsgIds = new Map<AgentId, string>();
 
-    debateLoop: for (round = 1; round <= MAX_ROUNDS; round++) {
-      setTurnCount(round);
-      let roundText = "";
-      const roundMsgIds = new Map<AgentId, string>();
+        for await (const chunk of streamClaude({ apiKey, systemPrompt, messages: convHistory, maxTokens: 200, tools: [] })) {
+          roundText += chunk;
+          for (const { agentId, text } of parseAgentMessages(roundText)) {
+            if (!roundMsgIds.has(agentId)) roundMsgIds.set(agentId, addMsg(agentId, round, text, true));
+            else updateMsg(roundMsgIds.get(agentId)!, text, true);
+          }
+        }
+        const finalParsed = parseAgentMessages(roundText);
+        for (const [agentId, id] of roundMsgIds)
+          updateMsg(id, finalParsed.find(m => m.agentId === agentId)?.text ?? "", false);
 
-      for await (const chunk of streamClaude({ apiKey, systemPrompt: DEBATE_SYSTEM_PROMPT, messages: convHistory, maxTokens: 150, tools: [] })) {
-        roundText += chunk;
-        for (const { agentId, text } of parseAgentMessages(roundText)) {
-          if (!roundMsgIds.has(agentId)) roundMsgIds.set(agentId, addMsg(agentId, round, text, true));
-          else updateMsg(roundMsgIds.get(agentId)!, text, true);
+        convHistory.push({ role: "assistant", content: roundText });
+
+        // Compress every 10 rounds
+        if (round % 10 === 0 && convHistory.length > 12) {
+          const initial = convHistory[0];
+          const recent = convHistory.slice(-6);
+          const old = convHistory.slice(1, -6).filter(m => m.role === "assistant");
+          if (old.length) {
+            let summary = "";
+            for await (const c of streamClaude({ apiKey, systemPrompt: "토론 요약 전문가. 핵심 쟁점만 간결하게.", messages: [{ role: "user", content: `요약:\n${old.map(m => m.content).join("\n").slice(0, 2000)}` }], maxTokens: 300, tools: [] })) summary += c;
+            convHistory.length = 0;
+            convHistory.push(initial, { role: "assistant", content: `[이전 토론 요약] ${summary}` }, { role: "user", content: "위 요약을 참고해서 계속해줘." }, ...recent);
+          }
+        }
+
+        localStorage.setItem(`p2_conv_${projectId}`, JSON.stringify(convHistory));
+        stageConvRef.current = convHistory;
+
+        if (END_TRIGGERS.some(t => roundText.includes(t))) break debateLoop;
+
+        await sleep(3500);
+
+        const pending = pendingUserMsgRef.current;
+        if (pending) {
+          pendingUserMsgRef.current = null;
+          addMsg("user", round, pending, false);
+          if (END_TRIGGERS.some(t => pending.includes(t))) break debateLoop;
+          convHistory.push({ role: "user", content: `[사용자]: ${pending}\n위 내용에 직접 반응해줘.` });
+        } else if (round === 40) {
+          convHistory.push({ role: "user", content: "[시스템: 마무리] 편집자가 앞 대화를 인용하며 마무리를 유도하고, 총괄프로듀서가 합의 완료를 선언해줘." });
+        } else {
+          convHistory.push({ role: "user", content: "계속 토론해줘." });
         }
       }
-      const finalParsed = parseAgentMessages(roundText);
-      for (const [agentId, id] of roundMsgIds) updateMsg(id, finalParsed.find(m => m.agentId === agentId)?.text ?? "", false);
-
-      convHistory.push({ role: "assistant", content: roundText });
-
-      if (round % 10 === 0) await compressHistory();
-
-      localStorage.setItem(`p2_conv_${projectId}`, JSON.stringify({ conv: convHistory }));
-
-      await sleep(4000);
-
-      const pendingMsg = pendingUserMsgRef.current;
-      if (pendingMsg) {
-        pendingUserMsgRef.current = null;
-        addMsg("user", round, pendingMsg, false);
-        if (END_TRIGGERS.some(t => pendingMsg.includes(t))) break debateLoop;
-        convHistory.push({ role: "user", content: `[사용자]: ${pendingMsg}\n위 내용에 에이전트들이 즉시 반응해줘.` });
-      } else if (round === 80) {
-        convHistory.push({ role: "user", content: "[시스템: 마무리 단계] 편집자가 앞 대화를 인용하며 마무리를 유도하고, 에이전트들이 핵심 결론을 정리해줘." });
-      } else if (round > 80) {
-        convHistory.push({ role: "user", content: "에이전트들이 하나씩 최종 입장을 정리해줘." });
-      } else {
-        convHistory.push({ role: "user", content: "계속 토론해줘." });
-      }
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      setApiError(raw.includes("401") ? "API 키가 유효하지 않습니다." : `API 오류: ${raw}`);
+      runningRef.current = false;
+      setDebatePhase("paused");
+      return;
     }
 
-    const debateContext = convHistory.filter(m => m.role === "assistant").map(m => m.content).join("\n\n");
     runningRef.current = false;
-    await generateCards(apiKey, debateContext);
-    localStorage.removeItem(`p2_conv_${projectId}`);
-    savedConvRef.current = [];
-  }, [genre, projectId, addMsg, updateMsg, generateCards]);
 
-  const handleAbChoose = useCallback((msgId: string, label: string) => {
-    setMsgs((prev: Msg[]) => prev.map((m: Msg) => {
-      if (m.id !== msgId || !m.ab) return m;
-      return { ...m, ab: { ...m.ab, chosen: label } };
-    }));
-    setAbChosen(true);
-    // Persist AB choice back to localStorage
-    try {
-      const saved = localStorage.getItem(`wts_phase2_${projectId}`);
-      if (saved) {
-        const parsed = JSON.parse(saved) as { data: Record<string, unknown>; savedAt: string };
-        if (parsed.data?.ab) {
-          (parsed.data.ab as Record<string, unknown>).chosen = label;
-          localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify(parsed));
-        }
-      }
-    } catch { /* ignore */ }
+    // Extract stage JSON
+    const debateText = convHistory.filter(m => m.role === "assistant").map(m => m.content).join("\n\n");
+    const result = await extractStageResult(stageId, apiKey, debateText);
 
-    // Sync AB choice to style_registry API (fire-and-forget)
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-    fetch(`${API_BASE}/api/style/${projectId}/registry`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer local" },
-      body: JSON.stringify({ mst: {}, ab_choice: label }),
-    }).catch(() => { /* non-critical */ });
+    if (result) {
+      const newResults = [...stageResultsRef.current, result];
+      stageResultsRef.current = newResults;
+      setStageResults(newResults);
+      addMsg("producer", 0, "", false, "stage_divider", { stageId });
+      addMsg("producer", 0, "", false, "stage_result", { stageId, stageData: result.data });
+      // Save
+      const nextStage = (stageId < 6 ? stageId + 1 : 7) as StageId | 7;
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+        stageResults: newResults,
+        currentStage: nextStage,
+        msgs: msgs,
+      }));
+      localStorage.removeItem(`p2_conv_${projectId}`);
+      stageConvRef.current = [];
+    }
 
-    setMsgs((prev: Msg[]) => [...prev, { id: uid(), agent: "user", text: `${label}을 선택하겠습니다.`, type: "text", streaming: false }]);
-    const replyId = uid();
-    setMsgs((prev: Msg[]) => [...prev, { id: replyId, agent: "producer", text: "", type: "text", streaming: true }]);
-    setTimeout(() => {
-      setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === replyId ? { ...m, text: `${label} 방향이 확정되었습니다. 세계관·캐릭터·MST·디자인 방향 모두 확정. Phase 3에서 100화 시나리오 로드맵을 작성할 수 있습니다.`, streaming: false } : m));
-    }, 600);
-  }, []);
+    setDebatePhase("stage_complete");
+  }, [genre, projectId, msgs, addMsg, updateMsg, extractStageResult]);
+
+  const handleNextStage = useCallback(() => {
+    const nextStage = (currentStage + 1) as StageId;
+    if (nextStage > 6) {
+      // Save final cross-phase data
+      const finalData: Record<string, unknown> = {};
+      stageResultsRef.current.forEach((r: StageResult) => { finalData[`stage${r.stageId}`] = r.data; });
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+        stageResults: stageResultsRef.current,
+        currentStage: 7,
+        finalData,
+        msgs,
+      }));
+      setDebatePhase("all_done");
+    } else {
+      setCurrentStage(nextStage);
+      stageConvRef.current = [];
+      void runStageDebate(nextStage);
+    }
+  }, [currentStage, projectId, msgs, runStageDebate]);
 
   const handleRestartNew = useCallback(() => {
     localStorage.removeItem(`p2_msgs_${projectId}`);
     localStorage.removeItem(`p2_conv_${projectId}`);
     localStorage.removeItem(`wts_phase2_${projectId}`);
-    savedConvRef.current = [];
-    setMsgs([]); setAbChosen(false); setMstDone(false); setApiError(null);
+    stageConvRef.current = [];
+    stageResultsRef.current = [];
+    setMsgs([]); setStageResults([]); setCurrentStage(1); setApiError(null);
     setDebatePhase("idle"); setTurnCount(0);
     runningRef.current = false;
   }, [projectId]);
 
-  const canProceed = mstDone && abChosen && debatePhase === "done";
+  // ── UI ──
 
   if (debatePhase === "idle") {
     return (
       <div className={s.page}>
         <div className={s.formWrap}>
-          <h1 className={s.formTitle}>Phase 2 — 세계관 & 에셋 설계</h1>
-          <p className={s.formDesc}>에이전트들이 자유 토론으로 세계관·캐릭터·화풍을 함께 설계합니다. 의견을 입력하거나 &quot;정리하자&quot;로 카드를 확정할 수 있습니다.</p>
-          {apiError && <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#f87171" }}>⚠ {apiError}</div>}
+          <h1 className={s.formTitle}>Phase 2 — 세계관 & 스토리 설계</h1>
+          <p className={s.formDesc}>6단계 순차 토론으로 세계관·시놉시스·관계·인물·장소·구체화를 함께 완성합니다. 언제든 의견을 입력할 수 있습니다.</p>
+          {apiError && <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"10px 16px", marginBottom:16, fontSize:13, color:"#f87171" }}>⚠ {apiError}</div>}
           <div className={s.formCard}>
             <div className={s.prereqNote}>Phase 1 기획 데이터를 자동으로 불러옵니다.</div>
-            <button className={s.btnStart} onClick={() => runDebate()}>✦ 세계관/에셋 설계 토론 시작</button>
+            <div style={{ display:"flex", flexDirection:"column", gap:6, margin:"12px 0" }}>
+              {STAGES.map(st => (
+                <div key={st.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", background:"#1a1a26", borderRadius:8 }}>
+                  <span style={{ fontSize:12, fontWeight:800, color:STAGE_COLORS[st.id], minWidth:20 }}>{st.id}</span>
+                  <span style={{ fontSize:13, color:"#c8d0dc", fontWeight:600 }}>{st.name}</span>
+                  <span style={{ fontSize:11, color:"#4a4a6a", marginLeft:"auto" }}>{st.desc}</span>
+                </div>
+              ))}
+            </div>
+            <button className={s.btnStart} onClick={() => { void runStageDebate(1); }}>✦ 1단계부터 토론 시작</button>
           </div>
         </div>
       </div>
     );
   }
 
+  const allDone = debatePhase === "all_done";
+
   return (
     <div className={s.page}>
       <div className={s.chatLayout}>
+        {/* Stage progress header */}
         <div className={s.chatHeader}>
-          <span className={s.chatHeaderGenre}>{genre}</span>
-          <span style={{ fontSize: 12, color: "#475569" }}>
-            {debatePhase === "running" ? `Turn ${turnCount}` : debatePhase === "generating" ? "카드 생성 중..." : debatePhase === "paused" ? "⏸ 일시중지" : "✅ 완료"}
-          </span>
-          {debatePhase === "running" && <ThinkingDots />}
-          <button className={s.btnRestart} onClick={handleRestartNew}>↺ 다시 시작</button>
+          <div className={s.stepBar} style={{ padding:"0", background:"transparent", border:"none", flex:1 }}>
+            {STAGES.map(st => {
+              const isDone = stageResults.some((r: StageResult) => r.stageId === st.id);
+              const isActive = currentStage === st.id && !allDone;
+              const c = STAGE_COLORS[st.id];
+              return (
+                <div key={st.id} className={`${s.stepItem} ${isDone ? s.stepDone : ""} ${isActive ? s.stepActive : ""}`}>
+                  <div className={s.stepDot} style={isDone ? { background:c } : isActive ? { background:c } : {}} />
+                  <span className={s.stepLabel} style={isDone||isActive ? { color:c } : {}}>{st.name}</span>
+                </div>
+              );
+            })}
+          </div>
+          <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
 
         {apiError && (
-          <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", margin: "12px 20px 0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
-            <span>⚠</span><span>{apiError}</span>
-            <a href="/settings" style={{ marginLeft: "auto", color: "#f87171", textDecoration: "underline", whiteSpace: "nowrap" }}>설정으로 이동</a>
+          <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.3)", margin:"8px 16px", borderRadius:8, padding:"8px 14px", fontSize:13, color:"#f87171" }}>
+            ⚠ {apiError}
           </div>
         )}
 
         <div className={s.chatBody}>
-          {msgs.map((m: Msg) => (
-            <MsgBubble key={m.id} msg={m} onAbChoose={handleAbChoose} />
-          ))}
+          {msgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)}
+          <div ref={bottomRef} />
+        </div>
 
+        <div className={s.chatBottom}>
+          {/* Stage complete — next stage button */}
+          {debatePhase === "stage_complete" && currentStage < 6 && (
+            <div className={s.gatingRow}>
+              <span className={s.gatingMsg}>✓ {currentStage}단계 완료 — {STAGES.find(s=>s.id===currentStage)?.name}</span>
+              <button className={s.btnGating} style={{ width:"auto", padding:"10px 20px" }} onClick={handleNextStage}>
+                {currentStage + 1}단계 시작 →
+              </button>
+            </div>
+          )}
+          {debatePhase === "stage_complete" && currentStage === 6 && (
+            <div className={s.gatingRow}>
+              <span className={s.gatingMsg}>✓ 6단계 모두 완료</span>
+              <button className={s.btnGating} style={{ width:"auto", padding:"10px 20px" }} onClick={handleNextStage}>
+                Phase 2 완료 & Phase 3 →
+              </button>
+            </div>
+          )}
+
+          {/* Paused — resume or restart */}
           {debatePhase === "paused" && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "24px 16px" }}>
-              <p style={{ color: "#94a3b8", fontSize: 13, textAlign: "center", margin: 0 }}>이전 토론이 저장되어 있습니다.</p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button className={s.btnGating} onClick={() => runDebate(savedConvRef.current)}>토론 계속하기 →</button>
+            <div className={s.gatingRow}>
+              <span className={s.gatingMsg}>⏸ {currentStage}단계 토론 일시중지</span>
+              <div style={{ display:"flex", gap:8 }}>
+                <button className={s.btnGating} style={{ width:"auto", padding:"10px 16px" }} onClick={() => void runStageDebate(currentStage, stageConvRef.current)}>계속하기 →</button>
                 <button className={s.btnRestart} onClick={handleRestartNew}>새로 시작</button>
               </div>
             </div>
           )}
 
-          <div ref={bottomRef} />
-        </div>
-
-        <div className={s.chatBottom}>
-          {canProceed && (
+          {/* All done — go to Phase 3 */}
+          {allDone && (
             <div className={s.gatingRow}>
-              <span className={s.gatingMsg}>✓ 세계관 · 캐릭터 · MST · 디자인 방향 확정 — Phase 3 진행 가능</span>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={{ background: "rgba(100,116,139,0.1)", border: "1px solid rgba(100,116,139,0.3)", borderRadius: 8, color: "#94a3b8", fontSize: 13, fontWeight: 600, padding: "10px 14px", cursor: "pointer" }} onClick={handleRestartNew}>재생성</button>
-                <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-3`)}>Phase 3 시작 →</button>
+              <span className={s.gatingMsg}>✓ Phase 2 전체 완료 — Phase 3 진행 가능</span>
+              <div style={{ display:"flex", gap:8 }}>
+                <button className={s.btnRestart} onClick={handleRestartNew}>재생성</button>
+                <button className={s.btnGating} style={{ width:"auto", padding:"10px 20px" }} onClick={() => router.push(`/projects/${projectId}/phase-3`)}>Phase 3 시작 →</button>
               </div>
             </div>
           )}
-          {debatePhase === "running" && (
+
+          {/* Extracting indicator */}
+          {debatePhase === "extracting" && (
+            <div style={{ padding:"10px 20px", fontSize:13, color:"#fbbf24" }}>📝 단계 결과 정리 중...</div>
+          )}
+
+          {/* Chat input during running */}
+          {(debatePhase === "running" || debatePhase === "extracting") && (
             <div className={s.inputRow}>
               <textarea
                 className={s.chatInput} rows={1}
-                placeholder="의견 입력 (Enter) · &quot;정리하자&quot; 입력 시 카드 생성"
+                placeholder="의견 입력 (Enter) · &quot;다음 단계&quot; 입력 시 단계 완료"
                 value={chatInput}
                 onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
                 onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
@@ -812,3 +784,4 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     </div>
   );
 }
+
