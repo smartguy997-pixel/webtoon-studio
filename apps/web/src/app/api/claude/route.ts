@@ -30,6 +30,16 @@ export async function POST(req: Request): Promise<Response> {
       body: JSON.stringify(body),
     });
 
+    // 에러 응답은 바디를 읽어서 로그 후 전달
+    if (!upstream.ok) {
+      const errBody = await upstream.text();
+      console.error(`[claude-proxy] Anthropic ${upstream.status}:`, errBody);
+      return new Response(errBody, {
+        status: upstream.status,
+        headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
+      });
+    }
+
     // 스트리밍 응답 그대로 중계
     return new Response(upstream.body, {
       status: upstream.status,
