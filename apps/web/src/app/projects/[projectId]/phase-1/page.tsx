@@ -1161,11 +1161,18 @@ export default function Phase1Page() {
         ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
         : "";
 
+      // 최근 사용자 발언 3개를 묶어 맥락 파악 (예: "스피드 동체시력 / 이런걸로 해")
+      const recentUserMsgs = transcript
+        .filter(l => l.startsWith("[사용자]"))
+        .slice(-3)
+        .map(l => l.replace("[사용자]: ", "").trim())
+        .join(" / ");
+
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0
         ? `기획 분석을 시작해줘.\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획: ${c.slice(0, 500)}`
         : userJustSpoke
-          ? `${historyText}지금 사용자가 "${userText}"라고 했어. 반드시 이 말에 직접 답해. 무시하면 안 돼.`
+          ? `${historyText}사용자가 최근에 이렇게 말했어: "${recentUserMsgs}". 앞뒤 맥락을 이해하고 직접 답해. 무시하면 안 돼.`
           : `${historyText}당신 차례야. 바로 앞 발언에 반응하거나 새 관점 던져줘.`;
 
       // 스트리밍: 이 에이전트 발언
