@@ -1455,12 +1455,20 @@ export default function Phase1Page() {
 
       // ── 일반 발언 ─────────────────────────────────────────────────────────
 
+      // 이미 언급된 작품명 추출 (반복 방지용)
+      const mentionedWorks = [...new Set(
+        transcript
+          .join(" ")
+          .match(/[<「『《]?([가-힣a-zA-Z0-9\s]+)[>」』》]?\s*(?:웹툰|manhwa|webtoon)?/g)
+          ?.slice(0, 10) ?? []
+      )].join(", ");
+
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0
         ? `리서치 세션을 시작해줘. 우리가 분석할 기획은:\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획 개요: ${c.slice(0, 500)}\n\n이 기획과 유사한 웹툰 작품을 한 편 골라서 소개하고, 그 작품의 좋은 점이나 배울 점을 공유해줘.`
         : userJustSpoke
           ? `${historyText}사용자가 최근에 이렇게 말했어: "${recentUserMsgs}". 앞뒤 맥락을 이해하고 직접 반응해. 사용자 의견을 반드시 반영해.`
-          : `${historyText}당신 차례야. 앞 사람 의견에 공감하거나 새로운 유사 작품 인사이트를 추가해줘.`;
+          : `${historyText}당신 차례야. 위 대화에서 아직 나오지 않은 새로운 유사 작품이나 인사이트를 추가해줘. 절대로 앞사람 말을 반복하거나 단순 동의로 시작하지 마. '맞아', '그렇지' 금지. 바로 새 내용으로 시작해.${mentionedWorks ? `\n(이미 언급된 내용이니 피해줘: ${mentionedWorks})` : ""}`;
 
       // 스트리밍: 이 에이전트 발언
       let roundText = "";
@@ -1471,7 +1479,7 @@ export default function Phase1Page() {
         apiKey: agentApiKey,
         systemPrompt,
         messages: [{ role: "user", content: userContent }],
-        maxTokens: 220,
+        maxTokens: 320,
         tools: [],
       })) {
         roundText += chunk;
