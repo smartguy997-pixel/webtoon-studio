@@ -612,6 +612,11 @@ function FirebaseCard({ onSaved }: { onSaved: () => void }) {
 
 // ── Page ──────────────────────────────────────────────────
 export default function SettingsPage() {
+  // 파일 로드 확인용
+  if (typeof window !== "undefined") {
+    console.log("✓ Settings page loaded - file version 2026-04-10");
+  }
+
   const [savedCount, setSavedCount] = useState(0);
 
   const countSaved = useCallback(() => {
