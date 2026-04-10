@@ -81,30 +81,50 @@ const STAGE_GUIDES: Record<StageId, string> = {
   6: "시놉시스 구체화 — 전체 시놉시스, 3막 구조, 핵심 장면을 완성합니다.",
 };
 
-function buildStageSystemPrompt(stageId: StageId, genre: string, stageResults: StageResult[]): string {
-  const prevCtx = stageResults
-    .map(r => `[${STAGES.find(s => s.id === r.stageId)?.name}] ${r.summary}`)
-    .join("\n");
+function buildStageSystemPrompt(
+  stageId: StageId,
+  genre: string,
+  stageResults: StageResult[],
+  currentCharacter?: string,
+): string {
+  const get = (id: StageId): string => stageResults.find(r => r.stageId === id)?.summary ?? "";
   const stageName = STAGES.find(s => s.id === stageId)?.name ?? "";
+
+  // 단계별로 필요한 이전 결과만 정확히 주입
+  const prevLines: string[] = [];
+  if (stageId >= 2 && get(1)) prevLines.push(`세계관: ${get(1)}`);
+  if (stageId >= 3 && get(2)) prevLines.push(`시놉시스: ${get(2)}`);
+  if (stageId >= 4 && get(3)) prevLines.push(`관계구조: ${get(3)}`);
+  if (stageId >= 5 && get(4)) prevLines.push(`등장인물: ${get(4)}`);
+  if (stageId >= 6 && get(5)) prevLines.push(`장소: ${get(5)}`);
+
+  const prevCtx = prevLines.length > 0
+    ? `\n### 확정된 이전 단계 결과 (반드시 이것을 기반으로 토론)\n${prevLines.join("\n")}`
+    : "";
+
+  // Stage 4 전용: 현재 토론 중인 인물
+  const charCtx = (stageId === 4 && currentCharacter)
+    ? `\n\n### 지금 집중할 인물\n${currentCharacter}\n이 인물 논의가 충분하면 총괄프로듀서가 "이 인물 정리됐습니다. 다음 인물로 넘어갈까요?" 라고만 묻는다. 절대 자동 진행 금지.`
+    : "";
+
   return `너는 웹툰 기획팀 전문가들이 참여하는 Phase 2 ${stageId}단계 "${stageName}" 회의를 진행한다.
 
 ### ⚠️ 단계 고정 규칙 (최우선)
 - 지금은 오직 ${stageId}단계 "${stageName}"만 토론한다.
 - 다른 단계 내용을 미리 언급하거나 진행하는 것을 절대 금지한다.
-- "다음 단계", "이후 단계" 등 다른 단계 언급 금지.
 - 사용자가 명시적으로 승인하기 전까지 절대 다음 단계로 넘어가지 않는다.
 
 ### 현재 단계
 ${STAGE_GUIDES[stageId]}
 장르: ${genre}
-${prevCtx ? `\n### 이전 단계 결과 (참고)\n${prevCtx}` : ""}
+${prevCtx}${charCtx}
 
 ### 참여자와 성격
 - [세계관설계자]: 설정 규칙 집착. 논리적 근거 요구.
 - [캐릭터디자이너]: 외형과 감정 우선.
 - [시나리오작가]: 서사 연결 관점.
 - [연출작가]: 시각적 구현 관점.
-- [총괄프로듀서]: 중재자. 현재 단계 논의가 충분하다고 판단되면 "이 단계 정리됐습니다. 다음으로 넘어갈까요?" 라고만 묻는다. 절대 다음 단계를 선언하거나 자동 진행하지 않는다. 사용자 응답을 기다린다.
+- [총괄프로듀서]: 중재자. 현재 단계 논의가 충분하다고 판단되면 "이 단계 정리됐습니다. 다음으로 넘어갈까요?" 라고만 묻는다. 절대 다음 단계를 선언하거나 자동 진행하지 않는다.
 - [편집자]: 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 현재 단계 마무리를 유도한다.
 
 ### 출력 형식
@@ -412,6 +432,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [stageResults, setStageResults] = useState<StageResult[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
+  // Stage 4 전용: 현재 토론 중인 인물
+  const [currentCharacter, setCurrentCharacter] = useState("주인공");
 
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -419,6 +441,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const pendingUserMsgRef = useRef<string | null>(null);
   const stageConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const stageResultsRef = useRef<StageResult[]>([]);
+  const currentCharacterRef = useRef("주인공");
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -529,19 +552,24 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const apiKey = getAnthropicKey();
     if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); runningRef.current = false; return; }
 
-    const systemPrompt = buildStageSystemPrompt(stageId, genre, stageResultsRef.current);
+    const systemPrompt = buildStageSystemPrompt(
+      stageId, genre, stageResultsRef.current,
+      stageId === 4 ? currentCharacterRef.current : undefined,
+    );
     const convHistory: Array<{ role: "user" | "assistant"; content: string }> =
       resumeConv ? [...resumeConv] : [];
 
     const st = STAGES.find(s => s.id === stageId)!;
     if (convHistory.length === 0) {
-      convHistory.push({ role: "user", content: `${stageId}단계 "${st.name}" 토론을 시작합니다. 장르: ${genre}` });
+      const charHint = stageId === 4 ? ` 첫 번째 인물(${currentCharacterRef.current})부터 시작합니다.` : "";
+      convHistory.push({ role: "user", content: `${stageId}단계 "${st.name}" 토론을 시작합니다. 장르: ${genre}${charHint}` });
     } else {
       convHistory.push({ role: "user", content: "이전 논의를 이어서 계속해주세요." });
     }
 
     // 사용자가 명시적으로 입력해야만 단계 전환 — AI 발언으로는 절대 전환 금지
-    const USER_ADVANCE_TRIGGERS = ["다음 단계", "넘어가자", "넘어가", "다음으로", "진행해"];
+    // "다음 인물"은 stage 4 내부 이동이므로 단계 전환 트리거에서 제외
+    const USER_ADVANCE_TRIGGERS = ["다음 단계", "단계 완료", "단계 넘어가"];
     const MAX_ROUNDS = 80;
     let round = 0;
 
@@ -725,20 +753,26 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         </div>
 
         <div className={s.chatBottom}>
-          {/* Stage complete — next stage button */}
+          {/* Stage complete — 확정 버튼: 사용자가 결과 확인 후 명시적으로 다음 단계 진행 */}
           {debatePhase === "stage_complete" && currentStage < 6 && (
             <div className={s.gatingRow}>
-              <span className={s.gatingMsg}>✓ {currentStage}단계 완료 — {STAGES.find(s=>s.id===currentStage)?.name}</span>
+              <div>
+                <div className={s.gatingMsg}>✓ {currentStage}단계 결과 확정 — {STAGES.find(s=>s.id===currentStage)?.name}</div>
+                <div style={{ fontSize:11, color:"#64748b", marginTop:3 }}>위 결과 카드를 확인하고 확정하면 {currentStage+1}단계가 시작됩니다</div>
+              </div>
               <button className={s.btnGating} style={{ width:"auto", padding:"10px 20px" }} onClick={handleNextStage}>
-                {currentStage + 1}단계 시작 →
+                확정 — {currentStage + 1}단계 시작 →
               </button>
             </div>
           )}
           {debatePhase === "stage_complete" && currentStage === 6 && (
             <div className={s.gatingRow}>
-              <span className={s.gatingMsg}>✓ 6단계 모두 완료</span>
+              <div>
+                <div className={s.gatingMsg}>✓ 6단계 모두 완료</div>
+                <div style={{ fontSize:11, color:"#64748b", marginTop:3 }}>위 결과를 확인하고 확정하면 Phase 3로 이동합니다</div>
+              </div>
               <button className={s.btnGating} style={{ width:"auto", padding:"10px 20px" }} onClick={handleNextStage}>
-                Phase 2 완료 & Phase 3 →
+                확정 — Phase 3 시작 →
               </button>
             </div>
           )}
@@ -770,17 +804,48 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             <div style={{ padding:"10px 20px", fontSize:13, color:"#fbbf24" }}>📝 단계 결과 정리 중...</div>
           )}
 
+          {/* Stage 4 전용: 인물 전환 UI */}
+          {debatePhase === "running" && currentStage === 4 && turnCount >= 2 && (
+            <div style={{ padding:"6px 16px 0", display:"flex", gap:8, alignItems:"center" }}>
+              <span style={{ fontSize:12, color:"#64748b", flexShrink:0 }}>현재 인물:</span>
+              <input
+                value={currentCharacter}
+                onChange={(e: { target: HTMLInputElement }) => {
+                  setCurrentCharacter(e.target.value);
+                  currentCharacterRef.current = e.target.value;
+                }}
+                style={{
+                  flex:1, background:"#1a1a26", border:"1px solid #2a2a3d", borderRadius:6,
+                  color:"#f1f5f9", fontSize:12, padding:"5px 10px", outline:"none",
+                }}
+                placeholder="인물 이름 입력"
+              />
+              <button
+                onClick={() => {
+                  const msg = `이 인물(${currentCharacter}) 논의 완료. 다음 인물로 넘어갑니다.`;
+                  pendingUserMsgRef.current = msg;
+                }}
+                style={{
+                  background:"rgba(251,146,60,0.1)", border:"1px solid rgba(251,146,60,0.3)",
+                  borderRadius:6, color:"#fb923c", fontSize:12, fontWeight:700,
+                  padding:"5px 12px", cursor:"pointer", whiteSpace:"nowrap" as const, flexShrink:0,
+                }}>
+                다음 인물 →
+              </button>
+            </div>
+          )}
+
           {/* 이 단계 완료 버튼 — 사용자가 명시적으로 클릭해야만 다음 단계로 이동 */}
           {debatePhase === "running" && turnCount >= 3 && (
             <div style={{ padding:"6px 16px 0" }}>
               <button
-                onClick={() => { pendingUserMsgRef.current = "다음 단계"; }}
+                onClick={() => { pendingUserMsgRef.current = "단계 완료"; }}
                 style={{
                   width:"100%", background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.3)",
                   borderRadius:8, color:"#34d399", fontSize:13, fontWeight:700,
                   padding:"9px 0", cursor:"pointer", letterSpacing:"0.02em",
                 }}>
-                ✓ {currentStage}단계 완료 — 다음 단계로 →
+                ✓ {currentStage}단계 완료 — 결과 정리 후 확정
               </button>
             </div>
           )}
@@ -790,7 +855,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             <div className={s.inputRow}>
               <textarea
                 className={s.chatInput} rows={1}
-                placeholder={`의견 입력 (Enter) · "넘어가자" 또는 버튼 클릭 시 ${currentStage}단계 완료`}
+                placeholder={`의견 입력 (Enter) · "단계 완료" 또는 버튼 클릭 시 ${currentStage}단계 결과 정리`}
                 value={chatInput}
                 onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
                 onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
