@@ -980,24 +980,21 @@ export default function Phase1Page() {
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
     let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
 
-    // 페어 라운드 계산 (이미 완료한 페어 수)
-    let completedPairs = 0;
-    for (const pair of AGENT_PAIRS_P1) {
-      const allSpoke = pair.every(agent =>
-        transcript.some(l => l.includes(`[${AGENTS[agent].label}]`))
-      );
-      if (allSpoke) completedPairs++;
-      else break;
-    }
+    // 에이전트 인덱스 계산 (이미 발언한 에이전트 수)
+    let agentIndex = transcript.filter(l => {
+      for (const agent of AGENT_SPEAKING_ORDER_P1) {
+        if (l.includes(`[${AGENTS[agent].label}]`)) return true;
+      }
+      return false;
+    }).length;
 
-    let pairRound = completedPairs;
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
 
     const MAX_ROUNDS_PER_CYCLE = 15;
     let roundsInCycle = 0;
     let shouldContinue = true;
-    let agentIndex = 0; // 에이전트 순서 추적 (API 키 로테이션용)
+    // agentIndex는 위에서 이미 초기화됨
 
     debateLoop: while (shouldContinue) {
       shouldContinue = false; // 기본값: 끝냄
