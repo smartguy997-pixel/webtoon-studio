@@ -43,17 +43,23 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 사용자 메시지 키워드 기반으로 가장 적합한 에이전트 선택
-function pickBestAgent(msg: string, fallbackIndex: number): AgentId {
-  const m = msg.toLowerCase();
-  if (/캐릭터|주인공|감정|인물|성격|매력/.test(m)) return "character";
-  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프/.test(m)) return "scenario";
-  if (/세계관|설정|배경|규칙|시스템|마법|능력/.test(m)) return "worldbuilder";
-  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오/.test(m)) return "strategist";
-  if (/유사|비슷|참고|작품|웹툰|레퍼런스/.test(m)) return "researcher";
-  if (/그림|비주얼|스타일|연출|색감|컷|그림체/.test(m)) return "script";
-  if (/정리|요약|방향|결론|다음/.test(m)) return "producer";
-  return AGENT_SPEAKING_ORDER_P1[fallbackIndex % AGENT_SPEAKING_ORDER_P1.length];
+// 마지막 대화 내용 기반으로 다음 발언자 선택 (last speaker 제외)
+function pickNextSpeaker(lastLine: string, lastSpeaker: AgentId | null): AgentId {
+  const m = lastLine.toLowerCase();
+  const candidates = AGENT_SPEAKING_ORDER_P1.filter(a => a !== lastSpeaker);
+  const find = (...ids: AgentId[]) => ids.find(a => candidates.includes(a)) ?? candidates[0];
+
+  if (/캐릭터|주인공|감정|인물|성격|매력/.test(m)) return find("character", "scenario");
+  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프/.test(m)) return find("scenario", "character");
+  if (/세계관|설정|배경|규칙|시스템|마법|능력/.test(m)) return find("worldbuilder", "researcher");
+  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오/.test(m)) return find("strategist", "researcher");
+  if (/유사|비슷|참고|작품|웹툰/.test(m)) return find("researcher", "scenario");
+  if (/그림|비주얼|스타일|연출|색감|그림체/.test(m)) return find("script", "character");
+  if (/정리|요약|방향|결론|다음|어떻게/.test(m)) return find("producer", "researcher");
+
+  // 매칭 없으면 lastSpeaker 제외하고 랜덤 (producer 마지막 순위)
+  const pool = candidates.filter(a => a !== "producer");
+  return (pool.length > 0 ? pool : candidates)[Math.floor(Math.random() * (pool.length || candidates.length))];
 }
 
 // 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
@@ -1346,7 +1352,7 @@ export default function Phase1Page() {
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
     let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
 
-    // 에이전트 인덱스 계산 (이미 발언한 에이전트 수)
+    // agentIndex: API 키 로테이션용 카운터
     let agentIndex = transcript.filter(l => {
       for (const agent of AGENT_SPEAKING_ORDER_P1) {
         if (l.includes(`[${AGENTS[agent].label}]`)) return true;
@@ -1356,28 +1362,73 @@ export default function Phase1Page() {
 
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
+    let lastSpeaker: AgentId | null = null;
 
+    // ── 에이전트 한 번 발언 헬퍼 ──
+    const runSingleAgent = async (agentId: AgentId, prompt: string, tokens: number) => {
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key) return;
+      const msgId = addMsg(agentId, round, "", true);
+      let text = "";
+      let lastUpdate = 0;
+      const msgs: Array<{ role: "user" | "assistant"; content: string }> = [
+        { role: "user", content: prompt },
+      ];
+      const isSentenceEnd = (t: string) =>
+        /[.!?~。！？～…♪ㅎㅋ다요야지해네죠나까]\s*$/.test(t.trim());
+      for (let cont = 0; cont <= 2; cont++) {
+        let stopReason = "end_turn";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
+            messages: msgs,
+            maxTokens: tokens,
+            tools: [],
+            onStopReason: (r) => { stopReason = r; },
+            onRateLimit: (msg) => { updateMsg(msgId, text + `\n\n${msg}`, true); },
+          })) {
+            text += chunk;
+            const now = Date.now();
+            if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
+          }
+        } catch { /* stream error → use what we have */ }
+        updateMsg(msgId, text, true);
+        if (cont === 2) break;
+        const truncated = stopReason === "max_tokens" || (text.trim().length > 0 && !isSentenceEnd(text));
+        if (!truncated) break;
+        msgs.push({ role: "assistant", content: text });
+        msgs.push({ role: "user", content: "앞 내용 반복 없이, 끊긴 문장 나머지만 완성해줘." });
+        await sleep(600);
+      }
+      const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+      updateMsg(msgId, clean, false);
+      if (!clean) setMsgs(prev => prev.filter(m => m.id !== msgId));
+      else transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
+      round++;
+      agentIndex++;
+    };
 
+    // ── 메인 대화 루프 ──
     debateLoop: while (true) {
-      // 에이전트를 돌아가며 선택 (API 키도 자동으로 로테이션)
-      const agentId = AGENT_SPEAKING_ORDER_P1[agentIndex % AGENT_SPEAKING_ORDER_P1.length];
-      const keyIndex = getApiKeyIndexForAgent(agentIndex);
-      const agentApiKey = getAnthropicKeyByIndex(keyIndex);
 
-      if (!agentApiKey) {
-        console.warn(`No API key found for agent ${agentIndex} (keyIndex=${keyIndex})`);
-        break debateLoop;
+      // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
+      if (transcript.length > 0) {
+        const minWait = 2000 + Math.random() * 1000;
+        const maxWait = 60000;
+        const start = Date.now();
+        while (Date.now() - start < maxWait) {
+          if (pendingUserMsgRef.current) break;
+          if (Date.now() - start >= minWait && !userTypingRef.current) break;
+          await sleep(150);
+        }
       }
 
-      setTurnCount(round);
-
-      // ── 사용자 입력 처리: 발언 전에 transcript에 삽입 ──
+      // 2) 사용자 메시지 처리
       const pendingMsg = pendingUserMsgRef.current;
-      let userJustSpoke = false;
       let matchedCommand = null as ReturnType<typeof matchCommand>;
       if (pendingMsg) {
         pendingUserMsgRef.current = null;
-        // 이미 UI에 표시된 경우 round만 업데이트, 아니면 새로 추가
         const shownId = pendingUserMsgIdRef.current;
         pendingUserMsgIdRef.current = null;
         if (shownId) {
@@ -1387,263 +1438,81 @@ export default function Phase1Page() {
         }
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
-        userJustSpoke = true;
-
-        // debate-config.ts의 USER_COMMAND_PATTERNS으로 명령 매칭
         matchedCommand = matchCommand(pendingMsg);
         if (matchedCommand?.handler === "end") break debateLoop;
       }
 
-      // 에이전트 발언 후 대기:
-      // - 최소 2~4초는 무조건 기다림
-      // - 그 이후 사용자가 타이핑 중이면 계속 대기 (최대 60초)
-      // - 타이핑 없으면 다음 에이전트로 자동 진행
-      // - 메시지 전송되면 즉시 진행
-      {
-        const minWait = userJustSpoke ? 1500 : 2000 + Math.random() * 2000;
-        const maxWait = 60000;
-        const start = Date.now();
-        while (Date.now() - start < maxWait) {
-          if (pendingUserMsgRef.current) break;
-          const elapsed = Date.now() - start;
-          if (elapsed >= minWait && !userTypingRef.current) break;
-          await sleep(150);
-        }
-      }
+      setTurnCount(round);
+      const historyText = `[대화 내용]\n${transcript.slice(-20).join("\n")}\n\n`;
 
-      // 최근 30줄 컨텍스트
-      const recentLines = transcript.slice(-30);
-      const historyText = recentLines.length > 0
-        ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
-        : "";
-
-      // 최근 사용자 발언 3개를 묶어 맥락 파악 (예: "스피드 동체시력 / 이런걸로 해")
-      const recentUserMsgs = transcript
-        .filter(l => l.startsWith("[사용자]"))
-        .slice(-3)
-        .map(l => l.replace("[사용자]: ", "").trim())
-        .join(" / ");
-
-      // ── 명령 핸들러 처리 ──────────────────────────────────────────────────
-
-      // 헬퍼: 지정 에이전트가 한 번 발언하고 transcript에 기록
-      const runSingleAgent = async (agentId: AgentId, prompt: string, tokens: number) => {
-        const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
-        if (!key) return;
-        const msgId = addMsg(agentId, round, "", true);
-        let text = "";
-        let lastUpdate = 0;
-        const msgs: Array<{ role: "user" | "assistant"; content: string }> = [
-          { role: "user", content: prompt },
-        ];
-        const isSentenceEnd = (t: string) =>
-          /[.!?~。！？～…♪ㅎㅋ다요야지해네죠나까]\s*$/.test(t.trim()) || t.trim().length === 0;
-        for (let cont = 0; cont <= 3; cont++) {
-          let stopReason = "end_turn";
-          try {
-            for await (const chunk of streamClaude({
-              apiKey: key,
-              systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
-              messages: msgs,
-              maxTokens: tokens,
-              tools: [],
-              onStopReason: (r) => { stopReason = r; },
-              onRateLimit: (msg) => { updateMsg(msgId, text + `\n\n${msg}`, true); },
-            })) {
-              text += chunk;
-              const now = Date.now();
-              if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
-            }
-          } catch { /* 429 소진 등 → 지금까지 텍스트로 마무리 */ }
-          updateMsg(msgId, text, true); // ⏳ 잔여 텍스트 즉시 정리
-          if (cont === 3) break;
-          const truncated = stopReason === "max_tokens" || !isSentenceEnd(text);
-          if (!truncated) break;
-          msgs.push({ role: "assistant", content: text });
-          msgs.push({ role: "user", content: "방금 하던 말을 문장 끝까지 이어서 완성해줘." });
-          await sleep(800);
-        }
-        updateMsg(msgId, text.trim(), false);
-        if (text.trim()) transcript.push(`[${AGENTS[agentId].label}]: ${text.trim()}`);
-        round++;
-        agentIndex++;
-      };
-
-      // 사용자가 방금 말했으면 — 가장 적합한 에이전트 1명만 반응, 나머지 스킵
-      if (userJustSpoke && !matchedCommand) {
-        const bestAgent = pickBestAgent(pendingMsg ?? "", agentIndex);
-        const recentHistory = transcript.slice(-20).join("\n");
-        await runSingleAgent(
-          bestAgent,
-          `[지금까지 대화]\n${recentHistory}\n\n사용자가 방금 이렇게 말했어: "${pendingMsg}". 이걸 받아서 네 관점으로 짧게 반응해줘.`,
-          150
-        );
-        continue;
-      }
-
-      // single_turn: 지정 에이전트만 발언, 나머지 스킵
+      // 3) 명령 핸들러
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
-        const prompt = matchedCommand.promptOverride
-          ? matchedCommand.promptOverride.replace("{history}", historyText)
-          : `${historyText}사용자 요청에 응답해.`;
-        await runSingleAgent(matchedCommand.speakerAgent, prompt, matchedCommand.maxTokens ?? 300);
-        await sleep(3000 + Math.random() * 2000);
+        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? `${historyText}사용자 요청에 응답해.`;
+        await runSingleAgent(matchedCommand.speakerAgent, p, matchedCommand.maxTokens ?? 300);
         continue;
       }
-
-      // summarize_then_end: 지정 에이전트가 요약 후 토론 종료
       if (matchedCommand?.handler === "summarize_then_end" && matchedCommand.speakerAgent) {
-        const prompt = matchedCommand.promptOverride
-          ? matchedCommand.promptOverride.replace("{history}", historyText)
-          : `${historyText}지금까지 토론 내용을 최종 정리해줘.`;
-        await runSingleAgent(matchedCommand.speakerAgent, prompt, matchedCommand.maxTokens ?? 500);
-        await sleep(1000);
+        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? `${historyText}지금까지 내용 최종 정리해줘.`;
+        await runSingleAgent(matchedCommand.speakerAgent, p, matchedCommand.maxTokens ?? 500);
         break debateLoop;
       }
-
-      // all_greet: 모든 에이전트가 순서대로 짧은 인사
       if (matchedCommand?.handler === "all_greet") {
-        const greetPrompt = matchedCommand.promptOverride ?? "사용자가 인사를 건넸어. 짧게 안부 인사 1문장.";
-        for (const gAgentId of AGENT_SPEAKING_ORDER_P1) {
-          await runSingleAgent(gAgentId, greetPrompt, matchedCommand.maxTokens ?? 60);
+        const p = matchedCommand.promptOverride ?? "사용자가 인사를 건넸어. 짧게 안부 인사 1문장.";
+        for (const gId of AGENT_SPEAKING_ORDER_P1) {
+          await runSingleAgent(gId, p, matchedCommand.maxTokens ?? 60);
           await sleep(600 + Math.random() * 400);
         }
-        await sleep(2000);
         continue;
       }
-
-      // break: producer가 선언 → 지정 시간 대기 → 재개
       if (matchedCommand?.handler === "break") {
-        const speakerId = matchedCommand.speakerAgent ?? "producer";
-        const prompt = matchedCommand.promptOverride
-          ? matchedCommand.promptOverride.replace("{history}", historyText)
-          : "사용자가 잠깐 쉬자고 했어. 브레이크 타임을 선언해줘.";
-        await runSingleAgent(speakerId, prompt, matchedCommand.maxTokens ?? 80);
-        const waitMs = matchedCommand.breakDurationMs ?? 30000;
-        await sleep(waitMs);
+        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? "브레이크 타임을 선언해줘.";
+        await runSingleAgent(matchedCommand.speakerAgent ?? "producer", p, matchedCommand.maxTokens ?? 80);
+        await sleep(matchedCommand.breakDurationMs ?? 30000);
         continue;
       }
 
-      // ── 일반 발언 ─────────────────────────────────────────────────────────
+      // 4) 다음 발언자: 마지막 대화 맥락 기반으로 선택
+      const lastLine = transcript[transcript.length - 1] ?? "";
+      const nextAgent = pickNextSpeaker(lastLine, lastSpeaker);
 
-      // 이미 언급된 작품명 추출 (반복 방지용)
-      const mentionedWorks = [...new Set(
-        transcript
-          .join(" ")
-          .match(/[<「『《]?([가-힣a-zA-Z0-9\s]+)[>」』》]?\s*(?:웹툰|manhwa|webtoon)?/g)
-          ?.slice(0, 10) ?? []
-      )].join(", ");
+      // 5) 프롬프트 구성
+      const isFirst = transcript.length <= 1;
+      const agentPrompt = isFirst
+        ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 300)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
+        : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
-      const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
-      const userContent = agentIndex === 0
-        ? `리서치 세션을 시작해줘. 우리가 분석할 기획은:\n장르: ${g} | 플랫폼: ${platLabel} | 목표화수: ${ep}\n기획 개요: ${c.slice(0, 500)}\n\n이 기획과 유사한 웹툰 작품을 한 편 골라서 소개하고, 그 작품의 좋은 점이나 배울 점을 공유해줘.`
-        : `${historyText}네 차례야. 새로운 인사이트 하나만 짧게.${mentionedWorks ? ` (이미 언급된 내용 피해줘: ${mentionedWorks})` : ""}`;
+      // 6) 에이전트 발언
+      await runSingleAgent(nextAgent, agentPrompt, 100);
+      lastSpeaker = nextAgent;
 
-      // 스트리밍: 이 에이전트 발언
-      let roundText = "";
-      let lastUpdateTime = 0;
-      // 문장 끝 판단: 한국어 어미 + 서양 문장부호
-      const SENTENCE_END_RE = /[.!?。！？～…]\s*$|[다요야지해네죠나까]\s*$/;
-      const isSentenceEnd = (t: string) => SENTENCE_END_RE.test(t.trim());
-
-      // 같은 에이전트가 문장이 완전히 끝날 때까지 말풍선을 이어서 생성 (최대 4개)
-      let currentMsgId = addMsg(agentId, round, "", true);
-      let allText = "";
-      const contMessages: Array<{ role: "user" | "assistant"; content: string }> = [
-        { role: "user", content: userContent },
-      ];
-      const MAX_BUBBLES = 2;
-
-      for (let bubble = 0; bubble < MAX_BUBBLES; bubble++) {
-        let stopReason = "end_turn";
-        let bubbleText = "";
-        let lastUpdate = 0;
-        let streamFailed = false;
-        try {
-          for await (const chunk of streamClaude({
-            apiKey: agentApiKey,
-            systemPrompt,
-            messages: contMessages,
-            maxTokens: 100,
-            tools: [],
-            onStopReason: (r) => { stopReason = r; },
-            onRateLimit: (msg) => {
-              updateMsg(currentMsgId, bubbleText + `\n\n${msg}`, true);
-            },
-          })) {
-            bubbleText += chunk;
-            roundText += chunk;
-            const now = Date.now();
-            if (now - lastUpdate >= 80) {
-              updateMsg(currentMsgId, bubbleText, true);
-              lastUpdate = now;
-            }
-          }
-        } catch (err) {
-          streamFailed = true;
-          console.error(`[Debate] ${AGENTS[agentId].label} stream error:`, err);
-        }
-
-        // 마크다운 제거 (**, *, #, > 등)
-        const trimmed = bubbleText.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
-
-        // 텍스트가 없으면 (실패든 빈 응답이든) 말풍선 제거 후 중단
-        if (!trimmed) {
-          setMsgs(prev => prev.filter(m => m.id !== currentMsgId));
-          break;
-        }
-
-        // ⏳ 잔여 텍스트 제거 후 확정
-        updateMsg(currentMsgId, trimmed, false);
-        allText += (allText ? " " : "") + trimmed;
-
-        // 문장이 완전히 끝났으면 종료
-        const truncated = stopReason === "max_tokens" || (trimmed.length > 0 && !isSentenceEnd(trimmed));
-        if (!truncated || bubble === MAX_BUBBLES - 1) break;
-
-        // 잘렸으면: 새 말풍선 열고 이어서
-        await sleep(600);
-        contMessages.push({ role: "assistant", content: trimmed });
-        contMessages.push({ role: "user", content: "앞 내용 반복 없이, 끊긴 문장의 나머지 끝부분만 써줘." });
-        currentMsgId = addMsg(agentId, round, "", true);
-        lastUpdateTime = 0;
-      }
-
-      if (allText) transcript.push(`[${AGENTS[agentId].label}]: ${allText}`);
-
-      round++;
-      agentIndex++;
-
-      // 슬라이딩 윈도우: 20줄마다 이전 내용 압축
+      // 7) 슬라이딩 윈도우: 20줄마다 압축
       if (transcript.length > 0 && transcript.length % 20 === 0) {
         const recentKeep = transcript.slice(-10);
         const oldLines = transcript.slice(0, -10);
         if (oldLines.length >= 5) {
-          let summary = "";
-          try {
-            for await (const c of streamClaude({
-              apiKey: agentApiKey,
-              systemPrompt: "웹툰 유사작품 리서치 토론 내용을 간결하게 요약한다. 언급된 작품명과 핵심 인사이트 위주로. 마크다운 금지.",
-              messages: [{ role: "user", content: `핵심 인사이트 중심으로 10줄 이내 요약 (작품명, 좋은점, 나쁜점 포함):\n${oldLines.join("\n").slice(0, 3000)}` }],
-              maxTokens: 400,
-              tools: [],
-            })) summary += c;
-          } catch { /* ignore */ }
-          if (summary.trim()) {
-            transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+          const slidingKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+          if (slidingKey) {
+            let summary = "";
+            try {
+              for await (const c of streamClaude({
+                apiKey: slidingKey,
+                systemPrompt: "웹툰 유사작품 리서치 토론 내용을 간결하게 요약한다. 작품명과 핵심 인사이트 위주로. 마크다운 금지.",
+                messages: [{ role: "user", content: `10줄 이내 요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                maxTokens: 400,
+                tools: [],
+              })) summary += c;
+            } catch { /* ignore */ }
+            if (summary.trim()) transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
           }
         }
       }
 
-      // 재접속 대비 저장
+      // 8) 저장
       try {
         localStorage.setItem(`p1_conv_${projectId}`, JSON.stringify({
           transcript, genre: g, concept: c, platform: plat, episodeCount: ep,
         }));
       } catch { /* quota */ }
-
-      // 자연스러운 딜레이: 다음 사람이 말을 준비하는 시간 (추가 여유)
-      await sleep(3000 + Math.random() * 2000);
     }
 
     // ── Final report (별도 API 호출) ──
