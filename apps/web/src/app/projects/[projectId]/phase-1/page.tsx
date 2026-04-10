@@ -1384,39 +1384,76 @@ export default function Phase1Page() {
         .map(l => l.replace("[사용자]: ", "").trim())
         .join(" / ");
 
-      // single_turn 명령: 지정 에이전트만 발언하고 이 턴에서 바로 다음으로
-      if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
-        const singleId = matchedCommand.speakerAgent;
-        const singleKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
-        if (singleKey) {
-          const overridePrompt = matchedCommand.promptOverride
-            ? matchedCommand.promptOverride.replace("{history}", historyText)
-            : `${historyText}사용자 요청에 응답해.`;
-          const singleMsgId = addMsg(singleId, round, "", true);
-          let singleText = "";
-          let singleLastUpdate = 0;
-          for await (const chunk of streamClaude({
-            apiKey: singleKey,
-            systemPrompt: buildAgentPromptP1(singleId, g, c, platLabel, ep),
-            messages: [{ role: "user", content: overridePrompt }],
-            maxTokens: 300,
-            tools: [],
-          })) {
-            singleText += chunk;
-            const now = Date.now();
-            if (now - singleLastUpdate >= 80) {
-              updateMsg(singleMsgId, singleText, true);
-              singleLastUpdate = now;
-            }
-          }
-          updateMsg(singleMsgId, singleText.trim(), false);
-          if (singleText.trim()) transcript.push(`[${AGENTS[singleId].label}]: ${singleText.trim()}`);
-          round++;
-          agentIndex++;
+      // ── 명령 핸들러 처리 ──────────────────────────────────────────────────
+
+      // 헬퍼: 지정 에이전트가 한 번 발언하고 transcript에 기록
+      const runSingleAgent = async (agentId: AgentId, prompt: string, tokens: number) => {
+        const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+        if (!key) return;
+        const msgId = addMsg(agentId, round, "", true);
+        let text = "";
+        let lastUpdate = 0;
+        for await (const chunk of streamClaude({
+          apiKey: key,
+          systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
+          messages: [{ role: "user", content: prompt }],
+          maxTokens: tokens,
+          tools: [],
+        })) {
+          text += chunk;
+          const now = Date.now();
+          if (now - lastUpdate >= 80) { updateMsg(msgId, text, true); lastUpdate = now; }
         }
+        updateMsg(msgId, text.trim(), false);
+        if (text.trim()) transcript.push(`[${AGENTS[agentId].label}]: ${text.trim()}`);
+        round++;
+        agentIndex++;
+      };
+
+      // single_turn: 지정 에이전트만 발언, 나머지 스킵
+      if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
+        const prompt = matchedCommand.promptOverride
+          ? matchedCommand.promptOverride.replace("{history}", historyText)
+          : `${historyText}사용자 요청에 응답해.`;
+        await runSingleAgent(matchedCommand.speakerAgent, prompt, matchedCommand.maxTokens ?? 300);
         await sleep(3000 + Math.random() * 2000);
-        continue; // 나머지 에이전트는 이 턴 스킵
+        continue;
       }
+
+      // summarize_then_end: 지정 에이전트가 요약 후 토론 종료
+      if (matchedCommand?.handler === "summarize_then_end" && matchedCommand.speakerAgent) {
+        const prompt = matchedCommand.promptOverride
+          ? matchedCommand.promptOverride.replace("{history}", historyText)
+          : `${historyText}지금까지 토론 내용을 최종 정리해줘.`;
+        await runSingleAgent(matchedCommand.speakerAgent, prompt, matchedCommand.maxTokens ?? 500);
+        await sleep(1000);
+        break debateLoop;
+      }
+
+      // all_greet: 모든 에이전트가 순서대로 짧은 인사
+      if (matchedCommand?.handler === "all_greet") {
+        const greetPrompt = matchedCommand.promptOverride ?? "사용자가 인사를 건넸어. 짧게 안부 인사 1문장.";
+        for (const gAgentId of AGENT_SPEAKING_ORDER_P1) {
+          await runSingleAgent(gAgentId, greetPrompt, matchedCommand.maxTokens ?? 60);
+          await sleep(600 + Math.random() * 400);
+        }
+        await sleep(2000);
+        continue;
+      }
+
+      // break: producer가 선언 → 지정 시간 대기 → 재개
+      if (matchedCommand?.handler === "break") {
+        const speakerId = matchedCommand.speakerAgent ?? "producer";
+        const prompt = matchedCommand.promptOverride
+          ? matchedCommand.promptOverride.replace("{history}", historyText)
+          : "사용자가 잠깐 쉬자고 했어. 브레이크 타임을 선언해줘.";
+        await runSingleAgent(speakerId, prompt, matchedCommand.maxTokens ?? 80);
+        const waitMs = matchedCommand.breakDurationMs ?? 30000;
+        await sleep(waitMs);
+        continue;
+      }
+
+      // ── 일반 발언 ─────────────────────────────────────────────────────────
 
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0

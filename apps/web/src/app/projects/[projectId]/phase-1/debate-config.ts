@@ -2,8 +2,8 @@
  * Phase 1 토론 설정 파일
  *
  * 여기서 관리하는 것:
- * 1. AGENT_PERSONAS      — 에이전트별 역할/태도 설명
- * 2. DEBATE_RULES        — 시스템 프롬프트에 공통으로 들어가는 대화 규칙
+ * 1. AGENT_PERSONAS        — 에이전트별 역할/태도 설명
+ * 2. DEBATE_RULES          — 시스템 프롬프트에 공통으로 들어가는 대화 규칙
  * 3. USER_COMMAND_PATTERNS — 사용자 특정 발언 → 특수 동작 매핑
  */
 
@@ -15,7 +15,7 @@ export type AgentId =
 // ─── 1. 에이전트 페르소나 ──────────────────────────────────────────────────────
 //
 // 각 에이전트의 역할, 말투, 초점을 여기서 수정하면
-// buildAgentSystemPrompt()가 자동으로 반영합니다.
+// buildAgentPromptP1()이 자동으로 반영합니다.
 
 export const AGENT_PERSONAS: Partial<Record<AgentId, string>> = {
   strategist:
@@ -77,42 +77,102 @@ export const DEBATE_RULES = `[규칙]
 // 사용자가 특정 키워드를 입력했을 때 토론 흐름을 바꾸는 패턴.
 //
 // handler 종류:
-//   "end"          — 토론 종료 (보고서 작성으로 이동)
-//   "single_turn"  — speakerAgent 혼자 한 마디, 나머지는 이 턴 스킵
-//   "normal"       — (default) 평소처럼 다음 에이전트가 반응
+//   "end"               — 토론 종료 후 보고서 작성으로 이동
+//   "single_turn"       — speakerAgent 혼자 한 마디, 나머지는 이 턴 스킵
+//   "summarize_then_end"— speakerAgent가 요약 후 토론 종료 → 보고서 작성
+//   "all_greet"         — 모든 에이전트가 한 마디씩 인사
+//   "break"             — producer가 브레이크 선언, 30초 대기 후 재개
+//   "normal"            — (default) 평소처럼 다음 에이전트가 반응
 //
 // promptOverride:
 //   지정 시 해당 에이전트에게 이 텍스트를 userContent로 전달.
-//   지정 안 하면 평소 userContent(히스토리 포함) 그대로 사용.
+//   {history} 자리표시자에 최근 토론 내용이 삽입됩니다.
+//
+// maxTokens:
+//   해당 명령에서 사용할 최대 토큰 수. 미지정 시 기본값 사용.
 
-export type CommandHandler = "end" | "single_turn" | "normal";
+export type CommandHandler =
+  | "end"
+  | "single_turn"
+  | "summarize_then_end"
+  | "all_greet"
+  | "break"
+  | "normal";
 
 export interface UserCommandPattern {
   /** 이 트리거 중 하나라도 포함되면 매칭 */
   triggers: string[];
   handler: CommandHandler;
-  /** single_turn일 때 발언할 에이전트 (미지정 시 현재 순서 에이전트) */
+  /** single_turn / summarize_then_end 일 때 발언할 에이전트 */
   speakerAgent?: AgentId;
   /**
    * 발언 에이전트에게 전달할 프롬프트 오버라이드.
    * {history} 자리표시자에 최근 토론 내용이 삽입됩니다.
    */
   promptOverride?: string;
+  /** 이 명령에서 사용할 max_tokens (미지정 시 기본값 220 사용) */
+  maxTokens?: number;
+  /** break 핸들러: 대기 시간(ms). 기본 30000 */
+  breakDurationMs?: number;
 }
 
 export const USER_COMMAND_PATTERNS: UserCommandPattern[] = [
-  // ── 토론 종료 ──
+
+  // ── 토론 종료 ──────────────────────────────────────────────────────────────
   {
     triggers: ["끝내자", "결론 내자", "마무리해", "결론내자", "종료해", "마무리하자"],
     handler: "end",
   },
 
-  // ── 요약 요청: researcher가 혼자 요약, 나머지 대기 ──
-  // 추후 패턴 추가 예시:
-  // {
-  //   triggers: ["요약해줘", "정리해줘", "지금까지 요약"],
-  //   handler: "single_turn",
-  //   speakerAgent: "researcher",
-  //   promptOverride: "{history}사용자가 '지금까지 토론 내용을 요약해달라'고 요청했어. 팀 논의를 3~4줄로 정리해줘. 언급된 작품명과 핵심 인사이트 위주로.",
-  // },
+  // ── 요약 요청: researcher가 10문장 요약, 다른 에이전트 대기 ───────────────
+  {
+    triggers: ["요약해줘", "요약 해줘", "지금까지 요약", "내용 정리해줘"],
+    handler: "single_turn",
+    speakerAgent: "researcher",
+    maxTokens: 600,
+    promptOverride:
+      "{history}사용자가 지금까지의 토론 내용을 요약해달라고 요청했어. " +
+      "팀 토론 내용을 10문장 내외로 정리해줘. " +
+      "언급된 유사 작품명, 핵심 인사이트, 발견된 기획 문제점, 도입할 수 있는 좋은 점 위주로 요약해. " +
+      "마크다운 금지. 자연스러운 한국어 문장으로.",
+  },
+
+  // ── 요약 후 종료: researcher가 요약하고 보고서 작성으로 이동 ─────────────
+  {
+    triggers: ["이제 그만 정리해줘", "그만 정리해줘", "정리하고 끝내줘", "토론 끝내고 정리", "정리해서 끝내줘"],
+    handler: "summarize_then_end",
+    speakerAgent: "researcher",
+    maxTokens: 600,
+    promptOverride:
+      "{history}사용자가 토론을 마무리하고 보고서를 작성하길 원해. " +
+      "지금까지의 토론 내용을 10문장 내외로 최종 정리해줘. " +
+      "유사 작품 분석 결과, 기획의 강점/약점, 세계관 보완사항, 도입할 전략 위주로. " +
+      "마크다운 금지. 요약이 끝나면 보고서를 작성할 거야.",
+  },
+
+  // ── 인사: 모든 에이전트가 한 마디씩 안부 인사 ────────────────────────────
+  {
+    triggers: ["안녕", "하이", "헬로", "hello", "hi", "좋은 아침", "좋은 오후", "좋은 저녁", "잘 지내"],
+    handler: "all_greet",
+    maxTokens: 60,
+    promptOverride:
+      "사용자가 인사를 건넸어. 너의 캐릭터 성격에 맞게 짧고 친근한 안부 인사를 1문장으로 해줘. " +
+      "예: '좋은 아침이야! 오늘도 좋은 작품 만들어보자!' / '밥은 먹었어? 에너지 충전하고 열심히 해봐요!' " +
+      "/ '커피 한 잔 마셨어? 오늘도 파이팅!' 등. 각자 다른 표현으로.",
+  },
+
+  // ── 브레이크: producer 선언 후 30초 대기, 나머지 대기 ────────────────────
+  {
+    triggers: ["이제 좀 쉬고 하자", "잠깐 쉬자", "브레이크", "쉬어가자", "좀 쉬자", "잠깐만", "휴식"],
+    handler: "break",
+    speakerAgent: "producer",
+    maxTokens: 80,
+    breakDurationMs: 30000,
+    promptOverride:
+      "사용자가 잠깐 쉬자고 했어. 브레이크 타임을 선언해줘. " +
+      "예: '그래요, 다들 잠깐 커피 한 잔 하고 와요! 30초 후에 다시 시작할게요.' " +
+      "/ '브레이크 타임! 잠깐 스트레칭하고 와요. 곧 다시 시작해요!' " +
+      "짧고 따뜻하게 1문장으로.",
+  },
+
 ];
