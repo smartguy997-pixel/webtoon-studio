@@ -53,7 +53,7 @@ interface Msg {
   streaming: boolean;
 }
 
-type DebatePhase = "idle" | "running" | "confirming" | "confirmed" | "done";
+type DebatePhase = "idle" | "running" | "confirming" | "confirmed" | "done" | "paused";
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
@@ -386,6 +386,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const convRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const stageResultsRef = useRef<StageResult[]>([]);
   const msgsRef = useRef<Msg[]>([]); // msgs의 최신값 추적용
+  const resumeDataRef = useRef<{ conv: Array<{ role: "user" | "assistant"; content: string }>; msgs: Msg[] } | null>(null);
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -405,7 +406,18 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (idx >= STAGES.length) {
             setDebatePhase("done");
           } else {
-            setDebatePhase("confirmed");
+            // 진행 중인 토론이 저장되어 있으면 "이어하기" 상태로
+            const savedConv = localStorage.getItem(`p2_conv_${idx}_${projectId}`);
+            const savedMsgs = localStorage.getItem(`p2_msgs_${idx}_${projectId}`);
+            if (savedConv && savedMsgs) {
+              resumeDataRef.current = {
+                conv: JSON.parse(savedConv) as Array<{ role: "user" | "assistant"; content: string }>,
+                msgs: JSON.parse(savedMsgs) as Msg[],
+              };
+              setDebatePhase("paused");
+            } else {
+              setDebatePhase("confirmed");
+            }
           }
           return;
         }
@@ -459,10 +471,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const stage = STAGES[stageIdx];
     const systemPrompt = buildDebatePrompt(stage.id, genre, stageResultsRef.current);
 
-    // Fresh conversation — LLM has no knowledge of other stages
-    const conv: Array<{ role: "user" | "assistant"; content: string }> = [
-      { role: "user", content: `"${stage.topic}" 주제로 자유롭게 토론을 시작해주세요.` },
-    ];
+    // 이어하기: 저장된 대화 복원 / 새 시작: 빈 대화
+    let conv: Array<{ role: "user" | "assistant"; content: string }>;
+    if (resumeDataRef.current) {
+      conv = [...resumeDataRef.current.conv];
+      setMsgs(resumeDataRef.current.msgs);
+      resumeDataRef.current = null;
+    } else {
+      conv = [{ role: "user", content: `"${stage.topic}" 주제로 자유롭게 토론을 시작해주세요.` }];
+    }
     convRef.current = conv;
 
     try {
@@ -489,7 +506,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         if (roundText.trim()) conv.push({ role: "assistant", content: roundText });
         if (abortRef.current) break;
 
-        // Compress every 10 rounds
+        // 10라운드마다 슬라이딩 윈도우 압축 (사용자 모르게 백그라운드)
         if (round % 10 === 0 && conv.length > 12) {
           const initial = conv[0];
           const recent = conv.slice(-6);
@@ -501,6 +518,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             conv.push(initial, { role: "assistant", content: `[이전 토론 요약] ${summary}` }, { role: "user", content: "위 요약을 참고해서 계속해줘." }, ...recent);
           }
         }
+
+        // 압축된 대화 + 현재 메시지 저장 (재접속 시 이어하기 가능)
+        try {
+          localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(conv));
+          localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
+        } catch { /* localStorage 용량 초과 등 무시 */ }
 
         await sleep(3500);
 
@@ -542,6 +565,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     updateMsg(extractId, "", false);
     setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
 
+    // 확정 완료 → in-progress 대화 삭제
+    localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
+    localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
+
     const result: StageResult = { stageId: stage.id, data, summary };
     const newResults = [...stageResultsRef.current, result];
     stageResultsRef.current = newResults;
@@ -579,6 +606,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     abortRef.current = true;
     localStorage.removeItem(`p2_msgs_${projectId}`);
     localStorage.removeItem(`wts_phase2_${projectId}`);
+    STAGES.forEach((_, idx) => {
+      localStorage.removeItem(`p2_conv_${idx}_${projectId}`);
+      localStorage.removeItem(`p2_msgs_${idx}_${projectId}`);
+    });
+    resumeDataRef.current = null;
     convRef.current = [];
     stageResultsRef.current = [];
     runningRef.current = false;
@@ -675,6 +707,20 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         </div>
 
         <div className={s.chatBottom}>
+          {/* Paused: 이전 토론 이어하기 */}
+          {debatePhase === "paused" && (
+            <div className={s.gatingRow}>
+              <div>
+                <div className={s.gatingMsg}>⏸ 이전에 진행하던 토론이 있습니다</div>
+                <div style={{ fontSize:11, color:"#64748b", marginTop:3 }}>이어하기를 누르면 중단된 지점부터 재개됩니다</div>
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button className={s.btnGating} style={{ width:"auto", padding:"10px 16px" }} onClick={() => void runDebate(currentStageIdx)}>이어하기 →</button>
+                <button className={s.btnRestart} onClick={() => { resumeDataRef.current = null; void runDebate(currentStageIdx); }}>새로 시작</button>
+              </div>
+            </div>
+          )}
+
           {/* Running: confirm button */}
           {debatePhase === "running" && (
             <div style={{ padding:"6px 16px 0" }}>
