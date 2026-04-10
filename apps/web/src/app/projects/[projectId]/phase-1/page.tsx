@@ -42,16 +42,16 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 에이전트별 성격·역할 (더 자연스럽고 감정 있는 톤)
+// 에이전트별 성격·역할
 const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
-  strategist:   "K-웹툰 시장 전문가. 직설적이고 날카로워. 은어·감정을 섞어 말함. '솔직히 이거 좀 뻔한데?' '그거 타겟 다르지 않아?' 같은 식으로 날라온다. 차별점과 시장 포지셔닝에 집착.",
-  researcher:   "의심 많은 성격. '어? 근데 이거 말이 안 되는데?', '어... 잠깐잠깐, 여기 논리 모순 아닙니까?' 하면서 꼬리를 문다. 은유와 의성어를 섞어가며 설정 구멍을 파고든다. '우와, 진짜?'같은 감탄도 자주.",
-  worldbuilder: "세계관 규칙에 진짜 진짜 집착한다. '아 진짜, 그 설정 세계관이랑 맞아떨어지지 않음. 이게 흰산데 왜 검음? 이상한데?' 하면서 비명을 질러. 규칙 충돌에 예민함.",
-  character:    "감성적이고 독자 입장에서 생각함. '어... 근데 이 캐릭터 너무 마음이 안 들어' '독자가 이 친구가 왜 매력적인지 모를 것 같은데?', '아 그런데 이 장면 정말 눈물 난다...' 감정 표현 풍부.",
-  scenario:     "서사의 맛을 완전히 챙기는 타입. '어라, 이 반전 타이밍이 좀 이르지 않나?', '우와 이거 진짜 좋은데! 근데 여기서 끝내면 어떨까?', '아 킬링포인트인데 너무 뒤에 있다' 훅 타이밍에 집착.",
-  script:       "시각적으로 생각하는 친구. '아 이 장면 클로즈업 없으면 진짜 땡구나', '씬! 이 순간 카메라 떨려야 해', '어? 그런데 여기 배경이 너무 떡 나오면 뭐 하지?' 영상미와 임팩트를 최우선.",
-  producer:     "대장 역할. 말은 적지만 나올 때 진짜 먹힌다. '자, 여기까지 정리해보면...', '다들 맞는 말인데, 핵심은 이거잖아.' 중재자 같으면서도 강한 결정력.",
-  editor:       "베테랑. 말이 적은데 무게감 있어. '너희 얘기 다 들었는데, 그 부분... 기억나지? 그게 문제라고.' 앞 대화에서 핵심만 짚어낸다.",
+  strategist:   "K-웹툰 시장 전문가. 직설적이고 날카로워. '솔직히 이거 좀 뻔하지 않나?' '타겟이 다른 거 아닌가?' 같은 식으로 찌른다. 차별점과 시장 포지셔닝에 집착.",
+  researcher:   "의심 많고 꼬리 무는 스타일. '잠깐, 여기 논리가 안 맞는데?', '그게 정말 가능한 설정인가?' 하면서 구멍을 파고든다. 팩트 체크에 집착.",
+  worldbuilder: "세계관 규칙에 집착. '그 설정, 세계관이랑 충돌해.', '규칙을 먼저 잡아야 나머지가 성립되지.' 설정 충돌에 예민하고 논리적.",
+  character:    "감성적이고 독자 시각으로 생각함. '독자가 이 캐릭터를 왜 좋아해야 하지?', '이 장면에서 감정이 와닿질 않아.' 캐릭터 매력도와 감정선 담당.",
+  scenario:     "서사 구조에 집착. '이 반전, 타이밍이 너무 이른 거 아닌가?', '킬링포인트가 너무 뒤에 몰려있어.' 훅과 서사 흐름 점검.",
+  script:       "시각적으로 생각함. '이 장면 클로즈업 없으면 임팩트가 없어.', '컷 구성이 독자 시선을 제대로 잡는지 생각해야지.' 연출 효과 최우선.",
+  producer:     "정리하는 역할. 말은 적지만 결론을 유도함. '핵심만 짚자면...', '다들 말이 맞는데, 결국 이게 문제지.' 강한 결정력.",
+  editor:       "베테랑. 앞 대화를 인용하며 핵심만 짚는다. '아까 그 부분이 바로 문제야.' 무게감 있게 정리.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -68,6 +68,13 @@ interface Phase1Result {
   feasibility_breakdown: { market: number; originality: number; producibility: number; commercial: number; };
   verdict: "go" | "conditional" | "reject";
   summary: string;
+  // ── 기획분석 상세 ──
+  genre_analysis: { genre: string; trend: string; audience: string; key_success: string; };
+  market_analysis: { platform: string; market_size: string; growth: string; competition_level: string; opportunity: string; };
+  similar_works: Array<{ title: string; platform: string; similarity: string; lesson: string; }>;
+  strengths: string[];
+  weaknesses: string[];
+  improvements: string[];
   usp: USP[];
   competitors: Competitor[];
   positioning: { ours: PositioningPoint; competitors: PositioningPoint[]; };
@@ -209,21 +216,21 @@ function stripResultBlock(text: string): string {
 
 // ─── Final report prompt (총괄프로듀서 보고서 + JSON) ─────────────────────────
 
-const buildFinalReportPrompt = (allContext: string) => `지금까지의 토론을 바탕으로 최종 보고서를 작성하라.
+const buildFinalReportPrompt = (allContext: string) => `지금까지의 토론을 바탕으로 기획분석서를 작성하라.
 
 ━━ 전체 토론 내역 ━━
 ${allContext}
 
 ━━ 보고서 규칙 ━━
-• "토론을 마무리합니다."로 시작
-• 마크다운 금지. 짧고 자연스럽게.
+• "다들 수고했어요. 제가 정리하겠습니다."로 시작
+• 마크다운 금지. 자연스럽고 전문적인 어조.
 • feasibility_score: 0.70+ = go / 0.50~0.69 = conditional / 미만 = reject
-• 분량 (JSON 제외): 200~350자
+• 분량 (JSON 제외): 150~250자
 
 보고서 직후 다음 JSON 출력 (다른 텍스트 없음):
 
 [PHASE1_RESULT]
-{"feasibility_score":0.00,"feasibility_breakdown":{"market":0,"originality":0,"producibility":0,"commercial":0},"verdict":"go","summary":"80자 이내 핵심 요약","usp":[{"icon":"⚡","title":"USP제목","desc":"설명\\n2줄","prediction":"독자반응 예측"}],"competitors":[{"title":"작품명","platform":"네이버웹툰","period":"YYYY~YYYY","readers":"주간XXX만뷰","strengths":"강점","weaknesses":"약점","differentiation":"차별점","genre_color":"#60a5fa"}],"positioning":{"ours":{"x":0,"y":0,"label":"우리 작품"},"competitors":[{"x":0,"y":0,"label":"작품명"}]},"radar":{"ours":[0,0,0,0,0],"avg":[0,0,0,0,0],"categories":["신선도","감정몰입","세계관","캐릭터","상업성"]},"final_report":"━━ PHASE 1 최종 기획 분석 보고서 ━━\\n\\n▶ 시장 분석 요약\\n[400자+ 플랫폼 포지셔닝·경쟁 환경·타깃 독자층]\\n\\n▶ 독창성 평가\\n[핵심 차별점, 클리셰 리스크]\\n\\n▶ 제작 가능성\\n[100화 확장성, IP 잠재력]\\n\\n■ 최종 권고: GO\\n[한 줄 선언 + 전제 조건]"}
+{"feasibility_score":0.00,"feasibility_breakdown":{"market":0,"originality":0,"producibility":0,"commercial":0},"verdict":"go","summary":"80자 이내 핵심 요약","genre_analysis":{"genre":"장르명","trend":"현재 장르 트렌드 설명","audience":"주요 타깃 독자층","key_success":"이 장르에서 성공하는 핵심 요소"},"market_analysis":{"platform":"주요 플랫폼","market_size":"시장 규모 설명","growth":"성장세 설명","competition_level":"경쟁 수준 (낮음/보통/높음)","opportunity":"이 기획의 시장 기회"},"similar_works":[{"title":"유사작품명","platform":"플랫폼","similarity":"유사한 점","lesson":"이 작품에서 배울 점 또는 차별화 포인트"}],"strengths":["강점1","강점2","강점3"],"weaknesses":["약점1","약점2"],"improvements":["보완할점1","보완할점2"],"usp":[{"icon":"⚡","title":"USP제목","desc":"설명 한 줄","prediction":"독자반응 예측"}],"competitors":[{"title":"작품명","platform":"네이버웹툰","period":"YYYY~YYYY","readers":"주간XXX만뷰","strengths":"강점","weaknesses":"약점","differentiation":"차별점","genre_color":"#60a5fa"}],"positioning":{"ours":{"x":0,"y":0,"label":"우리 작품"},"competitors":[{"x":0,"y":0,"label":"작품명"}]},"radar":{"ours":[0,0,0,0,0],"avg":[0,0,0,0,0],"categories":["신선도","감정몰입","세계관","캐릭터","상업성"]},"final_report":"최종 권고 한 단락"}
 [/PHASE1_RESULT]`;
 
 
@@ -481,14 +488,136 @@ function MsgBubble({ msg }: { msg: Msg; key?: string }) {
 
 // ─── Result sections ──────────────────────────────────────────────────────────
 
+function GenreMarketSection({ result }: { result: Phase1Result }) {
+  const g = result.genre_analysis;
+  const m = result.market_analysis;
+  if (!g || !m) return null;
+  return (
+    <div className={styles.twoColGrid}>
+      <section className={styles.resultSec}>
+        <div className={styles.secHeaderRow}>
+          <span className={styles.secNum}>01</span>
+          <div className={styles.secHeader}>
+            <h3 className={styles.secTitle}>장르 분석</h3>
+            <p className={styles.secSub}>{g.genre}</p>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "4px 0" }}>
+          {[
+            { label: "현재 트렌드", val: g.trend },
+            { label: "주요 독자층", val: g.audience },
+            { label: "성공 핵심 요소", val: g.key_success },
+          ].map(({ label, val }) => (
+            <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 11, color: "#7c6cfc", fontWeight: 700, marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 13, color: "#c8d0dc", lineHeight: 1.6 }}>{val}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.resultSec}>
+        <div className={styles.secHeaderRow}>
+          <span className={styles.secNum}>02</span>
+          <div className={styles.secHeader}>
+            <h3 className={styles.secTitle}>시장 분석</h3>
+            <p className={styles.secSub}>{m.platform}</p>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "4px 0" }}>
+          {[
+            { label: "시장 규모", val: m.market_size },
+            { label: "성장세", val: m.growth },
+            { label: "경쟁 수준", val: m.competition_level },
+            { label: "기회 포인트", val: m.opportunity },
+          ].map(({ label, val }) => (
+            <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 11, color: "#34d399", fontWeight: 700, marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: 13, color: "#c8d0dc", lineHeight: 1.6 }}>{val}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SWOTSection({ result }: { result: Phase1Result }) {
+  if (!result.strengths && !result.weaknesses && !result.improvements) return null;
+  const cols = [
+    { label: "강점", color: "#34d399", items: result.strengths ?? [] },
+    { label: "약점", color: "#f87171", items: result.weaknesses ?? [] },
+    { label: "보완할 점", color: "#fbbf24", items: result.improvements ?? [] },
+  ];
+  return (
+    <section className={styles.resultSec}>
+      <div className={styles.secHeaderRow}>
+        <span className={styles.secNum}>03</span>
+        <div className={styles.secHeader}>
+          <h3 className={styles.secTitle}>강점 · 약점 · 보완점</h3>
+          <p className={styles.secSub}>이 기획의 핵심 평가</p>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        {cols.map(({ label, color, items }) => (
+          <div key={label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "14px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color, marginBottom: 10 }}>{label}</div>
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+              {items.map((item, i) => (
+                <li key={i} style={{ fontSize: 13, color: "#c8d0dc", lineHeight: 1.5, display: "flex", gap: 8 }}>
+                  <span style={{ color, flexShrink: 0 }}>▸</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SimilarWorksDeepSection({ similar_works }: { similar_works: Phase1Result["similar_works"] }) {
+  if (!similar_works?.length) return null;
+  return (
+    <section className={styles.resultSec}>
+      <div className={styles.secHeaderRow}>
+        <span className={styles.secNum}>04</span>
+        <div className={styles.secHeader}>
+          <h3 className={styles.secTitle}>유사작품 분석</h3>
+          <p className={styles.secSub}>레퍼런스 작품과의 비교 및 차별화 포인트</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {similar_works.map((w, i) => (
+          <div key={i} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "14px 16px", display: "grid", gridTemplateColumns: "140px 1fr 1fr", gap: 16, alignItems: "start" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#e2e8f0", marginBottom: 4 }}>{w.title}</div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{w.platform}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 700, marginBottom: 4 }}>유사한 점</div>
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{w.similarity}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 700, marginBottom: 4 }}>배울 점 / 차별화</div>
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>{w.lesson}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SimilarWorksSection({ competitors }: { competitors: Competitor[] }) {
   return (
     <section className={styles.resultSec}>
       <div className={styles.secHeaderRow}>
-        <span className={styles.secNum}>01</span>
+        <span className={styles.secNum}>05</span>
         <div className={styles.secHeader}>
-          <h3 className={styles.secTitle}>경쟁작 분석</h3>
-          <p className={styles.secSub}>실제 플랫폼 데이터 기반 유사작 벤치마크</p>
+          <h3 className={styles.secTitle}>경쟁작 벤치마크</h3>
+          <p className={styles.secSub}>실제 플랫폼 데이터 기반 경쟁작 상세 분석</p>
         </div>
       </div>
       <div className={styles.competitorGrid}>
@@ -539,7 +668,7 @@ function PositioningSection({
     <div className={styles.twoColGrid}>
       <section className={styles.resultSec}>
         <div className={styles.secHeaderRow}>
-          <span className={styles.secNum}>02</span>
+          <span className={styles.secNum}>06</span>
           <div className={styles.secHeader}>
             <h3 className={styles.secTitle}>포지셔닝 맵</h3>
             <p className={styles.secSub}>시장 내 좌표 (대중성 × 신규IP)</p>
@@ -562,7 +691,7 @@ function PositioningSection({
 
       <section className={styles.resultSec}>
         <div className={styles.secHeaderRow}>
-          <span className={styles.secNum}>03</span>
+          <span className={styles.secNum}>07</span>
           <div className={styles.secHeader}>
             <h3 className={styles.secTitle}>역량 레이더</h3>
             <p className={styles.secSub}>5개 축 경쟁작 평균 대비 평가</p>
@@ -1331,6 +1460,9 @@ export default function Phase1Page() {
                 <div className={styles.resultDividerLine} />
               </div>
 
+              <GenreMarketSection result={result} />
+              <SWOTSection result={result} />
+              <SimilarWorksDeepSection similar_works={result.similar_works} />
               <SimilarWorksSection competitors={result.competitors} />
               <PositioningSection positioning={result.positioning} radar={result.radar} mounted={mounted} />
               <USPSection usp={result.usp} />
