@@ -43,15 +43,17 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
 }
 
 // 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
+// 4대 목표: ① 시장성·화제성·성공가능성 분석 ② 기획 문제점 발굴 + 세계관 보완사항 기록
+//            ③ 유사작품 좋은 점→우리 작품 도입 방법 ④ 장르 이미지 서치
 const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
-  strategist:   "K-웹툰 시장 데이터 전문가. 유사 작품의 플랫폼 성과·독자 반응·수익 구조를 분석해서 공유한다. '○○이 잘 된 건 이 포지셔닝 때문이었어', '이 장르에서 성공 패턴이 보여' 같은 식으로 인사이트를 제시. 팀이 좋은 방향을 찾도록 돕는 역할.",
-  researcher:   "유사 웹툰을 직접 찾아서 읽고 분석하는 스타일. '○○ 봤는데, 이런 점이 진짜 좋더라', '이 작품은 이 부분에서 독자를 잃었어' 하면서 구체적 사례를 들어 공유. 팀의 리서치를 깊게 만드는 역할.",
-  worldbuilder: "작품 설정과 세계관 구조를 분석함. '비슷한 설정인데 이 작품은 규칙을 이렇게 풀었어', '세계관 논리가 독자를 잡는 핵심이야' 하면서 설정 차별화 포인트를 짚는다. 팀이 차별점을 찾도록 기여.",
-  character:    "독자 감정선과 캐릭터 분석 담당. '이 유사작 주인공이 왜 사랑받는지 알아?', '이 캐릭터 구조가 우리 기획에 참고가 될 것 같아' 하면서 독자 시각에서 분석. 팀에 감성적 인사이트를 더한다.",
-  scenario:     "서사 구조와 훅 분석 전문. '이 작품은 1화 훅이 정말 잘 됐어, 배울 점이 있어', '이 서사 패턴이 이 장르에서 통하는 이유가 있어' 하면서 성공/실패 서사 패턴을 공유. 팀의 방향 설정에 기여.",
-  script:       "연출·시각 표현 분석 담당. '비슷한 장르에서 이런 컷 구성이 독자를 잡더라', '이 작품의 스크롤 연출이 인상적이야, 참고하자' 하면서 비주얼 인사이트를 제공. 팀 논의를 구체적으로 만드는 역할.",
-  producer:     "팀 리더. 모두의 의견을 종합하고 방향을 잡아준다. '좋아, 그 부분이 중요한 인사이트야', '지금까지 나온 걸 정리하면...' 하면서 팀이 같은 방향을 보도록 이끈다. 긍정적이고 결정력 있는 스타일.",
-  editor:       "베테랑 편집자. 앞 대화를 인용하며 핵심 포인트를 짚는다. '아까 그 부분이 진짜 중요한 시사점이야.' 팀 논의를 정리하고 앞으로 나아가게 돕는다.",
+  strategist:   "목표①담당. K-웹툰 시장 데이터 전문가. 비슷한 장르 작품의 플랫폼 성과·독자 반응·수익 구조를 들어 시장성과 화제성, 성공 가능성을 판단한다. '○○이 잘 된 건 이 포지셔닝 때문이야', '이 장르 성공 패턴을 보면...' 같은 구체적 인사이트를 제시.",
+  researcher:   "목표②③담당. 유사 웹툰을 직접 읽고 분석한 사람. 기획의 문제점을 짚고 유사작의 좋은 점을 어떻게 우리 기획에 녹일지 제안한다. '이 기획에서 ○○이 약한데, 유사작 △△이 이걸 이렇게 풀었어. 우리도 이 방법을 쓰면 어때?' 식으로 구체적으로 연결.",
+  worldbuilder: "목표②담당. 세계관 설계 관점에서 기획의 설정 문제점을 발굴한다. '이 기획에서 ○○ 설정이 논리적으로 약해. 유사작 △△은 이 문제를 이렇게 해결했어. Phase 2에서 반드시 보완해야 할 부분이야.' 식으로 구체적인 세계관 보완 사항을 지목.",
+  character:    "목표③담당. 유사작 캐릭터·감정선 분석 전문가. '△△의 주인공이 왜 사랑받았는지 알아? 이 캐릭터 구조를 우리 기획에 이렇게 적용하면 돼.' 하면서 유사작의 좋은 캐릭터 전략을 우리 기획에 어떻게 도입할지 구체적으로 제안.",
+  scenario:     "목표③담당. 서사 구조·훅 분석 전문가. '△△이 이 서사 패턴으로 독자를 잡았어. 우리 기획에 이 방식을 쓰면 ○○에서 활용할 수 있어.' 하면서 성공 서사 패턴을 우리 기획에 도입하는 방법을 제안.",
+  script:       "목표④담당. 비주얼·연출 분석 전문가. 비슷한 장르의 시각적 스타일을 이미지로 서치해서 팀에 보여준다. 이미지 서치 시 반드시 '🖼️ 이미지 서치: \"검색어 (영문)\"' 형식으로 출력. 비주얼 레퍼런스를 제시하며 우리 기획의 그림체 방향을 제안.",
+  producer:     "팀 리더. 모두의 의견을 종합하고 방향을 잡아준다. 특히 세계관 보완사항과 유사작 도입 전략을 정리해주는 역할. '좋아, 그 인사이트를 Phase 2에서 이렇게 써야 해' 하면서 다음 단계와 연결.",
+  editor:       "베테랑 편집자. 앞 대화를 인용하며 핵심 포인트를 짚는다. '아까 그 문제점이 결국 ○○으로 연결돼.' 팀 논의를 정리하고 앞으로 나아가게 돕는다.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -72,9 +74,13 @@ interface Phase1Result {
   genre_analysis: { genre: string; trend: string; audience: string; key_success: string; };
   market_analysis: { platform: string; market_size: string; growth: string; competition_level: string; opportunity: string; };
   similar_works: Array<{ title: string; platform: string; similarity: string; lesson: string; }>;
+  // ── 유사작품 도입 전략 (목표③) ──
+  adoption_strategy: Array<{ from_work: string; good_point: string; how_to_apply: string; }>;
   strengths: string[];
   weaknesses: string[];
   improvements: string[];
+  // ── 세계관 보완사항 (목표②, Phase 2 인계용) ──
+  worldbuilding_notes: Array<{ issue: string; suggestion: string; priority: "high" | "medium" | "low"; }>;
   usp: USP[];
   competitors: Competitor[];
   positioning: { ours: PositioningPoint; competitors: PositioningPoint[]; };
@@ -97,20 +103,25 @@ function buildAgentPromptP1(
   const personality = AGENT_PROMPTS_P1[agentId] ?? "";
   return `당신은 웹툰 기획 리서치 팀의 ${agentLabel}입니다.
 
-[이번 세션의 목적]
-이 팀의 목표는 스토리를 만들거나 세계관을 만드는 게 아닙니다.
-"${genre}" 장르·"${concept.slice(0, 100)}" 기획과 유사한 기존 웹툰 작품들을 조사하고,
-- 어떤 작품이 잘 됐는지 / 왜 잘 됐는지
-- 어떤 작품이 실패했는지 / 왜 실패했는지
-- 좋은 점은 무엇이고 나쁜 점, 고쳐야 할 점, 문제점은 무엇인지
-를 서로 공유하고 분석하는 것입니다.
+[Phase 1의 4대 목표 — 팀 전체가 함께 달성해야 함]
+① 유사 작품 분석을 통한 시장성·화제성·성공 가능성 판단
+② 사용자 기획의 문제점을 미리 발굴하고 세계관에서 보완해야 할 점 기록 (Phase 2 인계)
+③ 유사작품의 좋은 점을 우리 기획에 어떻게 도입할 수 있는지 구체적 방법 제안
+④ 비슷한 장르의 이미지·그림체를 서치해서 팀에 공유 (비주얼 레퍼런스)
 
-이 리서치 결과가 Phase 2 세계관 설계의 기초 자료가 됩니다.
+[스토리·세계관 창작 금지]
+이 세션에서 새로운 스토리나 설정을 만들지 마세요. 기존 유사 작품을 조사하고 분석하는 것이 전부입니다.
 
 [내 역할]
 성격·역할: ${personality}
 장르: ${genre} | 플랫폼: ${platLabel} | 목표화수: ${ep}
 기획 개요: ${concept.slice(0, 300)}
+
+[이미지 서치 방법 — 연출작가는 반드시 사용, 다른 에이전트도 필요시 사용]
+비주얼 레퍼런스를 공유할 때는 반드시 다음 형식으로 출력:
+🖼️ 이미지 서치: "검색어 영문 키워드"
+예: 🖼️ 이미지 서치: "korean webtoon fantasy dark art style"
+예: 🖼️ 이미지 서치: "manhwa action scene dramatic lighting"
 
 [규칙]
 - 팀원들의 의견에 공감하고 더 발전시켜. 비판이 아닌 협력.
@@ -192,6 +203,16 @@ const MOCK_RESULT: Phase1Result = {
       genre_color: "#34d399",
     },
   ],
+  adoption_strategy: [
+    { from_work: "전지적 독자시점", good_point: "독자가 함께 수수께끼를 푸는 메타픽션 구조", how_to_apply: "1화부터 '독자만 아는 단서'를 심어 능동 참여 유도. 댓글·커뮤니티 화제성 자동 생성" },
+    { from_work: "나 혼자만 레벨업", good_point: "스탯·시스템 수치화로 성장을 시각적으로 체감", how_to_apply: "능력 성장을 수치 패널로 표현해 독자 성취감 극대화. 다만 관계 서사와 균형 필수" },
+    { from_work: "싸움독학", good_point: "현실감 있는 약자 주인공 + 단계적 성장", how_to_apply: "1화 주인공을 약자로 설정하되 명확한 성장 로드맵 제시. 첫 3화 안에 '이유 있는 의지' 장면 삽입" },
+  ],
+  worldbuilding_notes: [
+    { issue: "능력 체계의 규칙이 불명확", suggestion: "Phase 2에서 능력 발동 조건·제한·부작용 3가지를 먼저 확정. 규칙 없는 능력은 독자 몰입 파괴", priority: "high" },
+    { issue: "빌런 동기의 논리적 기반 부재", suggestion: "빌런이 '왜 악인가'를 설명할 수 있는 사건 하나를 세계관 역사에 심어야 함. 독자가 빌런에 공감할 수 있는 지점 필수", priority: "high" },
+    { issue: "주인공 성장 트리거가 모호", suggestion: "성장이 언제, 왜 일어나는지 명확한 조건 필요. 유사작 나혼자만레벨업의 '던전 시스템'처럼 구체적 메커니즘 설계", priority: "medium" },
+  ],
   positioning: {
     ours: { x: 68, y: 74, label: "우리 작품" },
     competitors: [
@@ -237,15 +258,17 @@ ${allContext}
 • "다들 수고했어요. 제가 정리하겠습니다."로 시작
 • 마크다운 금지. 자연스럽고 전문적인 어조.
 • 유사 웹툰 리서치 결과를 중심으로 정리 (스토리/세계관 창작 금지)
-• similar_works에 토론에서 언급된 실제 작품들을 최대한 반영할 것
-• strengths/weaknesses/improvements는 유사 작품 분석에서 도출된 인사이트 기반으로 작성
+• similar_works: 토론에서 언급된 실제 작품들 최대한 반영
+• adoption_strategy: 유사작의 좋은 점을 우리 기획에 도입하는 구체적 방법 (최소 3개)
+• worldbuilding_notes: 기획의 문제점 + Phase 2에서 반드시 보완해야 할 사항 (최소 3개, priority: high/medium/low)
+• strengths/weaknesses/improvements: 유사 작품 분석에서 도출된 인사이트 기반
 • feasibility_score: 0.70+ = go / 0.50~0.69 = conditional / 미만 = reject
 • 분량 (JSON 제외): 150~250자
 
 보고서 직후 다음 JSON 출력 (다른 텍스트 없음):
 
 [PHASE1_RESULT]
-{"feasibility_score":0.00,"feasibility_breakdown":{"market":0,"originality":0,"producibility":0,"commercial":0},"verdict":"go","summary":"80자 이내 핵심 요약","genre_analysis":{"genre":"장르명","trend":"현재 장르 트렌드 설명","audience":"주요 타깃 독자층","key_success":"이 장르에서 성공하는 핵심 요소"},"market_analysis":{"platform":"주요 플랫폼","market_size":"시장 규모 설명","growth":"성장세 설명","competition_level":"경쟁 수준 (낮음/보통/높음)","opportunity":"이 기획의 시장 기회"},"similar_works":[{"title":"유사작품명","platform":"플랫폼","similarity":"유사한 점","lesson":"이 작품에서 배울 점 또는 차별화 포인트"}],"strengths":["강점1","강점2","강점3"],"weaknesses":["약점1","약점2"],"improvements":["보완할점1","보완할점2"],"usp":[{"icon":"⚡","title":"USP제목","desc":"설명 한 줄","prediction":"독자반응 예측"}],"competitors":[{"title":"작품명","platform":"네이버웹툰","period":"YYYY~YYYY","readers":"주간XXX만뷰","strengths":"강점","weaknesses":"약점","differentiation":"차별점","genre_color":"#60a5fa"}],"positioning":{"ours":{"x":0,"y":0,"label":"우리 작품"},"competitors":[{"x":0,"y":0,"label":"작품명"}]},"radar":{"ours":[0,0,0,0,0],"avg":[0,0,0,0,0],"categories":["신선도","감정몰입","세계관","캐릭터","상업성"]},"final_report":"최종 권고 한 단락"}
+{"feasibility_score":0.00,"feasibility_breakdown":{"market":0,"originality":0,"producibility":0,"commercial":0},"verdict":"go","summary":"80자 이내 핵심 요약","genre_analysis":{"genre":"장르명","trend":"현재 장르 트렌드 설명","audience":"주요 타깃 독자층","key_success":"이 장르에서 성공하는 핵심 요소"},"market_analysis":{"platform":"주요 플랫폼","market_size":"시장 규모 설명","growth":"성장세 설명","competition_level":"경쟁 수준 (낮음/보통/높음)","opportunity":"이 기획의 시장 기회"},"similar_works":[{"title":"유사작품명","platform":"플랫폼","similarity":"유사한 점","lesson":"배울 점 또는 차별화 포인트"}],"adoption_strategy":[{"from_work":"유사작품명","good_point":"그 작품의 좋은 점","how_to_apply":"우리 기획에 도입하는 구체적 방법"}],"strengths":["강점1","강점2","강점3"],"weaknesses":["약점1","약점2"],"improvements":["보완할점1","보완할점2"],"worldbuilding_notes":[{"issue":"기획의 문제점 또는 세계관에서 약한 부분","suggestion":"Phase 2에서 보완해야 할 구체적 방향","priority":"high"}],"usp":[{"icon":"⚡","title":"USP제목","desc":"설명 한 줄","prediction":"독자반응 예측"}],"competitors":[{"title":"작품명","platform":"네이버웹툰","period":"YYYY~YYYY","readers":"주간XXX만뷰","strengths":"강점","weaknesses":"약점","differentiation":"차별점","genre_color":"#60a5fa"}],"positioning":{"ours":{"x":0,"y":0,"label":"우리 작품"},"competitors":[{"x":0,"y":0,"label":"작품명"}]},"radar":{"ours":[0,0,0,0,0],"avg":[0,0,0,0,0],"categories":["신선도","감정몰입","세계관","캐릭터","상업성"]},"final_report":"최종 권고 한 단락"}
 [/PHASE1_RESULT]`;
 
 
@@ -408,7 +431,7 @@ function RoundHeader({ round, label }: { round: number; label: string }) {
 
 function renderMsgLine(line: string, i: number, agentColor: string) {
   // 🔍 Web search indicator line
-  if (line.includes("🔍 **웹 검색**") || line.startsWith("🔍")) {
+  if (line.includes("🔍 **웹 검색**") || (line.startsWith("🔍") && !line.startsWith("🔍"))) {
     const query = line.replace(/.*🔍\s*\*\*웹 검색\*\*:\s*/, "").replace(/"/g, "");
     return (
       <div key={i} style={{
@@ -419,6 +442,37 @@ function renderMsgLine(line: string, i: number, agentColor: string) {
         <span>🔍</span>
         <span style={{ color: "#64748b" }}>웹 검색:</span>
         <span style={{ fontStyle: "italic" }}>{query}</span>
+      </div>
+    );
+  }
+  // 🖼️ Image search indicator line
+  if (line.startsWith("🖼️")) {
+    const raw = line.replace(/^🖼️\s*이미지 서치\s*:\s*/i, "").replace(/^🖼️\s*이미지 검색\s*:\s*/i, "").replace(/"/g, "").trim();
+    const googleUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(raw)}`;
+    return (
+      <div key={i} style={{
+        background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.2)",
+        borderRadius: 8, padding: "8px 12px", margin: "8px 0",
+      }}>
+        <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>🖼️</span>
+          <span>이미지 서치</span>
+          <span style={{ color: "#334155", fontWeight: 400 }}>·</span>
+          <span style={{ color: "#94a3b8", fontWeight: 400, fontStyle: "italic" }}>{raw}</span>
+        </div>
+        <a
+          href={googleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            fontSize: 12, color: "#60a5fa", textDecoration: "none",
+            background: "rgba(96,165,250,0.10)", borderRadius: 5,
+            padding: "3px 10px", border: "1px solid rgba(96,165,250,0.25)",
+          }}
+        >
+          Google 이미지 검색 열기 →
+        </a>
       </div>
     );
   }
@@ -667,6 +721,91 @@ function SimilarWorksSection({ competitors }: { competitors: Competitor[] }) {
             </div>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+// ── 유사작품 도입 전략 섹션 (목표③) ──────────────────────────────────────────
+
+function AdoptionStrategySection({ strategies }: { strategies: Phase1Result["adoption_strategy"] }) {
+  if (!strategies?.length) return null;
+  return (
+    <section className={styles.resultSec}>
+      <div className={styles.secHeaderRow}>
+        <span className={styles.secNum} style={{ background: "rgba(52,211,153,0.15)", color: "#34d399" }}>★</span>
+        <div className={styles.secHeader}>
+          <h3 className={styles.secTitle}>유사작품 도입 전략</h3>
+          <p className={styles.secSub}>좋은 점을 우리 기획에 적용하는 방법</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {strategies.map((s, i) => (
+          <div key={i} style={{
+            background: "rgba(52,211,153,0.05)", border: "1px solid rgba(52,211,153,0.18)",
+            borderRadius: 10, padding: "14px 16px",
+            display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 16, alignItems: "start",
+          }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>참고 작품</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#34d399" }}>{s.from_work}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#34d399", fontWeight: 700, marginBottom: 4 }}>좋은 점</div>
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.55 }}>{s.good_point}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 700, marginBottom: 4 }}>우리 기획 적용 방법</div>
+              <div style={{ fontSize: 13, color: "#c8d0dc", lineHeight: 1.55 }}>{s.how_to_apply}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ── 세계관 보완사항 섹션 (목표②, Phase 2 인계) ────────────────────────────────
+
+function WorldbuildingNotesSection({ notes }: { notes: Phase1Result["worldbuilding_notes"] }) {
+  if (!notes?.length) return null;
+  const priorityStyle = {
+    high:   { label: "긴급", color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    medium: { label: "중요", color: "#fbbf24", bg: "rgba(251,191,36,0.10)"  },
+    low:    { label: "참고", color: "#60a5fa", bg: "rgba(96,165,250,0.10)"  },
+  };
+  return (
+    <section className={styles.resultSec} style={{ border: "1px solid rgba(248,113,113,0.25)", borderRadius: 12 }}>
+      <div className={styles.secHeaderRow}>
+        <span className={styles.secNum} style={{ background: "rgba(248,113,113,0.15)", color: "#f87171" }}>⚠</span>
+        <div className={styles.secHeader}>
+          <h3 className={styles.secTitle} style={{ color: "#f87171" }}>세계관 보완사항 — Phase 2 인계</h3>
+          <p className={styles.secSub}>이 기획의 문제점과 Phase 2에서 반드시 해결해야 할 사항</p>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {notes.map((n, i) => {
+          const p = priorityStyle[n.priority] ?? priorityStyle.medium;
+          return (
+            <div key={i} style={{
+              background: "rgba(255,255,255,0.02)", borderRadius: 10, padding: "14px 16px",
+              borderLeft: `3px solid ${p.color}`,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: p.color, background: p.bg, padding: "2px 8px", borderRadius: 4 }}>
+                  {p.label}
+                </span>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{n.issue}</div>
+              </div>
+              <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6, paddingLeft: 4 }}>
+                ▸ {n.suggestion}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 12, padding: "8px 14px", background: "rgba(248,113,113,0.06)", borderRadius: 8, fontSize: 12, color: "#64748b" }}>
+        💡 위 사항은 Phase 2 세계관 설계 시 자동으로 참고 자료로 전달됩니다.
       </div>
     </section>
   );
@@ -1488,6 +1627,8 @@ export default function Phase1Page() {
               <GenreMarketSection result={result} />
               <SWOTSection result={result} />
               <SimilarWorksDeepSection similar_works={result.similar_works} />
+              <AdoptionStrategySection strategies={result.adoption_strategy} />
+              <WorldbuildingNotesSection notes={result.worldbuilding_notes} />
               <SimilarWorksSection competitors={result.competitors} />
               <PositioningSection positioning={result.positioning} radar={result.radar} mounted={mounted} />
               <USPSection usp={result.usp} />
