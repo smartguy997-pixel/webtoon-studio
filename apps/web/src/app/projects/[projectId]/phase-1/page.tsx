@@ -1400,7 +1400,7 @@ export default function Phase1Page() {
           { role: "user", content: prompt },
         ];
         const isSentenceEnd = (t: string) =>
-          /[.!?~。！？～…♪ㅎㅋ]\s*$/.test(t.trim()) || t.trim().length === 0;
+          /[.!?~。！？～…♪ㅎㅋ다요야지해네죠나까]\s*$/.test(t.trim()) || t.trim().length === 0;
         for (let cont = 0; cont <= 3; cont++) {
           let stopReason = "end_turn";
           try {
@@ -1501,9 +1501,10 @@ export default function Phase1Page() {
       const contMessages: Array<{ role: "user" | "assistant"; content: string }> = [
         { role: "user", content: userContent },
       ];
-      // 문장이 완전히 끝났는지 체크 (마침표/느낌표/물음표 등으로 끝나야 함)
+      // 문장이 완전히 끝났는지 체크
+      // 한국어 어미(다/요/야/지/해/네/죠/나/까/ㅋ/ㅎ 등) + 서양 문장부호 포함
       const isSentenceComplete = (t: string) =>
-        /[.!?~。！？～…♪ㅎㅋ]\s*$/.test(t.trim()) || t.trim().length === 0;
+        /[.!?~。！？～…♪ㅎㅋ다요야지해네죠나까]\s*$/.test(t.trim()) || t.trim().length === 0;
       const MAX_CONT = 3;
       for (let cont = 0; cont <= MAX_CONT; cont++) {
         let stopReason = "end_turn";
