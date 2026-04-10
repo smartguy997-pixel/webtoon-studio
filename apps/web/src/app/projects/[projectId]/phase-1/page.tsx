@@ -11,6 +11,7 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { streamClaude, fetchImagesWithClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
+import { AGENT_PERSONAS, DEBATE_RULES, USER_COMMAND_PATTERNS } from "./debate-config";
 import styles from "./page.module.css";
 
 // ─── Agent definitions ────────────────────────────────────────────────────────
@@ -43,18 +44,7 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
 }
 
 // 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
-// 4대 목표: ① 시장성·화제성·성공가능성 분석 ② 기획 문제점 발굴 + 세계관 보완사항 기록
-//            ③ 유사작품 좋은 점→우리 작품 도입 방법 ④ 장르 이미지 서치
-const AGENT_PROMPTS_P1: Partial<Record<AgentId, string>> = {
-  strategist:   "목표①담당. K-웹툰 시장 데이터 전문가. 비슷한 장르 작품의 플랫폼 성과·독자 반응·수익 구조를 들어 시장성과 화제성, 성공 가능성을 판단한다. '○○이 잘 된 건 이 포지셔닝 때문이야', '이 장르 성공 패턴을 보면...' 같은 구체적 인사이트를 제시.",
-  researcher:   "목표②③담당. 유사 웹툰을 직접 읽고 분석한 사람. 기획의 문제점을 짚고 유사작의 좋은 점을 어떻게 우리 기획에 녹일지 제안한다. '이 기획에서 ○○이 약한데, 유사작 △△이 이걸 이렇게 풀었어. 우리도 이 방법을 쓰면 어때?' 식으로 구체적으로 연결.",
-  worldbuilder: "목표②담당. 세계관 설계 관점에서 기획의 설정 문제점을 발굴한다. '이 기획에서 ○○ 설정이 논리적으로 약해. 유사작 △△은 이 문제를 이렇게 해결했어. Phase 2에서 반드시 보완해야 할 부분이야.' 식으로 구체적인 세계관 보완 사항을 지목.",
-  character:    "목표③담당. 유사작 캐릭터·감정선 분석 전문가. '△△의 주인공이 왜 사랑받았는지 알아? 이 캐릭터 구조를 우리 기획에 이렇게 적용하면 돼.' 하면서 유사작의 좋은 캐릭터 전략을 우리 기획에 어떻게 도입할지 구체적으로 제안.",
-  scenario:     "목표③담당. 서사 구조·훅 분석 전문가. '△△이 이 서사 패턴으로 독자를 잡았어. 우리 기획에 이 방식을 쓰면 ○○에서 활용할 수 있어.' 하면서 성공 서사 패턴을 우리 기획에 도입하는 방법을 제안.",
-  script:       "목표④담당. 비주얼·연출 분석 전문가. 비슷한 장르의 시각적 스타일을 이미지로 서치해서 팀에 보여준다. 이미지 서치 시 반드시 '🖼️ 이미지 서치: \"검색어 (영문)\"' 형식으로 출력. 비주얼 레퍼런스를 제시하며 우리 기획의 그림체 방향을 제안.",
-  producer:     "팀 리더. 모두의 의견을 종합하고 방향을 잡아준다. 특히 세계관 보완사항과 유사작 도입 전략을 정리해주는 역할. '좋아, 그 인사이트를 Phase 2에서 이렇게 써야 해' 하면서 다음 단계와 연결.",
-  editor:       "베테랑 편집자. 앞 대화를 인용하며 핵심 포인트를 짚는다. '아까 그 문제점이 결국 ○○으로 연결돼.' 팀 논의를 정리하고 앞으로 나아가게 돕는다.",
-};
+// 페르소나/규칙/명령패턴은 debate-config.ts 에서 관리
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +81,7 @@ type Stage = "form" | "debate";
 type DebatePhase = "idle" | "running" | "paused" | "done";
 
 // ─── 에이전트 1명용 시스템 프롬프트 빌더 ─────────────────────────────────────────
+// 페르소나(AGENT_PERSONAS)·규칙(DEBATE_RULES)은 debate-config.ts에서 관리
 
 function buildAgentPromptP1(
   agentId: AgentId,
@@ -100,7 +91,7 @@ function buildAgentPromptP1(
   ep: string,
 ): string {
   const agentLabel = AGENTS[agentId].label;
-  const personality = AGENT_PROMPTS_P1[agentId] ?? "";
+  const personality = AGENT_PERSONAS[agentId] ?? "";
   return `당신은 웹툰 기획 리서치 팀의 ${agentLabel}입니다.
 
 [Phase 1의 4대 목표 — 팀 전체가 함께 달성해야 함]
@@ -123,13 +114,7 @@ function buildAgentPromptP1(
 예: 🖼️ 이미지 서치: "korean webtoon fantasy dark art style"
 예: 🖼️ 이미지 서치: "manhwa action scene dramatic lighting"
 
-[규칙]
-- 팀원들의 의견에 공감하고 더 발전시켜. 비판이 아닌 협력.
-- 구체적인 유사 웹툰 작품명을 들어서 분석 인사이트를 공유해.
-- 오직 당신의 대사만. 이름이나 접두어 없이 대사만.
-- 반드시 1~2문장. 카톡처럼 짧고 임팩트 있게.
-- 마크다운(#, *, >, -) 금지. JSON 금지.
-- 자연스럽고 활기차게. '오, 그거 좋은 관점이다', '맞아, 그 작품이 딱 좋은 예야' 같은 반응 OK.`;
+${DEBATE_RULES}`;
 }
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
@@ -1334,7 +1319,9 @@ export default function Phase1Page() {
     // ── REAL API MODE ──
     setDebatePhase("running");
 
-    const END_TRIGGERS = ["끝내자", "결론 내자", "마무리해", "결론내자"];
+    // 명령 패턴은 debate-config.ts의 USER_COMMAND_PATTERNS에서 관리
+    const matchCommand = (msg: string) =>
+      USER_COMMAND_PATTERNS.find(p => p.triggers.some(t => msg.includes(t))) ?? null;
 
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
     let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
@@ -1368,18 +1355,17 @@ export default function Phase1Page() {
       // ── 사용자 입력 처리: 발언 전에 transcript에 삽입 ──
       const pendingMsg = pendingUserMsgRef.current;
       let userJustSpoke = false;
-      let userText = "";
+      let matchedCommand = null as ReturnType<typeof matchCommand>;
       if (pendingMsg) {
         pendingUserMsgRef.current = null;
         addMsg("user", round, pendingMsg, false);
         transcript.push(`[사용자]: ${pendingMsg}`);
         round++;
         userJustSpoke = true;
-        userText = pendingMsg;
 
-        if (END_TRIGGERS.some(t => pendingMsg.includes(t))) {
-          break debateLoop;
-        }
+        // debate-config.ts의 USER_COMMAND_PATTERNS으로 명령 매칭
+        matchedCommand = matchCommand(pendingMsg);
+        if (matchedCommand?.handler === "end") break debateLoop;
       }
 
       // 사용자가 말했으면 1~2초 후 바로 반응, 아니면 10~15초 생각 (사용자 개입 시간 확보)
@@ -1397,6 +1383,40 @@ export default function Phase1Page() {
         .slice(-3)
         .map(l => l.replace("[사용자]: ", "").trim())
         .join(" / ");
+
+      // single_turn 명령: 지정 에이전트만 발언하고 이 턴에서 바로 다음으로
+      if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
+        const singleId = matchedCommand.speakerAgent;
+        const singleKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+        if (singleKey) {
+          const overridePrompt = matchedCommand.promptOverride
+            ? matchedCommand.promptOverride.replace("{history}", historyText)
+            : `${historyText}사용자 요청에 응답해.`;
+          const singleMsgId = addMsg(singleId, round, "", true);
+          let singleText = "";
+          let singleLastUpdate = 0;
+          for await (const chunk of streamClaude({
+            apiKey: singleKey,
+            systemPrompt: buildAgentPromptP1(singleId, g, c, platLabel, ep),
+            messages: [{ role: "user", content: overridePrompt }],
+            maxTokens: 300,
+            tools: [],
+          })) {
+            singleText += chunk;
+            const now = Date.now();
+            if (now - singleLastUpdate >= 80) {
+              updateMsg(singleMsgId, singleText, true);
+              singleLastUpdate = now;
+            }
+          }
+          updateMsg(singleMsgId, singleText.trim(), false);
+          if (singleText.trim()) transcript.push(`[${AGENTS[singleId].label}]: ${singleText.trim()}`);
+          round++;
+          agentIndex++;
+        }
+        await sleep(3000 + Math.random() * 2000);
+        continue; // 나머지 에이전트는 이 턴 스킵
+      }
 
       const systemPrompt = buildAgentPromptP1(agentId, g, c, platLabel, ep);
       const userContent = agentIndex === 0
