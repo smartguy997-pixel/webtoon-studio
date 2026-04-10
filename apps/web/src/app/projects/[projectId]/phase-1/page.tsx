@@ -1530,7 +1530,7 @@ export default function Phase1Page() {
       const contMessages: Array<{ role: "user" | "assistant"; content: string }> = [
         { role: "user", content: userContent },
       ];
-      const MAX_BUBBLES = 4;
+      const MAX_BUBBLES = 2;
 
       for (let bubble = 0; bubble < MAX_BUBBLES; bubble++) {
         let stopReason = "end_turn";
@@ -1562,7 +1562,8 @@ export default function Phase1Page() {
           console.error(`[Debate] ${AGENTS[agentId].label} stream error:`, err);
         }
 
-        const trimmed = bubbleText.trim();
+        // 마크다운 제거 (**, *, #, > 등)
+        const trimmed = bubbleText.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
 
         // 텍스트가 없으면 (실패든 빈 응답이든) 말풍선 제거 후 중단
         if (!trimmed) {
@@ -1581,7 +1582,7 @@ export default function Phase1Page() {
         // 잘렸으면: 새 말풍선 열고 이어서
         await sleep(600);
         contMessages.push({ role: "assistant", content: trimmed });
-        contMessages.push({ role: "user", content: "방금 말을 이어서 다음 문장을 완성해줘." });
+        contMessages.push({ role: "user", content: "앞 내용 반복 없이, 끊긴 문장의 나머지 끝부분만 써줘." });
         currentMsgId = addMsg(agentId, round, "", true);
         lastUpdateTime = 0;
       }
