@@ -103,6 +103,9 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
     try {
       if (cfg.id === "anthropic") {
         // Direct browser test against Anthropic API
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -115,14 +118,22 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
             model: "claude-haiku-4-5-20251001",
             max_tokens: 10,
             messages: [{ role: "user", content: "hi" }],
+            stream: true,
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeout);
+
         if (res.ok) {
           ok = true;
         } else {
-          const data = await res.json() as { error?: { message?: string } };
-          msg = data.error?.message ?? `HTTP ${res.status}`;
+          try {
+            const data = await res.json() as { error?: { message?: string } };
+            msg = data.error?.message ?? `HTTP ${res.status}`;
+          } catch {
+            msg = `HTTP ${res.status}`;
+          }
         }
       } else {
         // Format-only validation for other services (no direct test available)
@@ -290,8 +301,11 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
     setKeys(loadedKeys);
   }, []);
 
-  async function testKey(val: string): Promise<boolean> {
+  async function testKey(val: string): Promise<{ ok: boolean; error?: string }> {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -304,12 +318,28 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
           model: "claude-haiku-4-5-20251001",
           max_tokens: 10,
           messages: [{ role: "user", content: "hi" }],
+          stream: true,
         }),
-        signal: AbortSignal.timeout(10000),
+        signal: controller.signal,
       });
-      return res.ok;
-    } catch {
-      return false;
+
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        return { ok: true };
+      } else {
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const data = await res.json() as { error?: { message?: string } };
+          errMsg = data.error?.message ?? errMsg;
+        } catch {
+          // body가 JSON이 아닐 수 있음
+        }
+        return { ok: false, error: errMsg };
+      }
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : "연결 실패";
+      return { ok: false, error: errMsg };
     }
   }
 
@@ -330,16 +360,16 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
     newKeys[index] = { ...state, status: "testing", errorMsg: "" };
     setKeys(newKeys);
 
-    const ok = await testKey(val);
+    const result = await testKey(val);
 
-    if (ok) {
+    if (result.ok) {
       const storageKey = `wts_anthropic_key_${index + 1}`;
       localStorage.setItem(storageKey, val);
       newKeys[index] = { value: val, saved: val, visible: false, status: "ok", errorMsg: "", dirty: false };
       setKeys(newKeys);
       onSaved();
     } else {
-      newKeys[index] = { ...state, status: "error", errorMsg: "API 테스트 실패" };
+      newKeys[index] = { ...state, status: "error", errorMsg: result.error || "API 테스트 실패" };
       setKeys(newKeys);
     }
   }
