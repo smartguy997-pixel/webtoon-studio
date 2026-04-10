@@ -17,13 +17,15 @@ const AGENTS = {
 } as const;
 type AgentId = keyof typeof AGENTS;
 
-const NAME_TO_AGENT: Record<string, AgentId> = {
-  "시나리오작가": "scenario",
-  "심층조사자":   "researcher",
-  "세계관설계자": "worldbuilder",
-  "총괄프로듀서": "producer",
-  "편집자":       "editor",
-  "사용자":       "user",
+// 라운드당 한 명씩 순서대로 발언 (Phase 2와 동일)
+const DEBATE_AGENTS_P3: AgentId[] = ["scenario", "researcher", "worldbuilder", "producer"];
+
+const AGENT_PROMPTS_P3: Partial<Record<AgentId, string>> = {
+  scenario:     "서사 설계 전문. '1막이 25화인데 독자를 붙잡으려면 5화마다 훅이 있어야 해요.' 스타일.",
+  researcher:   "데이터 기반. '비슷한 장르 성공작들 보면 2막에서 주인공 위기가 꼭 와요.' 스타일.",
+  worldbuilder: "설정 일관성 집착. '그 에피소드, 세계관 규칙이랑 충돌하는데요.' 스타일.",
+  producer:     "중재·합의 유도. 갈등 정리 역할.",
+  editor:       "베테랑 편집자. 말수 적고 무게감 있음. 앞 대화를 직접 인용하며 마무리를 유도한다.",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -57,31 +59,26 @@ const ARC_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6"];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
-// ─── Debate system prompt ─────────────────────────────────────────────────────
+// ─── 에이전트 1명용 시스템 프롬프트 ───────────────────────────────────────────
 
-const DEBATE_SYSTEM_PROMPT = `너는 웹툰 기획팀 전문가 4명이 참여하는 Phase 3 100화 시리즈 로드맵 회의를 진행한다.
-Phase 1·2에서 확정된 기획·세계관을 바탕으로 100화 에피소드 구조를 함께 설계한다.
+function buildAgentPromptP3(agentId: AgentId, genre: string, context: string): string {
+  const agentLabel = AGENTS[agentId].label;
+  const personality = AGENT_PROMPTS_P3[agentId] ?? "";
+  return `당신은 Phase 3 100화 시리즈 로드맵 회의의 ${agentLabel}입니다.
+성격·역할: ${personality}
+장르: ${genre}
 
-### 참여자와 성격
-- [시나리오작가]: 서사 설계 전문. "1막이 25화인데 독자를 붙잡으려면 5화마다 훅이 있어야 해요." 스타일.
-- [심층조사자]: 데이터 기반. "비슷한 장르 성공작들 보면 2막에서 주인공 위기가 꼭 와요." 스타일.
-- [세계관설계자]: 설정 일관성 집착. "그 에피소드, 세계관 규칙이랑 충돌하는데요." 스타일.
-- [총괄프로듀서]: 중재·합의 유도. 갈등 정리 역할.
-- [편집자]: 베테랑 편집자. 평소 침묵. 토론이 길어지면 앞 대화를 직접 인용하며 마무리를 유도한다.
+Phase 1·2에서 확정된 기획·세계관:
+${context}
 
-### 출력 형식
-[이름]: 대사
-
-### 출력 규칙 (반드시 준수)
-- 매 응답마다 직전 발언을 읽고, 그 내용에 직접 반응하는 사람 1명만 말한다.
-- 반드시 앞 발언을 인식했음을 드러내야 한다. ("방금 말씀처럼..." "맞아요, 근데...")
-- 각 대사는 1~2문장. 마크다운(#, *, >, -) 절대 금지.
-- 카카오톡 메시지처럼 짧고 자연스러운 한국어.
-- [사용자]: 가 발언하면 반드시 그 내용에 직접 반응한다.
-- JSON 블록, [ROADMAP_CARD] 같은 출력 절대 금지. 오직 대화만.
-
-### 편집자 등장 조건
-- [시스템: 마무리 단계] 신호가 오면 편집자가 앞 대화의 실제 발언을 언급하며 정리를 유도한다.`;
+[규칙]
+- 이전 발언을 읽고 직접 반응하거나, 100화 4막 구조 설계에 새로운 관점을 제시하세요.
+- 오직 당신의 대사만 출력. [이름]: 같은 접두어 없이.
+- 다른 참여자 대사를 쓰지 마세요.
+- 1~2문장, 카카오톡처럼 짧고 자연스러운 구어체.
+- 마크다운 금지.
+- JSON이나 [ROADMAP_CARD] 같은 태그 절대 금지. 오직 대화만.`;
+}
 
 // ─── Card generation prompts (run AFTER conversation ends) ────────────────────
 
@@ -121,28 +118,6 @@ EP ${epsRange[0]}~${epsRange[1]} 총 25화를 정확히 생성하세요. tension
 정확히 25개 에피소드 객체 생성. JSON만 출력.`;
 }
 
-// ─── Parse [이름]: 대사 format ────────────────────────────────────────────────
-
-function parseAgentMessages(text: string): Array<{ agentId: AgentId; text: string }> {
-  const lines = text.split(/\n/);
-  const results: Array<{ agentId: AgentId; text: string }> = [];
-  let current: { agentId: AgentId; lines: string[] } | null = null;
-  for (const line of lines) {
-    const match = line.match(/^\[([^\]]+)\]:\s*([\s\S]*)/);
-    if (match) {
-      if (current && current.lines.join(" ").trim())
-        results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
-      const name = match[1].trim();
-      const agentId = NAME_TO_AGENT[name] ?? "producer";
-      current = { agentId, lines: [match[2]] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current && current.lines.join(" ").trim())
-    results.push({ agentId: current.agentId, text: current.lines.join(" ").trim() });
-  return results;
-}
 
 function parseBlock<T>(text: string, tag: string): T | null {
   const re = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)\\s*\\[\\/${tag}\\]`);
@@ -291,7 +266,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
   const runningRef = useRef(false);
-  const savedConvRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const savedConvRef = useRef<string[]>([]);
 
   // ── Restore on mount ──
   useEffect(() => {
@@ -300,7 +275,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       if (p1?.input?.genre) setGenre(p1.input.genre);
 
       const savedConv = localStorage.getItem(`p3_conv_${projectId}`);
-      if (savedConv) savedConvRef.current = JSON.parse(savedConv);
+      if (savedConv) savedConvRef.current = JSON.parse(savedConv) as string[];
 
       const savedMsgs = localStorage.getItem(`p3_msgs_${projectId}`);
       const hasMsgs = savedMsgs && JSON.parse(savedMsgs).length > 0;
@@ -423,8 +398,8 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     setDebatePhase("done");
   }, [genre, projectId, addMsg, updateMsg]);
 
-  // ── Debate loop ──
-  const runDebate = useCallback(async (resumeConv?: Array<{ role: "user" | "assistant"; content: string }>) => {
+  // ── Debate loop: 에이전트 1명씩 별도 API 호출 ──
+  const runDebate = useCallback(async (resumeTranscript?: string[]) => {
     const apiKey = getAnthropicKey();
     if (!apiKey) { setApiError("ANTHROPIC_API_KEY가 설정되지 않았습니다."); return; }
     if (runningRef.current) return;
@@ -443,83 +418,83 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     } catch { /* ignore */ }
     contextRef.current = context;
 
-    const convHistory: Array<{ role: "user" | "assistant"; content: string }> =
-      resumeConv ?? savedConvRef.current ?? [];
-
-    if (convHistory.length === 0) {
-      convHistory.push({ role: "user", content: `Phase 3 시작. ${context}\n\n100화 시리즈 로드맵을 함께 설계해봅시다. 4막 구조로 각 막 25화씩 구성합니다.` });
-    }
+    const transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
+    const startRound = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
 
     const END_TRIGGERS = ["정리하자", "확정하자", "로드맵 만들어", "에피소드 생성", "끝내자", "결정하자", "카드 만들어"];
-    let round = 0;
 
     try {
-      while (runningRef.current) {
-        round++;
+      for (let round = startRound; round <= 100; round++) {
+        if (!runningRef.current) break;
         setTurnCount(round);
 
-        // ── Sliding window every 10 rounds ──
-        if (round > 1 && round % 10 === 0 && convHistory.length > 10) {
-          const toCompress = convHistory.splice(0, convHistory.length - 6);
-          const summaryText = toCompress.map(m => m.content).join("\n").slice(0, 3000);
-          const compressRes = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-            body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 500, messages: [{ role: "user", content: `다음 토론을 200자로 요약하세요:\n${summaryText}` }] }),
-          });
-          if (compressRes.ok) {
-            const compressData = await compressRes.json() as { content: Array<{ text: string }> };
-            const summary = compressData.content[0]?.text ?? "";
-            convHistory.unshift({ role: "user", content: `[이전 토론 요약] ${summary}` });
+        // 이번 발언자 결정
+        const agentId = DEBATE_AGENTS_P3[(round - 1) % DEBATE_AGENTS_P3.length];
+        const systemPrompt = buildAgentPromptP3(agentId, genre, context);
+
+        // 최근 30줄 컨텍스트
+        const recentLines = transcript.slice(-30);
+        const historyText = recentLines.length > 0
+          ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
+          : "";
+
+        const userContent = round === 1
+          ? `Phase 3 시작. ${context}\n\n100화 시리즈 로드맵을 함께 설계해봅시다. 4막 구조로 각 막 25화씩 구성합니다.`
+          : `${historyText}당신의 차례입니다. 로드맵 설계에 대한 의견을 말해주세요.`;
+
+        const id = addMsg(agentId, round, "", true);
+
+        let roundText = "";
+        for await (const chunk of streamClaude({
+          apiKey,
+          systemPrompt,
+          messages: [{ role: "user", content: userContent }],
+          maxTokens: 400,
+          tools: [{ ...WEB_SEARCH_TOOL, allowed_callers: ["direct"] }],
+        })) {
+          roundText += chunk;
+          updateMsg(id, roundText, true);
+        }
+
+        const finalText = roundText.trim();
+        updateMsg(id, finalText, false);
+        if (finalText) transcript.push(`[${AGENTS[agentId].label}]: ${finalText}`);
+
+        // 슬라이딩 윈도우: 20줄마다
+        if (transcript.length > 0 && transcript.length % 20 === 0) {
+          const recentKeep = transcript.slice(-10);
+          const oldLines = transcript.slice(0, -10);
+          if (oldLines.length >= 5) {
+            let summary = "";
+            try {
+              for await (const c of streamClaude({
+                apiKey,
+                systemPrompt: "웹툰 100화 로드맵 토론 핵심을 간결하게 요약한다.",
+                messages: [{ role: "user", content: `요약:\n${oldLines.join("\n").slice(0, 3000)}` }],
+                maxTokens: 400,
+                tools: [],
+              })) summary += c;
+            } catch { /* ignore */ }
+            if (summary.trim()) {
+              transcript = [`[이전 토론 요약]: ${summary.trim()}`, ...recentKeep];
+            }
           }
-          localStorage.setItem(`p3_conv_${projectId}`, JSON.stringify(convHistory));
-          savedConvRef.current = convHistory;
         }
 
-        // ── Editor at round 80 ──
-        if (round === 80) {
-          const recentLines = convHistory.slice(-6).map(m => m.content.slice(0, 100)).join(" / ");
-          convHistory.push({ role: "user", content: `[시스템: 마무리 단계] 편집자가 앞 토론("${recentLines}")을 인용하며 마무리를 유도한다.` });
-        }
+        localStorage.setItem(`p3_conv_${projectId}`, JSON.stringify(transcript));
+        savedConvRef.current = transcript;
 
-        const systemWithCtx = DEBATE_SYSTEM_PROMPT + `\n\n### 프로젝트 컨텍스트\n${context}`;
-        const id = addMsg("producer", round, "", true);
+        // END 트리거 확인
+        if (END_TRIGGERS.some(t => finalText.includes(t))) break;
 
-        let fullText = "";
-        for await (const chunk of streamClaude({ apiKey, systemPrompt: systemWithCtx, messages: convHistory, maxTokens: 300, tools: [{ ...WEB_SEARCH_TOOL, allowed_callers: ["direct"] }] })) {
-          fullText += chunk;
-          updateMsg(id, fullText, true);
-        }
+        await sleep(1800);
 
-        if (!fullText.trim()) { updateMsg(id, "...", false); break; }
-
-        // Parse [이름]: lines
-        const parsed = parseAgentMessages(fullText);
-        if (parsed.length > 0) {
-          updateMsg(id, parsed[0].text, false, { agent: parsed[0].agentId });
-          for (let i = 1; i < parsed.length; i++) {
-            addMsg(parsed[i].agentId, round, parsed[i].text, false);
-          }
-        } else {
-          updateMsg(id, fullText, false);
-        }
-
-        convHistory.push({ role: "assistant", content: fullText });
-        localStorage.setItem(`p3_conv_${projectId}`, JSON.stringify(convHistory));
-        savedConvRef.current = convHistory;
-
-        // ── Check END triggers ──
-        if (END_TRIGGERS.some(t => fullText.includes(t))) break;
-        if (round > 100) break;
-
-        await sleep(400);
-
-        // ── Pending user message ──
+        // 사용자 입력 처리
         const pendingKey = `p3_pending_${projectId}`;
         const pending = localStorage.getItem(pendingKey);
         if (pending) {
           localStorage.removeItem(pendingKey);
-          convHistory.push({ role: "user", content: pending });
+          transcript.push(`[사용자]: ${pending}`);
           addMsg("user", round, pending, false);
         }
       }
@@ -530,7 +505,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
     runningRef.current = false;
     if (debatePhase !== "done") {
-      const debateText = convHistory.map(m => m.content).join("\n");
+      const debateText = transcript.join("\n");
       await generateRoadmap(apiKey, debateText);
     }
   }, [genre, projectId, addMsg, updateMsg, generateRoadmap]);
@@ -544,7 +519,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     if (runningRef.current) {
       localStorage.setItem(`p3_pending_${projectId}`, text);
     } else if (debatePhase === "paused" || debatePhase === "running") {
-      savedConvRef.current.push({ role: "user", content: text });
+      savedConvRef.current.push(`[사용자]: ${text}`);
       await runDebate(savedConvRef.current);
     }
   }, [chatInput, turnCount, projectId, debatePhase, addMsg, runDebate]);
