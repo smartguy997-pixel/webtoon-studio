@@ -417,6 +417,105 @@ function ThinkingDots() {
   );
 }
 
+// ─── Image Search Card (Pixabay API) ──────────────────────────────────────────
+
+interface PixabayHit { previewURL: string; webformatURL: string; pageURL: string; tags: string; }
+
+function ImageSearchCard({ query }: { query: string }) {
+  const [images, setImages] = useState<PixabayHit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const apiKey = localStorage.getItem("wts_pixabay_key");
+    if (!apiKey) {
+      setError("no_key");
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    fetch(
+      `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&image_type=illustration&per_page=4&safesearch=true`,
+      { signal: controller.signal }
+    )
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<{ hits?: PixabayHit[]; error?: string }>;
+      })
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        setImages((data.hits ?? []).slice(0, 4));
+        setLoading(false);
+      })
+      .catch((e: Error) => {
+        if (e.name !== "AbortError") setError(e.message);
+        setLoading(false);
+      })
+      .finally(() => clearTimeout(timeout));
+
+    return () => { controller.abort(); };
+  }, [query]);
+
+  return (
+    <div style={{
+      background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.2)",
+      borderRadius: 10, padding: "10px 12px", margin: "8px 0",
+    }}>
+      <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <span>🖼️</span><span>이미지 서치</span>
+        <span style={{ color: "#334155" }}>·</span>
+        <span style={{ color: "#94a3b8", fontStyle: "italic", fontWeight: 400 }}>{query}</span>
+      </div>
+
+      {loading && (
+        <div style={{ fontSize: 12, color: "#64748b", padding: "4px 0" }}>
+          <ThinkingDots />
+        </div>
+      )}
+
+      {error === "no_key" && (
+        <div style={{ fontSize: 12, color: "#fbbf24" }}>
+          ⚠ Pixabay API 키가 없습니다.{" "}
+          <a href="/settings" style={{ color: "#60a5fa", textDecoration: "underline" }}>설정에서 입력해주세요 →</a>
+        </div>
+      )}
+
+      {error && error !== "no_key" && (
+        <div style={{ fontSize: 12, color: "#f87171" }}>이미지 로딩 실패: {error}</div>
+      )}
+
+      {!loading && !error && images.length === 0 && (
+        <div style={{ fontSize: 12, color: "#64748b" }}>검색 결과 없음</div>
+      )}
+
+      {!loading && !error && images.length > 0 && (
+        <div style={{ display: "flex", gap: 6 }}>
+          {images.map((img, idx) => (
+            <a
+              key={idx}
+              href={img.pageURL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={img.tags}
+              style={{ flexShrink: 0, borderRadius: 6, overflow: "hidden", display: "block", border: "1px solid rgba(96,165,250,0.2)" }}
+            >
+              <img
+                src={img.previewURL}
+                alt={img.tags}
+                style={{ width: 96, height: 68, objectFit: "cover", display: "block" }}
+                loading="lazy"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoundHeader({ round, label }: { round: number; label: string }) {
   return (
     <div className={styles.roundHeader}>
@@ -431,7 +530,7 @@ function RoundHeader({ round, label }: { round: number; label: string }) {
 
 function renderMsgLine(line: string, i: number, agentColor: string) {
   // 🔍 Web search indicator line
-  if (line.includes("🔍 **웹 검색**") || (line.startsWith("🔍") && !line.startsWith("🔍"))) {
+  if (line.includes("🔍 **웹 검색**") || line.startsWith("🔍")) {
     const query = line.replace(/.*🔍\s*\*\*웹 검색\*\*:\s*/, "").replace(/"/g, "");
     return (
       <div key={i} style={{
@@ -445,36 +544,13 @@ function renderMsgLine(line: string, i: number, agentColor: string) {
       </div>
     );
   }
-  // 🖼️ Image search indicator line
+  // 🖼️ Image search — renders real images from Pixabay
   if (line.startsWith("🖼️")) {
-    const raw = line.replace(/^🖼️\s*이미지 서치\s*:\s*/i, "").replace(/^🖼️\s*이미지 검색\s*:\s*/i, "").replace(/"/g, "").trim();
-    const googleUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(raw)}`;
-    return (
-      <div key={i} style={{
-        background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.2)",
-        borderRadius: 8, padding: "8px 12px", margin: "8px 0",
-      }}>
-        <div style={{ fontSize: 11, color: "#60a5fa", fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>🖼️</span>
-          <span>이미지 서치</span>
-          <span style={{ color: "#334155", fontWeight: 400 }}>·</span>
-          <span style={{ color: "#94a3b8", fontWeight: 400, fontStyle: "italic" }}>{raw}</span>
-        </div>
-        <a
-          href={googleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 5,
-            fontSize: 12, color: "#60a5fa", textDecoration: "none",
-            background: "rgba(96,165,250,0.10)", borderRadius: 5,
-            padding: "3px 10px", border: "1px solid rgba(96,165,250,0.25)",
-          }}
-        >
-          Google 이미지 검색 열기 →
-        </a>
-      </div>
-    );
+    const raw = line
+      .replace(/^🖼️\s*이미지\s*서치\s*:\s*/i, "")
+      .replace(/^🖼️\s*이미지\s*검색\s*:\s*/i, "")
+      .replace(/"/g, "").trim();
+    return <ImageSearchCard key={i} query={raw} />;
   }
   // ⏳ Rate-limit wait indicator
   if (line.includes("⏳") && line.includes("레이트 리밋")) {

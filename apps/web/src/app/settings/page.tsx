@@ -257,6 +257,118 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
   );
 }
 
+// ── Pixabay Image Search Key Card ────────────────────────
+function PixabayKeyCard({ onSaved }: { onSaved: () => void }) {
+  const [state, setState] = useState<KeyState>({
+    value: "", saved: "", visible: false, status: "idle", errorMsg: "", dirty: false,
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem("wts_pixabay_key") ?? "";
+    setState((p: KeyState) => ({ ...p, saved, value: saved, status: saved ? "ok" : "idle" }));
+  }, []);
+
+  async function handleSave() {
+    const val = state.value.trim();
+    if (!val) return;
+
+    setState((p: KeyState) => ({ ...p, status: "testing", errorMsg: "" }));
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(
+        `https://pixabay.com/api/?key=${val}&q=test&per_page=3`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeout);
+
+      const data = await res.json() as { hits?: unknown[]; error?: string };
+      if (data.error) throw new Error(data.error);
+      if (!Array.isArray(data.hits)) throw new Error("유효하지 않은 응답");
+
+      localStorage.setItem("wts_pixabay_key", val);
+      setState((p: KeyState) => ({ ...p, saved: val, status: "ok", errorMsg: "", dirty: false }));
+      onSaved();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "연결 실패";
+      setState((p: KeyState) => ({ ...p, status: "error", errorMsg: msg }));
+    }
+  }
+
+  function handleClear() {
+    localStorage.removeItem("wts_pixabay_key");
+    setState({ value: "", saved: "", visible: false, status: "idle", errorMsg: "", dirty: false });
+    onSaved();
+  }
+
+  const isSaved = !!state.saved && state.status === "ok" && !state.dirty;
+
+  return (
+    <div className={`${s.keyCard} ${isSaved ? s.hasKey : ""} ${state.status === "error" ? s.hasError : ""}`}>
+      <div className={s.keyHeader}>
+        <div className={s.keyMeta}>
+          <div className={s.keyLabel}>
+            Pixabay API Key
+            <span className={s.keyOptional}>선택</span>
+          </div>
+          <div className={s.keyHint}>
+            Phase 1 리서치 채팅 중 에이전트가 🖼️ 이미지 서치를 할 때 실제 이미지를 채팅창에 표시합니다.
+            무료 플랜 100req/min. 키 없이도 Google 이미지 링크로 대체됩니다.
+          </div>
+        </div>
+        {state.status === "testing" && (
+          <div className={`${s.statusBadge} ${s.statusTesting}`}><span className={s.spin} /> 테스트 중</div>
+        )}
+        {isSaved && <div className={`${s.statusBadge} ${s.statusSaved}`}>✓ 연결됨</div>}
+        {state.status === "error" && <div className={`${s.statusBadge} ${s.statusError}`}>✗ 실패</div>}
+        {(state.status === "idle" || (state.dirty && state.status !== "error")) && (
+          <div className={`${s.statusBadge} ${s.statusNone}`}>미설정</div>
+        )}
+      </div>
+
+      <div className={s.inputRow}>
+        <input
+          className={`${s.keyInput} ${isSaved && !state.visible ? s.masked : ""}`}
+          type={state.visible || !isSaved ? "text" : "password"}
+          value={isSaved && !state.visible ? mask(state.saved) : state.value}
+          onChange={(e: { target: HTMLInputElement }) => {
+            setState((p: KeyState) => ({ ...p, value: e.target.value, dirty: true, status: "idle", errorMsg: "" }));
+          }}
+          onFocus={() => {
+            if (isSaved) setState((p: KeyState) => ({ ...p, visible: true, dirty: true }));
+          }}
+          placeholder="1234567-abcdef1234567890abcdef12"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button className={s.btnIcon} onClick={() => setState((p: KeyState) => ({ ...p, visible: !p.visible }))} type="button">
+          {state.visible ? "🙈" : "👁"}
+        </button>
+        <button className={s.btnSave} onClick={handleSave} disabled={state.status === "testing" || !state.value.trim()} type="button">
+          {state.status === "testing" ? "테스트 중…" : "저장 & 테스트"}
+        </button>
+      </div>
+
+      {state.status === "error" && state.errorMsg && (
+        <div style={{ fontSize: 12, color: "#f87171", marginTop: 6 }}>✗ {state.errorMsg}</div>
+      )}
+
+      <div className={s.docsLink}>
+        무료 API 키 발급:&nbsp;
+        <a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener noreferrer">
+          pixabay.com/api/docs ↗
+        </a>
+      </div>
+
+      {state.saved && (
+        <button className={s.btnClear} onClick={handleClear} type="button">✕ 키 삭제</button>
+      )}
+    </div>
+  );
+}
+
 // ── Firebase config card ──────────────────────────────────
 const FIREBASE_FIELDS = [
   { key: "wts_firebase_api_key",             label: "API Key",             placeholder: "AIzaSy..." },
@@ -650,8 +762,9 @@ export default function SettingsPage() {
       if (localStorage.getItem(`wts_anthropic_key_${i}`)) anthropicCount++;
     }
     const otherKeys = OTHER_KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
+    const pixabaySaved = localStorage.getItem("wts_pixabay_key") ? 1 : 0;
     const fbSaved = FIREBASE_FIELDS.some((f) => !!localStorage.getItem(f.key)) ? 1 : 0;
-    setSavedCount(Math.min(1, anthropicCount) + otherKeys + fbSaved);
+    setSavedCount(Math.min(1, anthropicCount) + otherKeys + pixabaySaved + fbSaved);
   }, []);
 
   useEffect(() => {
@@ -682,6 +795,8 @@ export default function SettingsPage() {
       {OTHER_KEYS.map((cfg) => (
         <KeyCard key={cfg.id} cfg={cfg} onSaved={countSaved} />
       ))}
+
+      <PixabayKeyCard onSaved={countSaved} />
 
       <div className={s.sectionLabel} style={{ marginTop: 32 }}>Firebase 설정</div>
 
