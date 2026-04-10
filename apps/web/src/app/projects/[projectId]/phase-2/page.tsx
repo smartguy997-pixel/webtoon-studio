@@ -55,7 +55,7 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
 const STAGES = [
   { id: 1 as const, name: "세계관",     topic: "세계관 — 시대·배경·세계 규칙·분위기·특수 설정",  tag: "WORLD",         color: "#60a5fa", schema: '{"era":"시대/배경","atmosphere":"분위기","world_rules":["규칙1","규칙2","규칙3"],"special_elements":"특수 설정"}' },
   { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·해결 방향",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","resolution_hint":"해결 방향"}' },
-  { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성격·동기·외형·말투",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","personality":"성격","motivation":"동기","appearance":"외형","speech":"말투"}]}' },
+  { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
   { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·분위기·서사적 의미",         tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","atmosphere":"분위기","significance":"서사적 의미"}]}' },
   { id: 5 as const, name: "복선·암시",  topic: "복선과 암시 — 복선 장치·회수 장면·의도적 훼이크",  tag: "FORESHADOWING", color: "#f87171", schema: '{"foreshadowing":[{"setup":"복선 설정","payoff":"회수 장면"}],"hints":["암시1","암시2"],"red_herrings":["훼이크1"]}' },
 ];
@@ -233,7 +233,7 @@ function buildSingleAgentPrompt(
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
 성격: ${roleDesc}
 장르: ${genre}
-${p1Context ? `\n[Phase 1 분석 결과 — 반드시 참고]\n${p1Context}\n` : ""}${context ? `\n[이미 확정된 내용 — 반드시 이 내용을 바탕으로 토론해]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
+${p1Context ? `\n[Phase 1 분석 결과 — 우리 작품의 방향]\n${p1Context}\n` : ""}${context ? `\n[우리 팀이 함께 만든 세계 — 이미 알고 있는 내용]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
 
 [대화 방식]
 - 앞 사람 말 받아서 자연스럽게 이어가.
@@ -264,43 +264,103 @@ ${stage.schema}
 // ─── 단계별 상세 요약 프롬프트 (fallback용) ──────────────────────────────────────
 
 const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
-  1: `다음 토론에서 합의된 세계관을 상세히 정리해주세요.
-반드시 포함할 내용:
-- 시대와 배경 (구체적인 시대/장소/문명 수준)
-- 세계의 핵심 규칙 또는 법칙 (마법, 기술, 사회 질서 등)
-- 세계의 분위기와 톤
-- 독특한 설정이나 특수 요소
-다음 단계(시놉시스)에서 활용할 수 있도록 빠짐없이 정리하세요.`,
+  1: `다음 토론에서 합의된 세계관을 A4 용지 2~3장 분량으로 상세히 정리해주세요.
+이 문서는 이후 모든 단계(시놉시스·캐릭터·장소·복선)에서 참고할 세계관 바이블입니다.
 
-  2: `다음 토론에서 합의된 시놉시스를 상세히 정리해주세요.
-반드시 포함할 내용:
-- 로그라인 (한 줄 핵심 요약)
-- 이야기의 전제와 출발점
-- 주인공이 직면하는 핵심 갈등
-- 이야기가 향하는 해결 방향
-다음 단계(캐릭터 설정)에서 활용할 수 있도록 구체적으로 정리하세요.`,
+반드시 포함할 내용 (각 항목을 충분히 서술):
+■ 시대와 배경
+  - 구체적인 시대 (몇 세기, 근미래, 판타지 세계 등)
+  - 지리적 배경과 문명 수준
+  - 사회 구조와 계급 체계
+  - 역사적 맥락 (어떤 사건이 이 세계를 만들었는가)
+
+■ 세계의 핵심 규칙과 법칙
+  - 마법/기술/초능력 등 특수 시스템 (상세히)
+  - 사회 질서와 법률
+  - 일반인의 일상생활 방식
+
+■ 세계의 분위기와 톤
+  - 전반적인 무드 (어둡고 절망적, 희망적, 혼돈 등)
+  - 시각적 이미지 (색감, 건축, 풍경)
+  - 독자가 느껴야 할 감정
+
+■ 특수 설정과 독창적 요소
+  - 이 세계만의 고유한 개념/규칙
+  - 다른 작품과 차별화되는 설정
+
+■ 세계의 문제와 갈등 구조
+  - 세계 전체가 직면한 근본적 문제
+  - 다양한 세력/집단 간의 갈등 구도
+
+서술형 문장으로 풍부하게 작성하세요. 목록보다 문단 형식을 섞어서.`,
+
+  2: `다음 토론에서 합의된 시놉시스를 A4 용지 2~3장 분량으로 상세히 정리해주세요.
+이 문서는 이후 캐릭터·장소·복선 설계의 기반이 됩니다.
+
+반드시 포함할 내용 (각 항목을 충분히 서술):
+■ 로그라인 (한 줄 핵심 요약)
+
+■ 이야기의 전제와 출발점
+  - 이야기가 시작되는 상황
+  - 주인공의 초기 상태와 일상
+  - 사건의 도화선이 되는 계기
+
+■ 주요 등장인물 관계도 (캐릭터 설정 전 큰 그림)
+  - 주인공과 주변 인물의 관계 구도
+  - 대립 구조
+
+■ 핵심 갈등
+  - 내적 갈등 (주인공 내면)
+  - 외적 갈등 (주인공 vs 적대 세력/환경)
+  - 갈등이 고조되는 방식
+
+■ 이야기의 3막 구조
+  - 1막: 도입부와 사건 발단
+  - 2막: 갈등 심화와 위기
+  - 3막: 클라이맥스와 해결 방향
+
+■ 핵심 테마와 메시지
+  - 이 이야기가 독자에게 전달할 주제
+
+■ 예상 분위기와 타겟 독자층
+
+서술형 문장으로 풍부하게 작성하세요.`,
 
   3: `다음 토론에서 합의된 등장인물을 상세히 정리해주세요.
+각 인물은 이미지 생성과 시나리오 집필에 바로 활용할 수 있는 수준으로 작성합니다.
+
 각 인물마다 반드시 포함할 내용:
-- 이름과 역할 (주인공/빌런/조력자 등)
-- 성격과 말투의 특징
-- 행동 동기와 목표
-- 외형적 특징
-다음 단계(장소 설정)에서 활용할 수 있도록 빠짐없이 정리하세요.`,
+■ 기본 정보: 이름, 나이/나이대, 성별
+■ 시각적 특징 (이미지 생성용)
+  - 얼굴: 이목구비 특징, 인상, 표정 습관
+  - 키와 체형: 구체적 수치 또는 묘사 (예: 180cm, 마른 근육형)
+  - 몸무게 또는 체형 묘사
+  - 복장 스타일: 주로 입는 옷, 색상, 특징적 아이템
+  - 헤어스타일과 색상
+  - 눈에 띄는 특징 (흉터, 문신, 특이한 눈색 등)
+■ 성격: 3~5가지 핵심 성격 특성 (상세히)
+■ 말투: 구체적인 말하는 방식, 자주 쓰는 표현
+■ 행동 동기와 목표: 무엇을 원하는가, 왜 그것을 원하는가
+■ 내면의 상처나 비밀
+■ 시놉시스·세계관에서의 역할: 이야기 전체에서 어떤 기능을 하는가
+■ 다른 주요 인물과의 관계
+
+각 인물을 풍부하게 서술하세요.`,
 
   4: `다음 토론에서 합의된 주요 장소를 상세히 정리해주세요.
 각 장소마다 반드시 포함할 내용:
 - 장소 이름과 유형
-- 분위기와 시각적 특징
+- 분위기와 시각적 특징 (이미지화 가능한 수준으로)
 - 이야기에서의 서사적 의미와 역할
-다음 단계(복선/암시)에서 활용할 수 있도록 구체적으로 정리하세요.`,
+- 어떤 장면/사건이 이곳에서 일어나는가
+복선/암시 설계에서 활용할 수 있도록 구체적으로 정리하세요.`,
 
   5: `다음 토론에서 합의된 복선과 암시 장치를 상세히 정리해주세요.
 반드시 포함할 내용:
-- 주요 복선 장치와 회수 장면
+- 주요 복선 장치와 회수 장면 (각각 구체적으로)
 - 독자에게 던지는 암시
-- 의도적인 훼이크(red herring)
-이후 시나리오 작성 시 활용할 수 있도록 구체적으로 정리하세요.`,
+- 의도적인 훼이크(red herring)와 그 효과
+시나리오 작성 시 활용할 수 있도록 구체적으로 정리하세요.`,
 };
 
 // ─── 단계 결과 추출 ────────────────────────────────────────────────────────────
@@ -354,7 +414,7 @@ async function extractStageData(
             role: "user",
             content: `${STAGE_SUMMARY_PROMPTS[stage.id]}\n\n[토론 내용]\n${slicedDebate}`,
           }],
-          maxTokens: 1500,
+          maxTokens: 4000,
         })) text += chunk;
       } catch { /* ignore */ }
       return text.trim();
@@ -424,9 +484,12 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
       {result.stageId === 1 && <>{row("시대/배경", data.era)}{row("분위기", data.atmosphere)}{row("세계 규칙", data.world_rules)}{row("특수 설정", data.special_elements)}</>}
       {result.stageId === 2 && <>{row("로그라인", data.logline)}{row("전제", data.premise)}{row("갈등", data.conflict)}{row("해결 방향", data.resolution_hint)}</>}
       {result.stageId === 3 && Array.isArray(data.characters) && (data.characters as Record<string,string>[]).map((ch, i) => (
-        <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #2a2a3d" }}>
-          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>{ch.name} <span style={{ fontSize:11, color:"#7878a0" }}>({ch.role})</span></div>
-          {row("성격", ch.personality)}{row("동기", ch.motivation)}{row("외형", ch.appearance)}{row("말투", ch.speech)}
+        <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>
+            {ch.name} <span style={{ fontSize:11, color:"#7878a0" }}>({ch.role})</span>
+            {ch.gender && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>{ch.gender}{ch.age ? ` · ${ch.age}` : ""}</span>}
+          </div>
+          {row("얼굴", ch.face)}{row("키 / 체형", ch.height || ch.build ? [ch.height, ch.build, ch.weight].filter(Boolean).join(" · ") : undefined)}{row("복장", ch.outfit)}{row("성격", ch.personality)}{row("동기", ch.motivation)}{row("말투", ch.speech)}{row("세계관 역할", ch.story_role)}
         </div>
       ))}
       {result.stageId === 4 && Array.isArray(data.locations) && (data.locations as Record<string,string>[]).map((loc, i) => (
@@ -699,6 +762,18 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
       } catch { /* ignore */ }
     };
+
+    // 스테이지 오프닝: 이전 단계 내용을 팀에게 자연스럽게 환기
+    if (stageIdx > 0 && stageResultsRef.current.length > 0 && transcript.length === 0) {
+      const prevContext = buildContext(stage.id, stageResultsRef.current);
+      if (prevContext) {
+        await runSingleAgent(
+          "producer",
+          `팀에게 "${stage.name}" 단계를 시작하면서, 우리가 앞에서 함께 만들어온 내용을 자연스럽게 2~3문장으로 환기시켜줘. 마치 함께 작업해온 동료처럼, 자연스럽게. 딱딱한 브리핑이 아니라 팀워크 느낌으로.\n\n[우리가 함께 만든 내용]\n${prevContext}`,
+          200,
+        );
+      }
+    }
 
     try {
       debateLoop: while (true) {
