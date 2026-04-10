@@ -7,9 +7,7 @@
  * (yields a status line into the stream so the UI can show progress).
  */
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const PROXY_API_URL = "/api/claude"; // Next.js 서버 사이드 프록시
-const ANTHROPIC_VERSION = "2023-06-01";
 
 // ─── Web search tool definition ───────────────────────────────────────────────
 
@@ -89,25 +87,11 @@ async function callClaudeOnce(
   };
   if (withSearch) body.tools = [WEB_SEARCH_TOOL];
 
-  let res: Response;
-  try {
-    res = await fetch(PROXY_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    res = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_VERSION,
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-    });
-  }
+  const res = await fetch(PROXY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+    body: JSON.stringify(body),
+  });
 
   // 429 → 10초 대기 후 재시도 (최대 2회)
   if (res.status === 429 && _retryLeft > 0) {
@@ -116,8 +100,7 @@ async function callClaudeOnce(
   }
 
   if (!res.ok) throw new Error(`Claude API ${res.status}`);
-  return res.json() as Promise<ApiResponse>;
-  return res.json() as Promise<ApiResponse>;
+  return res.json() as Promise<ApiResponse>();
 }
 
 function extractUrls(text: string): string[] {
@@ -264,30 +247,15 @@ export async function* streamClaude(opts: StreamClaudeOptions): AsyncGenerator<s
       if (leftover > 0) await new Promise<void>((r) => setTimeout(r, leftover));
     }
 
-    // ── Fetch (프록시 우선, 실패 시 직접 연결 시도) ──
-    let res: Response;
-    try {
-      res = await fetch(PROXY_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch {
-      // 프록시 실패 시 브라우저 직접 연결 fallback
-      res = await fetch(ANTHROPIC_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": ANTHROPIC_VERSION,
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify(body),
-      });
-    }
+    // ── Fetch (프록시만 사용 — 서버 꺼지면 에이전트도 멈춤) ──
+    const res = await fetch(PROXY_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify(body),
+    });
 
     if (!res.ok) {
       if (res.status === 429 && attempt < BACKOFF.length) {
