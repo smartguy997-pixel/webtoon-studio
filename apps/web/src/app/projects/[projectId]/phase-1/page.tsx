@@ -1459,6 +1459,39 @@ export default function Phase1Page() {
     let turnsInWindow = 0;            // 현재 20턴 윈도우 카운터
     let windowBuffer: string[] = [];  // 현재 윈도우 발언 버퍼
 
+    // localStorage에서 이전 메모리 복원 (중단 후 재개 시)
+    const MEMORY_KEY = `p1_memory_${projectId}`;
+    try {
+      const saved = localStorage.getItem(MEMORY_KEY);
+      if (saved) {
+        const m = JSON.parse(saved) as {
+          rolling?: string; market?: string; similar?: string;
+          strengths?: string; worldbuilding?: string;
+          turnsInWindow?: number; windowBuffer?: string[];
+        };
+        if (m.rolling)       rollingSummary    = m.rolling;
+        if (m.market)        topicMarket       = m.market;
+        if (m.similar)       topicSimilar      = m.similar;
+        if (m.strengths)     topicStrengths    = m.strengths;
+        if (m.worldbuilding) topicWorldbuilding = m.worldbuilding;
+        if (m.turnsInWindow) turnsInWindow     = m.turnsInWindow;
+        if (m.windowBuffer)  windowBuffer      = m.windowBuffer;
+      }
+    } catch { /* quota or parse error */ }
+
+    // 메모리 전체를 localStorage에 저장하는 헬퍼
+    const saveMemory = () => {
+      try {
+        localStorage.setItem(MEMORY_KEY, JSON.stringify({
+          rolling: rollingSummary,
+          market: topicMarket, similar: topicSimilar,
+          strengths: topicStrengths, worldbuilding: topicWorldbuilding,
+          turnsInWindow, windowBuffer,
+          savedAt: new Date().toISOString(),
+        }));
+      } catch { /* quota */ }
+    };
+
     // 에이전트 → 전문 주제 매핑
     const AGENT_TOPIC: Record<AgentId, "market" | "similar" | "strengths" | "worldbuilding"> = {
       strategist:   "market",
@@ -1499,7 +1532,7 @@ export default function Phase1Page() {
             tools: [],
           })) next += chunk;
         } catch { /* ignore */ }
-        if (next.trim()) rollingSummary = next.trim();
+        if (next.trim()) { rollingSummary = next.trim(); saveMemory(); }
       })();
 
       // ② 주제별 맥락 요약 (4개를 1번 API 호출로)
@@ -1530,6 +1563,7 @@ export default function Phase1Page() {
         if (s && s !== "언급 없음") topicSimilar = s;
         if (st && st !== "언급 없음") topicStrengths = st;
         if (wb && wb !== "언급 없음") topicWorldbuilding = wb;
+        saveMemory();
       })();
     };
 
@@ -1689,6 +1723,7 @@ export default function Phase1Page() {
 
       // 8) 20턴마다 롤링 요약 + 주제별 요약 갱신 (백그라운드, 비차단)
       turnsInWindow++;
+      saveMemory(); // 윈도우 버퍼·카운터 매 턴 저장 (중단 복원용)
       if (turnsInWindow >= 20) {
         turnsInWindow = 0;
         const bufferSnapshot = [...windowBuffer];
