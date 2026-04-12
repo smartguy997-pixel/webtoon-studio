@@ -156,9 +156,9 @@ function buildPhase1Context(p1: P1Data): string {
 const STAGE_PROMPTS: Record<StageId, string> = {
   1: "세계관 — 이 세계의 시대·배경·핵심 규칙·분위기·특수 설정. 독자가 이 세계에 발을 들여놓는 순간 느끼는 감각까지 구체적으로.",
   2: "시놉시스 — 로그라인·전제·핵심 갈등·3막 구조·해결 방향. 나중에 100화 로드맵을 짤 수 있을 만큼 구체적으로.",
-  3: "등장인물 — 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 쓸 수 있을 만큼 시각적으로 구체적으로. 인물당 충분히 깊이 파고들어.",
-  4: "주요 장소 — 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로 묘사해. 시각적 이미지가 눈에 그려져야 해.",
-  5: "소품·장비·도구 — 탈것(택배차·오토바이·전함 등)·무기·특수 아이템·장비·일상용품. 이야기에서 의미 있는 모든 물건을 이미지로 그릴 수 있을 만큼 시각적으로 설계해. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
+  3: "등장인물 전체 목록 — 주인공·빌런·조력자·단역까지 이 이야기에 등장하는 모든 인물. 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 바로 쓸 수 있을 만큼 시각적으로 구체적으로. 시놉시스에 이름이 나온 인물은 한 명도 빠지면 안 돼.",
+  4: "장소 전체 목록 — 1화라도 등장하는 모든 장소. 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로. 스쳐 지나가는 배경도 시각적 정체성이 있어야 해.",
+  5: "소품·장비·도구 전체 목록 — 탈것·무기·특수 아이템·장비·일상용품·상징물. 이야기에서 단 한 번이라도 의미 있게 등장하는 모든 물건. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
 };
 
 // 단계별 구조화 데이터 → 에이전트용 풍부한 다줄 요약 (모든 필드 포함)
@@ -306,10 +306,26 @@ function buildStyleAgentPrompt(
 - 대사만. 이름 접두어 없음. 마크다운 금지. JSON 금지.`;
 }
 
-function buildExtractionPrompt(stageId: StageId, genre: string, debateText: string): string {
+function buildExtractionPrompt(
+  stageId: StageId,
+  genre: string,
+  debateText: string,
+  synopsisContext?: string,  // Stage 2 요약 — 완전성 기준
+): string {
   const stage = STAGES.find(s => s.id === stageId)!;
-  return `다음 토론에서 "${stage.name}" 관련 합의된 내용을 JSON으로 정리하세요.
+  const isBibleStage = stageId === 3 || stageId === 4 || stageId === 5;
+  const bibleNote = isBibleStage
+    ? `\n[제작 바이블 원칙 — 반드시 준수]\n` +
+      `- 시놉시스·세계관에 이름/언급이 있는 모든 항목을 포함\n` +
+      `- 토론에서 덜 다뤄진 항목도 기본 정보로 추가 (누락 금지)\n` +
+      `- 한 번이라도 등장하면 반드시 리스트업\n`
+    : "";
+  const synopsisNote = (isBibleStage && synopsisContext)
+    ? `\n[시놉시스 — 이 내용에 등장하는 항목을 기준으로 완전성 검증]\n${synopsisContext.slice(0, 1500)}\n`
+    : "";
 
+  return `다음 토론에서 "${stage.name}" 관련 합의된 내용을 JSON으로 정리하세요.
+${synopsisNote}${bibleNote}
 토론:
 ${debateText.slice(0, 4000)}
 
@@ -482,9 +498,11 @@ async function extractStageData(
   genre: string,
   debateText: string,
   apiKey: string,
+  synopsisContext?: string,  // Stage 2 요약 — 완전성 기준으로 활용
 ): Promise<{ data: Record<string, unknown>; summary: string }> {
 
   const slicedDebate = debateText.slice(0, 8000);
+  const isBibleStage = stage.id === 3 || stage.id === 4 || stage.id === 5;
 
   // ① JSON 추출 + ② 상세 내러티브 요약 — 병렬 실행
   const [jsonResult, narrativeResult] = await Promise.allSettled([
@@ -496,8 +514,8 @@ async function extractStageData(
         for await (const chunk of streamClaude({
           apiKey,
           systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
-          messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate) }],
-          maxTokens: (stage.id === 3 || stage.id === 4) ? 3000 : 1500,
+          messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate, synopsisContext) }],
+          maxTokens: (stage.id === 3 || stage.id === 4) ? 4000 : 2000,
         })) fullText += chunk;
       } catch { /* ignore */ }
       // 태그 파싱 → 루즈 JSON 파싱 순서로 시도
@@ -526,8 +544,45 @@ async function extractStageData(
     })(),
   ]);
 
-  const structured = jsonResult.status === "fulfilled" ? jsonResult.value : null;
+  let structured = jsonResult.status === "fulfilled" ? jsonResult.value : null;
   const narrative  = narrativeResult.status === "fulfilled" ? narrativeResult.value : "";
+
+  // ③ 완전성 보충 — Stage 3/4/5에서 시놉시스 기준으로 누락 항목 추가
+  // 토론에서 다루지 않은 인물·장소·소품을 자동으로 채워 바이블을 완성
+  if (isBibleStage && structured && synopsisContext) {
+    const listKey = stage.id === 3 ? "characters" : stage.id === 4 ? "locations" : "props";
+    const currentList = Array.isArray(structured[listKey]) ? (structured[listKey] as Record<string, unknown>[]) : [];
+    const currentNames = currentList.map(item => String(item.name ?? "")).filter(Boolean);
+
+    let patchText = "";
+    try {
+      for await (const chunk of streamClaude({
+        apiKey,
+        systemPrompt: "웹툰 제작 바이블 완전성 검증 전문가. 누락된 항목만 JSON 배열로 출력.",
+        messages: [{
+          role: "user",
+          content:
+            `[시놉시스]\n${synopsisContext.slice(0, 1500)}\n\n` +
+            `[이미 추출된 ${stage.name} 목록]\n${currentNames.map(n => `- ${n}`).join("\n") || "(없음)"}\n\n` +
+            `시놉시스에 언급되었지만 위 목록에 없는 ${stage.name}이 있으면 추가해줘.\n` +
+            `없으면 빈 배열 []만 출력.\n\n` +
+            `출력 형식 (JSON 배열만, 설명 없이):\n[PATCH]\n[${stage.schema.includes('"characters"') ? '{"name":"이름","role":"역할","gender":"","age":"","face":"","height":"","build":"","weight":"","outfit":"","personality":"","motivation":"","speech":"","story_role":""}' : stage.id === 4 ? '{"name":"장소명","type":"","visual":"","architecture":"","lighting":"","color_palette":"","atmosphere":"","sound":"","significance":"","key_scenes":"","symbolic_meaning":""}' : '{"name":"소품명","type":"","visual":"","condition":"","function":"","story_role":"","symbolic_meaning":"","owner":""}'}]\n[/PATCH]`,
+        }],
+        maxTokens: 1500,
+        tools: [],
+      })) patchText += chunk;
+    } catch { /* ignore */ }
+
+    const patchMatch = patchText.match(/\[PATCH\]\s*([\s\S]*?)\s*\[\/PATCH\]/);
+    if (patchMatch) {
+      try {
+        const additions = JSON.parse(patchMatch[1]) as Record<string, unknown>[];
+        if (Array.isArray(additions) && additions.length > 0) {
+          structured = { ...structured, [listKey]: [...currentList, ...additions] };
+        }
+      } catch { /* ignore */ }
+    }
+  }
 
   // data: 구조화 JSON 우선, 없으면 내러티브를 raw_summary로
   const data: Record<string, unknown> = structured ?? (narrative ? { raw_summary: narrative } : { raw_summary: "(추출 실패)" });
@@ -1028,7 +1083,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       if (apiKey) {
         const debateText = convRef.current.join("\n");
         const extractId = addMsg("producer", "결과 정리 중...", true);
-        const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
+        const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+        const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
         updateMsg(extractId, "", false);
         setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
 
@@ -1790,8 +1846,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     const debateText = convRef.current.join("\n");
     const extractId = addMsg("producer", "결과 정리 중...", true);
+    const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
 
-    const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
+    const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
 
     updateMsg(extractId, "", false);
     setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
