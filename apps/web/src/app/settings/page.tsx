@@ -257,6 +257,124 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
   );
 }
 
+// ── Runway API Key Card ───────────────────────────────────
+const RUNWAY_STORAGE_KEY = "wts_runway_key";
+const API_BASE = "http://localhost:4000";
+
+function RunwayCard({ onSaved }: { onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const [saved, setSaved] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [status, setStatus] = useState<TestStatus>("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    const s = localStorage.getItem(RUNWAY_STORAGE_KEY) ?? "";
+    setSaved(s); setValue(s); if (s) setStatus("ok");
+  }, []);
+
+  const isSaved = !!saved && status === "ok" && !dirty;
+
+  async function handleSaveAndTest() {
+    const val = value.trim();
+    if (!val) return;
+    if (val.length < 16) { setStatus("error"); setErrorMsg("키가 너무 짧습니다"); return; }
+
+    setStatus("testing"); setErrorMsg("");
+
+    try {
+      const r = await fetch(`${API_BASE}/api/test-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service: "runway", key: val }),
+      });
+      const data = await r.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        localStorage.setItem(RUNWAY_STORAGE_KEY, val);
+        setSaved(val); setStatus("ok"); setErrorMsg(""); setDirty(false);
+        onSaved();
+        // 마스킹된 키를 Firestore에도 저장 (키 자체가 아닌 마스킹 표시만)
+        void fetch(`${API_BASE}/api/settings/runway`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ maskedKey: mask(val), savedAt: new Date().toISOString() }),
+        });
+      } else {
+        setStatus("error"); setErrorMsg(data.error ?? "연결 실패");
+      }
+    } catch {
+      setStatus("error"); setErrorMsg("서버 연결 실패 — API 서버가 실행 중인지 확인해주세요");
+    }
+  }
+
+  function handleClear() {
+    localStorage.removeItem(RUNWAY_STORAGE_KEY);
+    setSaved(""); setValue(""); setStatus("idle"); setErrorMsg(""); setDirty(false);
+  }
+
+  return (
+    <div className={`${s.keyCard} ${isSaved ? s.hasKey : ""} ${status === "error" ? s.hasError : ""}`}>
+      <div className={s.keyHeader}>
+        <div className={s.keyMeta}>
+          <div className={s.keyLabel}>
+            Runway API Key
+            <span className={s.keyOptional}>선택</span>
+          </div>
+          <div className={s.keyHint}>
+            영상 생성(Gen-3 Alpha)에 사용됩니다. 이미지→영상 변환, 텍스트→영상 생성을 지원합니다.
+          </div>
+        </div>
+        {status === "testing" && <div className={`${s.statusBadge} ${s.statusTesting}`}><span className={s.spin} /> 테스트 중</div>}
+        {status === "ok" && !dirty && <div className={`${s.statusBadge} ${s.statusSaved}`}>✓ 연결됨</div>}
+        {status === "error" && <div className={`${s.statusBadge} ${s.statusError}`}>✗ 실패</div>}
+        {(status === "idle" || dirty) && <div className={`${s.statusBadge} ${s.statusNone}`}>미설정</div>}
+      </div>
+
+      <div className={s.inputRow}>
+        <input
+          className={`${s.keyInput} ${isSaved && !visible ? s.masked : ""}`}
+          type={visible || !isSaved ? "text" : "password"}
+          value={isSaved && !visible ? mask(saved) : value}
+          onChange={(e: { target: HTMLInputElement }) => {
+            setValue(e.target.value); setDirty(true); setStatus("idle"); setErrorMsg("");
+          }}
+          onFocus={() => { if (isSaved) { setVisible(true); setDirty(true); } }}
+          placeholder="런웨이 API 키 입력..."
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button className={s.btnIcon} onClick={() => setVisible((v: boolean) => !v)} title={visible ? "숨기기" : "표시"} type="button">
+          {visible ? "🙈" : "👁"}
+        </button>
+        <button
+          className={s.btnSave}
+          onClick={handleSaveAndTest}
+          disabled={status === "testing" || !value.trim()}
+          type="button"
+        >
+          {status === "testing" ? "테스트 중…" : "저장 & 테스트"}
+        </button>
+      </div>
+
+      {status === "error" && errorMsg && (
+        <div style={{ fontSize: 12, color: "#f87171", marginTop: 6 }}>✗ {errorMsg}</div>
+      )}
+
+      <div className={s.docsLink}>
+        발급처:&nbsp;
+        <a href="https://app.runwayml.com/settings" target="_blank" rel="noopener noreferrer">
+          app.runwayml.com/settings ↗
+        </a>
+      </div>
+
+      {saved && (
+        <button className={s.btnClear} onClick={handleClear} type="button">✕ 키 삭제</button>
+      )}
+    </div>
+  );
+}
+
 // ── Firebase config card ──────────────────────────────────
 const FIREBASE_FIELDS = [
   { key: "wts_firebase_api_key",             label: "API Key",             placeholder: "AIzaSy..." },
@@ -651,7 +769,8 @@ export default function SettingsPage() {
     }
     const otherKeys = OTHER_KEYS.filter((k) => !!localStorage.getItem(k.storageKey)).length;
     const fbSaved = FIREBASE_FIELDS.some((f) => !!localStorage.getItem(f.key)) ? 1 : 0;
-    setSavedCount(Math.min(1, anthropicCount) + otherKeys + fbSaved);
+    const runwaySaved = localStorage.getItem(RUNWAY_STORAGE_KEY) ? 1 : 0;
+    setSavedCount(Math.min(1, anthropicCount) + otherKeys + fbSaved + runwaySaved);
   }, []);
 
   useEffect(() => {
@@ -683,6 +802,8 @@ export default function SettingsPage() {
         <KeyCard key={cfg.id} cfg={cfg} onSaved={countSaved} />
       ))}
 
+      <RunwayCard onSaved={countSaved} />
+
       <div className={s.sectionLabel} style={{ marginTop: 32 }}>Firebase 설정</div>
 
       <FirebaseCard onSaved={countSaved} />
@@ -692,6 +813,7 @@ export default function SettingsPage() {
         <pre className={s.envTipCode}>{`ANTHROPIC_API_KEY=sk-ant-api03-...
 WHISK_API_KEY=whisk-...
 REPLICATE_API_KEY=r8_...
+RUNWAY_API_KEY=...
 
 NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSy...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com

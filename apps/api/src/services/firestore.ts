@@ -38,4 +38,5 @@ export const collections = {
   seriesRoadmap: (projectId: string) =>
     db.collection("series_roadmap").doc(projectId),
   scripts: (projectId: string) => db.collection("scripts").doc(projectId),
+  settings: (docId: string) => db.collection("settings").doc(docId),
 };
