@@ -43,23 +43,37 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 마지막 대화 내용 기반으로 다음 발언자 선택 (last speaker 제외)
-function pickNextSpeaker(lastLine: string, lastSpeaker: AgentId | null): AgentId {
-  const m = lastLine.toLowerCase();
-  const candidates = AGENT_SPEAKING_ORDER_P1.filter(a => a !== lastSpeaker);
-  const find = (...ids: AgentId[]) => ids.find(a => candidates.includes(a)) ?? candidates[0];
+// 최근 대화 흐름 기반으로 다음 발언자 선택
+// - recentLines: 최근 3줄 (누가 어떤 말을 했는지)
+// - recentSpeakers: 최근 3명 발언자 (중복 방지)
+// - lastSpeaker: 방금 발언한 에이전트 (연속 발언 방지)
+function pickNextSpeaker(
+  recentLines: string[],
+  recentSpeakers: AgentId[],
+  lastSpeaker: AgentId | null,
+): AgentId {
+  const combined = recentLines.join(" ").toLowerCase();
 
-  if (/캐릭터|주인공|감정|인물|성격|매력/.test(m)) return find("character", "scenario");
-  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프/.test(m)) return find("scenario", "character");
-  if (/세계관|설정|배경|규칙|시스템|마법|능력/.test(m)) return find("worldbuilder", "researcher");
-  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오/.test(m)) return find("strategist", "researcher");
-  if (/유사|비슷|참고|작품|웹툰/.test(m)) return find("researcher", "scenario");
-  if (/그림|비주얼|스타일|연출|색감|그림체/.test(m)) return find("script", "character");
-  if (/정리|요약|방향|결론|다음|어떻게/.test(m)) return find("producer", "researcher");
+  // 최근 3턴에 발언 안 한 에이전트를 우선 후보로
+  const all = AGENT_SPEAKING_ORDER_P1.filter(a => a !== lastSpeaker);
+  const fresh = all.filter(a => !recentSpeakers.includes(a));
+  const pool = fresh.length > 0 ? fresh : all;
 
-  // 매칭 없으면 lastSpeaker 제외하고 랜덤 (producer 마지막 순위)
-  const pool = candidates.filter(a => a !== "producer");
-  return (pool.length > 0 ? pool : candidates)[Math.floor(Math.random() * (pool.length || candidates.length))];
+  const find = (...ids: AgentId[]) => ids.find(a => pool.includes(a)) ?? pool[0];
+
+  // 최근 대화 주제 → 전문 에이전트 매핑
+  if (/캐릭터|주인공|감정|인물|성격|매력|관계|빌런/.test(combined)) return find("character", "scenario");
+  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프|기승전결/.test(combined)) return find("scenario", "character");
+  if (/세계관|설정|배경|규칙|시스템|마법|능력|세계/.test(combined)) return find("worldbuilder", "researcher");
+  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오|트렌드/.test(combined)) return find("strategist", "researcher");
+  if (/유사|비슷|참고|작품|웹툰|레퍼런스|사례/.test(combined)) return find("researcher", "scenario");
+  if (/그림|비주얼|스타일|연출|색감|그림체|컷|패널/.test(combined)) return find("script", "character");
+  if (/정리|요약|방향|결론|어떻게|다음 단계/.test(combined)) return find("producer", "strategist");
+
+  // 매칭 없으면 fresh 후보 중 랜덤 (producer는 최하위 우선순위)
+  const nonProducer = pool.filter(a => a !== "producer");
+  const finalPool = nonProducer.length > 0 ? nonProducer : pool;
+  return finalPool[Math.floor(Math.random() * finalPool.length)];
 }
 
 // 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
@@ -1373,6 +1387,7 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
     let lastSpeaker: AgentId | null = null;
+    let recentSpeakers: AgentId[] = [];  // 최근 3명 발언자 (중복 방지)
     let lastUserMsg = "";   // 가장 최근 사용자 발언
     let userTurnCount = 0;  // > 0 이면 "사용자 응답 모드"
     let wrapUpProposed = false;     // 프로듀서가 마무리 제안 중
@@ -1511,12 +1526,13 @@ export default function Phase1Page() {
 
       setTurnCount(round);
 
-      // historyText: 요약 있으면 요약+직전 1줄, 없으면 최근 3줄 (초반)
+      // historyText: 요약 있으면 요약+최근 4줄, 없으면 최근 6줄 (초반)
+      // → 에이전트가 대화 흐름 전체를 보고 맥락에 맞게 반응하도록
       const lastLine = transcript[transcript.length - 1] ?? "";
-      // 사용자 발언이 활성 상태면 historyText에 고정으로 유지 (밀려나지 않게)
+      const recentContext = transcript.slice(-4).join("\n");
       const historyText = conversationSummary
-        ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
-        : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
+        ? `[지금까지 요약]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 최근 의견]: ${lastUserMsg}\n` : ""}[최근 대화]\n${recentContext}\n\n`
+        : `[대화 내용]\n${transcript.slice(-6).join("\n")}\n\n`;
 
       // 3) 명령 핸들러
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
@@ -1546,10 +1562,10 @@ export default function Phase1Page() {
 
       // 4) 마무리 제안 시점 확인 (20턴 or 대화 수렴 감지)
       const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]") && l.trim()).length;
-      // 옵션3: 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
-      const recentLines = transcript.slice(-4).join(" ");
+      // 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
+      const convergenceCheck = transcript.slice(-4).join(" ");
       const converging = agentTurnsSoFar >= 15 &&
-        (recentLines.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
+        (convergenceCheck.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
 
       if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
         wrapUpProposed = true;
@@ -1557,23 +1573,37 @@ export default function Phase1Page() {
         const wrapPrompt = `${historyText}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
         await runSingleAgent("producer", wrapPrompt, 80);
         lastSpeaker = "producer";
+        recentSpeakers = (["producer" as AgentId, ...recentSpeakers] as AgentId[]).slice(0, 3);
         continue; // 이번 턴은 프로듀서 제안으로 끝
       }
 
-      // 5) 다음 발언자: 직전 발언 맥락 기반으로 선택
-      const nextAgent = pickNextSpeaker(lastLine, lastSpeaker);
+      // 5) 다음 발언자: 최근 3줄 주제 + 최근 발언자 중복 회피로 선택
+      const speakerPickLines = transcript.slice(-3);
+      const nextAgent = pickNextSpeaker(speakerPickLines, recentSpeakers, lastSpeaker);
 
-      // 5) 프롬프트 구성
+      // 5) 프롬프트 구성 — 직전 발언자·내용을 명시해서 실제 반응 유도
       const isFirst = transcript.length <= 1;
-      const agentPrompt = isFirst
-        ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
-        : userTurnCount > 0
-          ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
-          : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
+      let agentPrompt: string;
+      if (isFirst) {
+        agentPrompt = `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`;
+      } else if (userTurnCount > 0) {
+        agentPrompt = `${historyText}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
+      } else {
+        // 직전 발언자와 내용을 추출해 맥락 있는 반응 유도 (s 플래그 대신 [\s\S]+ 사용)
+        const prevMatch = lastLine.match(/^\[([^\]]+)\]:\s*([\s\S]+)/);
+        const prevLabel = prevMatch ? prevMatch[1] : null;
+        const prevContent = prevMatch ? prevMatch[2].slice(0, 100) : null;
+        if (prevLabel && prevContent) {
+          agentPrompt = `${historyText}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
+        } else {
+          agentPrompt = `${historyText}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
+        }
+      }
 
       // 6) 에이전트 발언
-      await runSingleAgent(nextAgent, agentPrompt, 100);
+      await runSingleAgent(nextAgent, agentPrompt, 120);
       lastSpeaker = nextAgent;
+      recentSpeakers = ([nextAgent, ...recentSpeakers] as AgentId[]).slice(0, 3);
 
       // 사용자 응답 모드 카운트다운
       if (userTurnCount > 0) {
