@@ -169,6 +169,8 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
   const [imagePrompts, setImagePrompts] = useState<ImagePrompt[]>([]);
   const [sccReport, setSccReport] = useState<SccReport | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
+  const [p4DoneEps, setP4DoneEps] = useState<Set<number>>(new Set());
+  const [sccHistory, setSccHistory] = useState<Array<{ ep: number; sccRate: number }>>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Load Phase 2 MST + characters
@@ -180,12 +182,24 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
     const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
     if (p1?.data?.genre) setGenre(p1.data.genre);
 
-    // Load done episodes
-    const done = new Set<number>();
+    // Load Phase 4 done + Phase 5 done + SCC history
+    const done5 = new Set<number>();
+    const done4 = new Set<number>();
+    const history: Array<{ ep: number; sccRate: number }> = [];
     for (let i = 1; i <= 100; i++) {
-      if (localStorage.getItem(`wts_phase5_ep_${projectId}_${i}`)) done.add(i);
+      if (localStorage.getItem(`wts_phase4_ep_${projectId}_${i}`)) done4.add(i);
+      const p5ep = localStorage.getItem(`wts_phase5_ep_${projectId}_${i}`);
+      if (p5ep) {
+        done5.add(i);
+        try {
+          const data = JSON.parse(p5ep) as { sccRate: number };
+          history.push({ ep: i, sccRate: data.sccRate });
+        } catch { /* ignore */ }
+      }
     }
-    setDoneEps(done);
+    setDoneEps(done5);
+    setP4DoneEps(done4);
+    setSccHistory(history.sort((a, b) => a.ep - b.ep));
   }, [projectId]);
 
   useEffect(() => {
@@ -306,6 +320,10 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
 
       // Save completion
       setDoneEps((prev: Set<number>) => new Set([...prev, ep]));
+      setSccHistory((prev: Array<{ ep: number; sccRate: number }>) => {
+        const filtered = prev.filter(h => h.ep !== ep);
+        return [...filtered, { ep, sccRate: overallRate }].sort((a, b) => a.ep - b.ep);
+      });
       localStorage.setItem(`wts_phase5_ep_${projectId}_${ep}`, JSON.stringify({
         sccRate: overallRate,
         savedAt: new Date().toISOString(),
@@ -424,6 +442,63 @@ export default function Phase5Page({ params }: { params: { projectId: string } }
               <span className={s.charName}>{c.name}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ─── Phase 4 Pending + SCC History ─── */}
+      {(p4DoneEps.size > 0 || sccHistory.length > 0) && (
+        <div style={{ background: "#16161f", border: "1px solid #2a2a3d", borderRadius: 14, padding: "14px 18px", display: "flex", flexDirection: "column" as const, gap: 12 }}>
+          {/* Phase 4 대기 중인 화 */}
+          {(() => {
+            const pending = [...p4DoneEps].filter(ep => !doneEps.has(ep)).sort((a, b) => a - b);
+            if (pending.length === 0) return null;
+            return (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 6 }}>
+                  ⏳ Phase 4 완료 → Phase 5 대기 ({pending.length}화)
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
+                  {pending.map(ep => (
+                    <button
+                      key={ep}
+                      onClick={() => setSelectedEp(ep)}
+                      style={{
+                        background: ep === selectedEp ? "rgba(251,191,36,0.15)" : "rgba(251,191,36,0.06)",
+                        border: `1px solid ${ep === selectedEp ? "rgba(251,191,36,0.5)" : "rgba(251,191,36,0.2)"}`,
+                        borderRadius: 6, color: "#fbbf24", fontSize: 12, fontWeight: 700,
+                        padding: "4px 10px", cursor: "pointer",
+                      }}
+                    >
+                      {ep}화
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+          {/* SCC 히스토리 */}
+          {sccHistory.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 8 }}>
+                ✅ SCC 검증 완료 ({sccHistory.length}화)
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
+                {sccHistory.map(({ ep, sccRate }: { ep: number; sccRate: number }) => {
+                  const color = sccRate >= 0.82 ? "#22c55e" : sccRate >= 0.70 ? "#f59e0b" : "#ef4444";
+                  return (
+                    <div
+                      key={ep}
+                      style={{ background: `${color}10`, border: `1px solid ${color}30`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}
+                      onClick={() => setSelectedEp(ep)}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 700, color }}>{ep}화</span>
+                      <span style={{ fontSize: 10, color: "#64748b", marginLeft: 4 }}>{Math.round(sccRate * 100)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
