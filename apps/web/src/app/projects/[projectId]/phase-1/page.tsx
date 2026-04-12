@@ -8,7 +8,10 @@ import {
   RadialBarChart, RadialBar,
   ResponsiveContainer, Legend, Tooltip,
 } from "recharts";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc, setDoc, getDoc, serverTimestamp,
+  collection, addDoc, getDocs, query, where, orderBy, limit,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { streamClaude, fetchImagesWithClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
 import { AGENT_PERSONAS, DEBATE_RULES, USER_COMMAND_PATTERNS } from "./debate-config";
@@ -1459,37 +1462,98 @@ export default function Phase1Page() {
     let turnsInWindow = 0;            // 현재 20턴 윈도우 카운터
     let windowBuffer: string[] = [];  // 현재 윈도우 발언 버퍼
 
-    // localStorage에서 이전 메모리 복원 (중단 후 재개 시)
+    // ── 메모리 복원: Firestore 우선, localStorage 폴백 ──
     const MEMORY_KEY = `p1_memory_${projectId}`;
-    try {
-      const saved = localStorage.getItem(MEMORY_KEY);
-      if (saved) {
-        const m = JSON.parse(saved) as {
-          rolling?: string; market?: string; similar?: string;
-          strengths?: string; worldbuilding?: string;
-          turnsInWindow?: number; windowBuffer?: string[];
-        };
-        if (m.rolling)       rollingSummary    = m.rolling;
-        if (m.market)        topicMarket       = m.market;
-        if (m.similar)       topicSimilar      = m.similar;
-        if (m.strengths)     topicStrengths    = m.strengths;
-        if (m.worldbuilding) topicWorldbuilding = m.worldbuilding;
-        if (m.turnsInWindow) turnsInWindow     = m.turnsInWindow;
-        if (m.windowBuffer)  windowBuffer      = m.windowBuffer;
-      }
-    } catch { /* quota or parse error */ }
+    const TURNS_COL  = `p1_turns_${projectId}`;   // Firestore 컬렉션명
+    const MEMORY_DOC = () => db ? doc(db, "p1_memory", projectId) : null;
 
-    // 메모리 전체를 localStorage에 저장하는 헬퍼
-    const saveMemory = () => {
+    // Firestore에서 메모리 로드
+    if (db) {
       try {
-        localStorage.setItem(MEMORY_KEY, JSON.stringify({
-          rolling: rollingSummary,
-          market: topicMarket, similar: topicSimilar,
-          strengths: topicStrengths, worldbuilding: topicWorldbuilding,
-          turnsInWindow, windowBuffer,
-          savedAt: new Date().toISOString(),
-        }));
-      } catch { /* quota */ }
+        const snap = await getDoc(doc(db, "p1_memory", projectId));
+        if (snap.exists()) {
+          const m = snap.data() as {
+            rolling?: string; market?: string; similar?: string;
+            strengths?: string; worldbuilding?: string;
+            turnsInWindow?: number; windowBuffer?: string[];
+          };
+          if (m.rolling)       rollingSummary     = m.rolling;
+          if (m.market)        topicMarket        = m.market;
+          if (m.similar)       topicSimilar       = m.similar;
+          if (m.strengths)     topicStrengths     = m.strengths;
+          if (m.worldbuilding) topicWorldbuilding = m.worldbuilding;
+          if (m.turnsInWindow) turnsInWindow      = m.turnsInWindow;
+          if (m.windowBuffer)  windowBuffer       = m.windowBuffer;
+        }
+      } catch { /* Firestore unavailable → fallback */ }
+    }
+    // Firestore에 없으면 localStorage 폴백
+    if (!rollingSummary) {
+      try {
+        const saved = localStorage.getItem(MEMORY_KEY);
+        if (saved) {
+          const m = JSON.parse(saved) as {
+            rolling?: string; market?: string; similar?: string;
+            strengths?: string; worldbuilding?: string;
+            turnsInWindow?: number; windowBuffer?: string[];
+          };
+          if (m.rolling)       rollingSummary     = m.rolling;
+          if (m.market)        topicMarket        = m.market;
+          if (m.similar)       topicSimilar       = m.similar;
+          if (m.strengths)     topicStrengths     = m.strengths;
+          if (m.worldbuilding) topicWorldbuilding = m.worldbuilding;
+          if (m.turnsInWindow) turnsInWindow      = m.turnsInWindow;
+          if (m.windowBuffer)  windowBuffer       = m.windowBuffer;
+        }
+      } catch { /* quota or parse error */ }
+    }
+
+    // 메모리 저장: Firestore 기본, localStorage 동시 백업
+    const saveMemory = () => {
+      const payload = {
+        rolling: rollingSummary,
+        market: topicMarket, similar: topicSimilar,
+        strengths: topicStrengths, worldbuilding: topicWorldbuilding,
+        turnsInWindow, windowBuffer,
+        savedAt: new Date().toISOString(),
+      };
+      // Firestore (비동기, 백그라운드)
+      const mdoc = MEMORY_DOC();
+      if (mdoc) void setDoc(mdoc, { ...payload, savedAt: serverTimestamp() }).catch(() => {});
+      // localStorage (동기, 폴백)
+      try { localStorage.setItem(MEMORY_KEY, JSON.stringify(payload)); } catch { /* quota */ }
+    };
+
+    // ── 발언 1개를 Firestore에 저장 (RAG 검색 대상) ──
+    // topic 태그로 분류 → 나중에 벡터 임베딩 추가 시 vector 필드만 추가하면 됨
+    const saveTurn = (text: string, speaker: AgentId, turnNum: number) => {
+      if (!db) return;
+      const topic = AGENT_TOPIC[speaker] ?? "market";
+      void addDoc(collection(db, TURNS_COL), {
+        text, speaker, topic, turn: turnNum,
+        isUser: speaker === "user",
+        createdAt: serverTimestamp(),
+        // vector: null  ← 나중에 임베딩 API 연동 시 여기에 추가
+      }).catch(() => {});
+    };
+
+    // ── 에이전트 전문 주제의 관련 과거 발언을 Firestore에서 검색 ──
+    // V1: topic 기준 최신 5개 (turn 내림차순)
+    // V2 (예정): findNearest(vector, queryVector, {limit:5}) 로 교체
+    const fetchRelevantTurns = async (agentId: AgentId): Promise<string[]> => {
+      if (!db) return [];
+      try {
+        const topic = AGENT_TOPIC[agentId] ?? "market";
+        const q = query(
+          collection(db, TURNS_COL),
+          where("topic", "==", topic),
+          orderBy("turn", "desc"),
+          limit(5),
+        );
+        const snap = await getDocs(q);
+        // 오래된 것부터 정렬해서 반환 (시간 순서로 읽히도록)
+        return snap.docs.map((d: import("firebase/firestore").QueryDocumentSnapshot) => d.data().text as string).reverse();
+      } catch { return []; }
     };
 
     // 에이전트 → 전문 주제 매핑
@@ -1567,17 +1631,22 @@ export default function Phase1Page() {
       })();
     };
 
-    // 에이전트별 컨텍스트 빌더 — 전체 요약 + 전문 주제 요약 + 최근 6줄
-    const buildAgentContext = (agentId: AgentId): string => {
+    // 에이전트별 컨텍스트 빌더 — 전체 요약 + 전문 주제 요약 + Firestore 관련 발언 + 최근 6줄
+    const buildAgentContext = async (agentId: AgentId): Promise<string> => {
       const topicKey = AGENT_TOPIC[agentId] ?? "market";
       const topicContent = {
         market: topicMarket, similar: topicSimilar,
         strengths: topicStrengths, worldbuilding: topicWorldbuilding,
       }[topicKey];
       const label = TOPIC_LABEL[topicKey];
+
+      // Firestore에서 해당 주제의 관련 과거 발언 검색 (RAG)
+      const relevantTurns = await fetchRelevantTurns(agentId);
+
       const parts: string[] = [];
-      if (rollingSummary) parts.push(`[전체 토론 요약]\n${rollingSummary}`);
-      if (topicContent) parts.push(`[${label}]\n${topicContent}`);
+      if (rollingSummary)          parts.push(`[전체 토론 요약]\n${rollingSummary}`);
+      if (topicContent)            parts.push(`[${label}]\n${topicContent}`);
+      if (relevantTurns.length > 0) parts.push(`[${label} 관련 과거 발언]\n${relevantTurns.join("\n")}`);
       parts.push(`[최근 대화]\n${transcript.slice(-6).join("\n")}`);
       return parts.join("\n\n") + "\n\n";
     };
@@ -1618,6 +1687,7 @@ export default function Phase1Page() {
           addMsg("user", round, pendingMsg, false);
         }
         transcript.push(`[사용자]: ${pendingMsg}`);
+        saveTurn(`[사용자]: ${pendingMsg}`, "user", round); // 사용자 발언도 Firestore 저장
         round++;
         lastUserMsg = pendingMsg;
         userTurnCount = 4; // 4턴 동안 사용자 의견을 context에 유지
@@ -1685,8 +1755,8 @@ export default function Phase1Page() {
       const speakerPickLines = transcript.slice(-3);
       const nextAgent = pickNextSpeaker(speakerPickLines, recentSpeakers, lastSpeaker);
 
-      // 5) 에이전트별 맞춤 컨텍스트 (전체 요약 + 전문 주제 요약 + 최근 6줄)
-      const agentCtx = buildAgentContext(nextAgent);
+      // 5) 에이전트별 맞춤 컨텍스트 (전체 요약 + 전문 주제 요약 + Firestore 관련 발언 + 최근 6줄)
+      const agentCtx = await buildAgentContext(nextAgent);
 
       // 6) 프롬프트 구성 — 직전 발언자·내용을 명시해서 실제 반응 유도
       const isFirst = transcript.length <= 1;
@@ -1711,9 +1781,12 @@ export default function Phase1Page() {
       await runSingleAgent(nextAgent, agentPrompt, 120);
       lastSpeaker = nextAgent;
       recentSpeakers = ([nextAgent, ...recentSpeakers] as AgentId[]).slice(0, 3);
-      // 윈도우 버퍼에 추가 (마지막 발언이 방금 push됐으므로 transcript 끝에서 가져옴)
+      // 발언 완료 후 Firestore 저장 + 윈도우 버퍼 추가
       const lastAdded = transcript[transcript.length - 1];
-      if (lastAdded) windowBuffer.push(lastAdded);
+      if (lastAdded) {
+        saveTurn(lastAdded, nextAgent, round);  // Firestore RAG 저장
+        windowBuffer.push(lastAdded);
+      }
 
       // 사용자 응답 모드 카운트다운
       if (userTurnCount > 0) {
