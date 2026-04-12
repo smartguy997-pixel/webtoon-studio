@@ -68,24 +68,47 @@ interface Msg {
 
 type DebatePhase = "idle" | "running" | "paused" | "generating" | "done";
 
-const ARC_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6"];
+const ARC_COLORS = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6", "#a78bfa"];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
+// Phase 1 화수 문자열 → 숫자 (미정 → 0)
+function parseEpCount(raw: string): number {
+  const m = raw.match(/(\d+)/);
+  return m ? parseInt(m[1]) : 0;
+}
+
+// 화수에 따른 권장 막 구조
+function getArcGuide(epCount: number): string {
+  if (epCount === 0) return "화수 미정 — 서사에 맞는 막 구조를 자유롭게 제안하세요";
+  if (epCount <= 20) return `${epCount}화 — 2막 구조 권장 (단편 완결형)`;
+  if (epCount <= 40) return `${epCount}화 — 2막 구조 권장 (발단·해소 중심)`;
+  if (epCount <= 60) return `${epCount}화 — 3막 구조 권장 (발단·전개·결말)`;
+  if (epCount <= 80) return `${epCount}화 — 3~4막 구조 권장`;
+  return `${epCount}화 — 4막 구조 권장 (발단·전개·위기·결말)`;
+}
+
 // ─── 에이전트 1명용 시스템 프롬프트 ───────────────────────────────────────────
 
-function buildAgentPromptP3(agentId: AgentId, genre: string, context: string): string {
+function buildAgentPromptP3(agentId: AgentId, genre: string, context: string, episodeTarget: string): string {
   const agentLabel = AGENTS[agentId].label;
   const personality = AGENT_PROMPTS_P3[agentId] ?? "";
-  return `당신은 Phase 3 100화 시리즈 로드맵 회의의 ${agentLabel}입니다.
+  const epNum = parseEpCount(episodeTarget);
+  const epDesc = epNum > 0 ? `${epNum}화` : "화수 미정";
+  return `당신은 Phase 3 시리즈 로드맵 회의의 ${agentLabel}입니다.
 성격·역할: ${personality}
 장르: ${genre}
 
 Phase 1·2에서 확정된 기획·세계관:
 ${context}
 
+[현재 목표 화수]
+Phase 1 계획: ${epDesc}
+단, 서사가 더 필요하다면 자유롭게 화수 확장을 제안하세요.
+서사가 충분히 짧게 완결된다면 화수를 줄이는 것도 좋습니다.
+
 [규칙]
-- 이전 발언을 읽고 직접 반응하거나, 100화 4막 구조 설계에 새로운 관점을 제시하세요.
+- 이전 발언을 읽고 직접 반응하거나, 로드맵 구조·화수 결정에 새로운 관점을 제시하세요.
 - 오직 당신의 대사만 출력. [이름]: 같은 접두어 없이.
 - 다른 참여자 대사를 쓰지 마세요.
 - 1~2문장, 카카오톡처럼 짧고 자연스러운 구어체.
@@ -95,19 +118,27 @@ ${context}
 
 // ─── Card generation prompts (run AFTER conversation ends) ────────────────────
 
-function buildRoadmapGenPrompt(genre: string, debateContext: string): string {
-  return `당신은 AI Webtoon Studio 시나리오 작가입니다. Phase 3 100화 4막 로드맵 카드를 생성합니다.
+function buildRoadmapGenPrompt(genre: string, debateContext: string, episodeTarget: string): string {
+  const epNum = parseEpCount(episodeTarget);
+  const arcGuide = getArcGuide(epNum);
+  const arcColors = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6"];
+  return `당신은 AI Webtoon Studio 시나리오 작가입니다. Phase 3 시리즈 로드맵 카드를 생성합니다.
 
 토론 결과:
 ${debateContext.slice(0, 2000)}
 
 장르: ${genre}
+${arcGuide}
 
-위 토론에서 결정된 내용을 바탕으로 4막 구조 로드맵 JSON을 생성하세요.
-반드시 아래 형식으로 출력하세요:
+위 토론에서 에이전트들이 결정한 최종 화수와 막 구조를 반영하여 로드맵 JSON을 생성하세요.
+- 막 수는 2~5막 사이에서 서사에 맞게 결정 (${epNum > 0 ? `Phase 1 목표: ${epNum}화` : "화수 미정, 토론에서 결정"})
+- 각 막의 화수 범위와 비율은 서사 흐름에 맞게 자유롭게 설정
+- 아크 색상은 순서대로 ${arcColors.join(", ")} 사용
+
+반드시 아래 형식으로 출력하세요 (막 수와 화수 범위를 실제 결정된 값으로 채우세요):
 
 [ROADMAP_CARD]
-{"arcs":[{"num":1,"name":"막 이름","theme":"핵심 테마","eps":[1,25],"color":"#60a5fa"},{"num":2,"name":"막 이름","theme":"핵심 테마","eps":[26,50],"color":"#34d399"},{"num":3,"name":"막 이름","theme":"핵심 테마","eps":[51,75],"color":"#fbbf24"},{"num":4,"name":"막 이름","theme":"핵심 테마","eps":[76,100],"color":"#f472b6"}],"totalEps":100}
+{"arcs":[{"num":1,"name":"막 이름","theme":"핵심 테마","eps":[1,15],"color":"#60a5fa"},{"num":2,"name":"막 이름","theme":"핵심 테마","eps":[16,30],"color":"#34d399"}],"totalEps":30}
 [/ROADMAP_CARD]`;
 }
 
@@ -115,20 +146,21 @@ function buildEpisodeGenPrompt(
   arcNum: number, arcName: string, arcTheme: string, epsRange: [number, number],
   genre: string, debateContext: string,
 ): string {
-  const arcColor = ARC_COLORS[arcNum - 1];
+  const arcColor = ARC_COLORS[(arcNum - 1) % ARC_COLORS.length];
+  const epCount = epsRange[1] - epsRange[0] + 1;
   return `당신은 AI Webtoon Studio 시나리오 작가입니다. ${arcNum}막 에피소드 카드를 생성합니다.
 
 토론 결과: ${debateContext.slice(0, 1000)}
 장르: ${genre}
 담당 막: ${arcNum}막 "${arcName}" — ${arcTheme} (EP ${epsRange[0]}–${epsRange[1]})
 
-EP ${epsRange[0]}~${epsRange[1]} 총 25화를 정확히 생성하세요. tension은 1(저)~5(고).
+EP ${epsRange[0]}~${epsRange[1]} 총 ${epCount}화를 정확히 생성하세요. tension은 1(저)~5(고).
 
 [EPISODE_CARD_${arcNum}]
 {"episodes":[{"ep":${epsRange[0]},"title":"화 제목","event":"핵심 사건","characters":["주인공"],"emotion":"감정 키워드","foreshadow":"","cliffhanger":"","arc":${arcNum},"tension":3}],"arcLabel":"${arcNum}막 — ${arcName}","arcColor":"${arcColor}"}
 [/EPISODE_CARD_${arcNum}]
 
-정확히 25개 에피소드 객체 생성. JSON만 출력.`;
+정확히 ${epCount}개 에피소드 객체 생성. JSON만 출력.`;
 }
 
 
@@ -358,6 +390,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   const [turnCount, setTurnCount] = useState(0);
   const [startEp, setStartEp] = useState(1);
   const [episodeCardsData, setEpisodeCardsData] = useState<EpisodeCard[]>([]);
+  const [episodeTarget, setEpisodeTarget] = useState("30화"); // Phase 1에서 가져온 목표 화수
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
@@ -369,6 +402,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.genre) setGenre(p1.input.genre);
+      if (p1?.input?.episodeCount) setEpisodeTarget(p1.input.episodeCount as string);
 
       const savedConv = localStorage.getItem(`p3_conv_${projectId}`);
       if (savedConv) savedConvRef.current = JSON.parse(savedConv) as string[];
@@ -438,20 +472,23 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     setDebatePhase("generating");
 
     let phase1Summary = `장르: ${genre}`;
+    let epTarget = episodeTarget;
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.concept) phase1Summary += `\n기획: ${p1.input.concept}`;
       if (p1?.data?.summary) phase1Summary += `\nPhase1 요약: ${p1.data.summary}`;
+      if (p1?.input?.episodeCount) epTarget = p1.input.episodeCount as string;
       const p2 = JSON.parse(localStorage.getItem(`wts_phase2_${projectId}`) ?? "null");
       if (p2?.world?.era) phase1Summary += `\n세계관: ${p2.world.era}`;
     } catch { /* ignore */ }
 
     const context = `${phase1Summary}\n\n[토론 내용]\n${debateContext.slice(0, 2000)}`;
+    const epNum = parseEpCount(epTarget);
 
     // ── 1. Roadmap card ──
     const rmId = addMsg("scenario", 0, "로드맵 생성 중...", true, "card", "roadmap");
     let rmText = "";
-    for await (const chunk of streamClaude({ apiKey, systemPrompt: buildRoadmapGenPrompt(genre, context), messages: [{ role: "user", content: "100화 4막 로드맵을 생성해주세요." }], maxTokens: 1500 })) {
+    for await (const chunk of streamClaude({ apiKey, systemPrompt: buildRoadmapGenPrompt(genre, context, epTarget), messages: [{ role: "user", content: `${epTarget} 시리즈 로드맵을 생성해주세요. 토론에서 결정된 화수와 막 구조를 반영하세요.` }], maxTokens: 1500 })) {
       rmText += chunk;
       updateMsg(rmId, `로드맵 생성 중... (${rmText.length}자)`, true);
     }
@@ -462,20 +499,25 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       updateMsg(rmId, rmText, false, { type: "text" });
     }
 
-    // ── 2. Episode cards (4 arcs) ──
+    // ── 2. Episode cards — 로드맵에서 결정된 막 수만큼 생성 ──
     const episodeCards: EpisodeCard[] = [];
-    for (let arcNum = 1; arcNum <= 4; arcNum++) {
-      const arc = roadmapCard?.arcs[arcNum - 1];
+    const arcCount = roadmapCard?.arcs.length ?? (epNum > 60 ? 4 : epNum > 40 ? 3 : 2);
+    for (let arcIdx = 0; arcIdx < arcCount; arcIdx++) {
+      const arcNum = arcIdx + 1;
+      const arc = roadmapCard?.arcs[arcIdx];
       const arcName = arc?.name ?? `${arcNum}막`;
       const arcTheme = arc?.theme ?? "전개";
-      const epsRange: [number, number] = arc?.eps ?? [(arcNum - 1) * 25 + 1, arcNum * 25];
+      const defaultStart = arcIdx === 0 ? 1 : Math.round((epNum / arcCount) * arcIdx) + 1;
+      const defaultEnd = arcIdx === arcCount - 1 ? epNum || 30 : Math.round((epNum / arcCount) * (arcIdx + 1));
+      const epsRange: [number, number] = arc?.eps ?? [defaultStart, defaultEnd];
+      const epCount = epsRange[1] - epsRange[0] + 1;
 
       const epId = addMsg("scenario", 0, `${arcNum}막 에피소드 생성 중...`, true, "card", "episode");
       let epText = "";
-      for await (const chunk of streamClaude({ apiKey, systemPrompt: buildEpisodeGenPrompt(arcNum, arcName, arcTheme, epsRange, genre, context), messages: [{ role: "user", content: `${arcNum}막 에피소드를 생성해주세요.` }], maxTokens: 8000 })) {
+      for await (const chunk of streamClaude({ apiKey, systemPrompt: buildEpisodeGenPrompt(arcNum, arcName, arcTheme, epsRange, genre, context), messages: [{ role: "user", content: `${arcNum}막 에피소드 ${epCount}개를 생성해주세요.` }], maxTokens: Math.max(3000, epCount * 120) })) {
         epText += chunk;
         const cnt = (epText.match(/"ep":/g) ?? []).length;
-        if (cnt > 0) updateMsg(epId, `${arcNum}막 에피소드 생성 중... (${cnt}/25화)`, true);
+        if (cnt > 0) updateMsg(epId, `${arcNum}막 에피소드 생성 중... (${cnt}/${epCount}화)`, true);
       }
       const epCard = parseBlock<EpisodeCard>(epText, `EPISODE_CARD_${arcNum}`);
       if (epCard) {
@@ -488,15 +530,16 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     }
 
     // ── Save ──
-    const arcSummary = roadmapCard ? roadmapCard.arcs.map(a => `${a.num}막: ${a.name}`).join(", ") : "";
-    contextRef.current = `${phase1Summary}\n로드맵: ${arcSummary}`;
+    const totalEps = roadmapCard?.totalEps ?? episodeCards.flatMap(ec => ec.episodes).length;
+    const arcSummary = roadmapCard ? roadmapCard.arcs.map(a => `${a.num}막: ${a.name}(${a.eps[0]}~${a.eps[1]}화)`).join(", ") : "";
+    contextRef.current = `${phase1Summary}\n목표화수: ${epTarget}\n로드맵: ${arcSummary}`;
     localStorage.setItem(`wts_phase3_${projectId}`, JSON.stringify({
-      roadmapCard, episodeCards, context: contextRef.current, genre,
+      roadmapCard, episodeCards, context: contextRef.current, genre, episodeTarget: epTarget, totalEps,
     }));
     if (episodeCards.length > 0) setEpisodeCardsData(episodeCards);
     setRoadmapDone(true);
     setDebatePhase("done");
-  }, [genre, projectId, addMsg, updateMsg]);
+  }, [genre, projectId, episodeTarget, addMsg, updateMsg]);
 
   // ── Debate loop: 에이전트 1명씩 별도 API 호출 ──
   const runDebate = useCallback(async (resumeTranscript?: string[]) => {
@@ -509,10 +552,12 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     setApiError(null);
 
     let context = `장르: ${genre}`;
+    let epTarget = episodeTarget;
     try {
       const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${projectId}`) ?? "null");
       if (p1?.input?.concept) context += `\n기획: ${p1.input.concept}`;
       if (p1?.data?.summary) context += `\nPhase 1 요약: ${p1.data.summary}`;
+      if (p1?.input?.episodeCount) { epTarget = p1.input.episodeCount as string; setEpisodeTarget(epTarget); }
       const p2 = JSON.parse(localStorage.getItem(`wts_phase2_${projectId}`) ?? "null");
       if (p2?.world?.era) context += `\n세계관: ${p2.world.era} / ${p2.world?.atmosphere ?? ""}`;
     } catch { /* ignore */ }
@@ -530,7 +575,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
         // 이번 발언자 결정
         const agentId = DEBATE_AGENTS_P3[(round - 1) % DEBATE_AGENTS_P3.length];
-        const systemPrompt = buildAgentPromptP3(agentId, genre, context);
+        const systemPrompt = buildAgentPromptP3(agentId, genre, context, epTarget);
 
         // 최근 30줄 컨텍스트
         const recentLines = transcript.slice(-30);
@@ -538,9 +583,10 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
           ? `[지금까지 토론 내용]\n${recentLines.join("\n")}\n\n`
           : "";
 
+        const epDesc = parseEpCount(epTarget) > 0 ? epTarget : "화수 미정";
         const userContent = round === 1
-          ? `Phase 3 시작. ${context}\n\n100화 시리즈 로드맵을 함께 설계해봅시다. 4막 구조로 각 막 25화씩 구성합니다.`
-          : `${historyText}당신의 차례입니다. 로드맵 설계에 대한 의견을 말해주세요.`;
+          ? `Phase 3 시작. ${context}\n\nPhase 1 목표 화수: ${epDesc}\n\n이 서사를 ${epDesc}로 완결할 것인지, 더 확장이 필요한지 논의해봅시다. 막 구조와 전체 화수를 함께 결정해주세요.`
+          : `${historyText}당신의 차례입니다. 화수·막 구조·로드맵 설계에 대한 의견을 말해주세요.`;
 
         const id = addMsg(agentId, round, "", true);
 
@@ -638,8 +684,11 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     return (
       <div className={s.page}>
         <div className={s.formWrap}>
-          <h1 className={s.formTitle}>Phase 3 — 100화 시리즈 로드맵</h1>
-          <p className={s.formDesc}>에이전트들이 자유 토론으로 100화 4막 구조 로드맵과 에피소드를 함께 설계합니다.</p>
+          <h1 className={s.formTitle}>Phase 3 — {episodeTarget} 시리즈 로드맵</h1>
+          <p className={s.formDesc}>
+            에이전트들이 Phase 1 목표({episodeTarget})를 바탕으로 로드맵을 설계합니다.<br />
+            토론 중 화수 확장·축소를 자유롭게 제안할 수 있습니다.
+          </p>
           {apiError && <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: "#f87171" }}>⚠ {apiError}</div>}
           <div className={s.formCard}>
             <div className={s.prereqNote}>Phase 1·2 기획·세계관 데이터를 자동으로 불러옵니다.</div>
@@ -655,7 +704,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
       <div className={s.chatLayout}>
         {/* Header */}
         <div className={s.chatHeader}>
-          <span className={s.chatHeaderTitle}>Phase 3 — 100화 시리즈 로드맵</span>
+          <span className={s.chatHeaderTitle}>Phase 3 — {episodeTarget} 시리즈 로드맵</span>
           <span className={s.turnBadge}>{turnCount}턴</span>
           {debatePhase === "running" && <span className={s.liveDot} />}
           {debatePhase === "generating" && <span style={{ fontSize: 12, color: "#fbbf24", marginLeft: 8 }}>🗺 로드맵 생성 중...</span>}
@@ -689,7 +738,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
           <div className={s.gatingRow}>
             <div className={s.gatingBanner}>
               <div className={s.gatingText}>
-                <strong>✓ 100화 로드맵 완성</strong>
+                <strong>✓ {episodeCardsData.flatMap(ec => ec.episodes).length || episodeTarget} 로드맵 완성</strong>
                 <span>특정 화 수정: "N화 수정: [의견]" · Phase 4에서 대본을 작성할 화를 선택하세요</span>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>

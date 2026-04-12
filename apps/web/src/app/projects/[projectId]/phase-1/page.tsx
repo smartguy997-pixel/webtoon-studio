@@ -142,6 +142,15 @@ const MOCK_RESULT: Phase1Result = {
   feasibility_breakdown: { market: 88, originality: 82, producibility: 78, commercial: 87 },
   verdict: "go",
   summary: "헌터물 포화 시장에서 '관계 서사+도덕적 딜레마' 차별화로 네이버 10~20대 공략 가능. Phase 2 적극 권장.",
+  genre_analysis: { genre: "헌터 판타지", trend: "관계 서사 하이브리드 부상", audience: "10~20대 남성", key_success: "성장+감정 균형" },
+  market_analysis: { platform: "네이버웹툰", market_size: "2조 원+", growth: "연 12%", competition_level: "높음", opportunity: "단순 성장물 공백 공략" },
+  similar_works: [
+    { title: "나 혼자만 레벨업", platform: "카카오페이지", similarity: "스탯+성장 판타지", lesson: "압도적 스펙터클 필수, 관계 서사 보완 필요" },
+    { title: "전지적 독자시점", platform: "네이버웹툰", similarity: "메타 서사+몰입", lesson: "신규 독자 진입 장벽 최소화" },
+  ],
+  strengths: ["관계 서사+도덕 딜레마 차별화", "글로벌 IP 확장성", "세로 스크롤 최적 연출"],
+  weaknesses: ["헌터물 클리셰 리스크", "빌런 동기 논리 보완 필요"],
+  improvements: ["Phase 2에서 능력 체계 명확화", "빌런 배경 서사 구체화"],
   usp: [
     {
       icon: "⚡",
@@ -1117,7 +1126,7 @@ const PLATFORMS = [
 ] as const;
 type PlatformValue = typeof PLATFORMS[number]["value"];
 
-const EPISODE_COUNTS = ["50화", "100화", "150화", "200화", "미정"] as const;
+const EPISODE_COUNTS = ["30화", "50화", "100화", "150화", "200화", "미정"] as const;
 type EpisodeCount = typeof EPISODE_COUNTS[number];
 
 export default function Phase1Page() {
@@ -1129,7 +1138,7 @@ export default function Phase1Page() {
   const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
   const [genre, setGenre] = useState(GENRES[0]);
   const [platform, setPlatform] = useState<PlatformValue>("undecided");
-  const [episodeCount, setEpisodeCount] = useState<EpisodeCount>("100화");
+  const [episodeCount, setEpisodeCount] = useState<EpisodeCount>("30화");
   const [concept, setConcept] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [result, setResult] = useState<Phase1Result | null>(null);
@@ -1269,12 +1278,13 @@ export default function Phase1Page() {
 
     // Write cross-phase canonical key so Phase 2/3/4/5 can read Phase 1 data.
     // Structure covers all access patterns used across the codebase:
-    //   p1?.input?.genre  (Phase 2, 3, 4)
-    //   p1?.data?.genre   (Phase 5)
+    //   p1?.input?.genre        (Phase 2, 3, 4)
+    //   p1?.input?.episodeCount (Phase 3 — 화수 계획)
+    //   p1?.data?.genre         (Phase 5)
     //   p1?.data?.feasibility_score  (Projects list)
     localStorage.setItem(`wts_phase1_${projectId}`, JSON.stringify({
-      input: { genre: g, concept: c, savedAt },
-      data: { ...res, genre: g, concept: c, savedAt },
+      input: { genre: g, concept: c, episodeCount: ep, platform: plat, savedAt },
+      data: { ...res, genre: g, concept: c, episodeCount: ep, savedAt },
     }));
 
     // Best-effort Firestore save
