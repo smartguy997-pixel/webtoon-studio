@@ -225,6 +225,87 @@ function RoadmapCardView({ card }: { card: RoadmapCard }) {
   );
 }
 
+// ─── 완급 타임라인 ────────────────────────────────────────────────────────────
+
+function PacingTimeline({ episodeCards }: { episodeCards: EpisodeCard[] }) {
+  const [hoveredEp, setHoveredEp] = useState<number | null>(null);
+  const allEps = episodeCards.flatMap((ec: EpisodeCard) => ec.episodes).sort((a: EpisodeDetail, b: EpisodeDetail) => a.ep - b.ep);
+  if (allEps.length === 0) return null;
+
+  const tensionBg = ["", "#16a34a", "#65a30d", "#ca8a04", "#ea580c", "#dc2626"];
+  const arcColors = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6"];
+
+  return (
+    <div style={{ background: "#16161f", border: "1px solid #2a2a3d", borderRadius: 14, padding: 18, maxWidth: 780 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 12 }}>
+        📈 완급 타임라인 — {allEps.length}화
+      </div>
+      <div style={{ overflowX: "auto", paddingBottom: 6 }}>
+        <div style={{ display: "flex", gap: 2, height: 32, minWidth: 500, position: "relative" as const }}>
+          {allEps.map((ep: EpisodeDetail) => {
+            const t = Math.max(1, Math.min(5, ep.tension || 3));
+            const isH = hoveredEp === ep.ep;
+            return (
+              <div
+                key={ep.ep}
+                style={{
+                  flex: 1, minWidth: 5,
+                  background: tensionBg[t],
+                  borderRadius: 3,
+                  opacity: isH ? 1 : 0.65,
+                  position: "relative" as const,
+                  cursor: "pointer",
+                  transition: "opacity 0.1s, transform 0.1s",
+                  transform: isH ? "scaleY(1.2)" : "scaleY(1)",
+                  transformOrigin: "bottom",
+                }}
+                onMouseEnter={() => setHoveredEp(ep.ep)}
+                onMouseLeave={() => setHoveredEp(null)}
+              >
+                {ep.cliffhanger && (
+                  <div style={{ position: "absolute" as const, top: -7, left: "50%", transform: "translateX(-50%)", fontSize: 8, lineHeight: 1 }}>⚡</div>
+                )}
+                {isH && (
+                  <div style={{
+                    position: "absolute" as const, bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
+                    background: "#1e1e2a", border: "1px solid #3a3a5a", borderRadius: 8,
+                    padding: "8px 10px", fontSize: 11, whiteSpace: "nowrap" as const, color: "#f1f5f9",
+                    zIndex: 20, pointerEvents: "none" as const, boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+                    minWidth: 140,
+                  }}>
+                    <div style={{ fontWeight: 700, marginBottom: 2 }}>{ep.ep}화 — {ep.title}</div>
+                    <div style={{ color: tensionBg[t], fontSize: 10 }}>긴장도 {t}/5</div>
+                    {ep.cliffhanger && <div style={{ color: "#fbbf24", fontSize: 10, marginTop: 2 }}>⚡ {ep.cliffhanger.slice(0, 40)}</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" as const, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+          {episodeCards.map((ec: EpisodeCard, i: number) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: arcColors[i] ?? "#7c6cfc", flexShrink: 0 }} />
+              <span style={{ color: "#94a3b8" }}>{ec.arcLabel}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          {[1,2,3,4,5].map((t: number) => (
+            <div key={t} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: tensionBg[t] }} />
+              <span style={{ fontSize: 10, color: "#64748b" }}>{t}</span>
+            </div>
+          ))}
+          <span style={{ fontSize: 10, color: "#64748b", marginLeft: 6 }}>⚡ 클리프행어</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MsgBubble({ msg }: { key?: string; msg: Msg }) {
   const cfg = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
@@ -275,6 +356,8 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
   const [roadmapDone, setRoadmapDone] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
+  const [startEp, setStartEp] = useState(1);
+  const [episodeCardsData, setEpisodeCardsData] = useState<EpisodeCard[]>([]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<string>("");
@@ -303,9 +386,12 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
         data.episodeCards?.forEach(ec => cards.push({ id: uid(), agent: "scenario", text: "", type: "card", cardType: "episode", card: ec, streaming: false }));
         if (cards.length > 0) {
           setMsgs((prev: Msg[]) => [...prev, ...cards]);
+          if (data.episodeCards) setEpisodeCardsData(data.episodeCards);
           setRoadmapDone(true);
           setDebatePhase("done");
           if (data.context) contextRef.current = data.context;
+          const savedStart = localStorage.getItem(`wts_phase3_start_ep_${projectId}`);
+          if (savedStart) setStartEp(parseInt(savedStart) || 1);
           return;
         }
       }
@@ -407,6 +493,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     localStorage.setItem(`wts_phase3_${projectId}`, JSON.stringify({
       roadmapCard, episodeCards, context: contextRef.current, genre,
     }));
+    if (episodeCards.length > 0) setEpisodeCardsData(episodeCards);
     setRoadmapDone(true);
     setDebatePhase("done");
   }, [genre, projectId, addMsg, updateMsg]);
@@ -431,7 +518,7 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
     } catch { /* ignore */ }
     contextRef.current = context;
 
-    const transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
+    let transcript: string[] = resumeTranscript ? [...resumeTranscript] : [];
     const startRound = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
 
     const END_TRIGGERS = ["정리하자", "확정하자", "로드맵 만들어", "에피소드 생성", "끝내자", "결정하자", "카드 만들어"];
@@ -591,6 +678,9 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
 
         <div className={s.chatBody}>
           {msgs.map((msg: Msg) => <MsgBubble key={msg.id} msg={msg} />)}
+          {roadmapDone && episodeCardsData.length > 0 && (
+            <PacingTimeline episodeCards={episodeCardsData} />
+          )}
           <div ref={bottomRef} />
         </div>
 
@@ -600,19 +690,19 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
             <div className={s.gatingBanner}>
               <div className={s.gatingText}>
                 <strong>✓ 100화 로드맵 완성</strong>
-                <span>특정 화 수정: "N화 수정: [의견]" · Phase 4에서 첫 화 대본을 작성합니다</span>
+                <span>특정 화 수정: "N화 수정: [의견]" · Phase 4에서 대본을 작성할 화를 선택하세요</span>
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
                 <button className={s.btnGatingSecondary} onClick={() => {
                   const saved = localStorage.getItem(`wts_phase3_${projectId}`);
                   if (!saved) return;
                   const data = JSON.parse(saved) as { roadmapCard: RoadmapCard; episodeCards: EpisodeCard[]; genre: string };
-                  const allEps = (data.episodeCards ?? []).flatMap(ec => ec.episodes).sort((a, b) => a.ep - b.ep);
+                  const allEps = (data.episodeCards ?? []).flatMap((ec: EpisodeCard) => ec.episodes).sort((a: EpisodeDetail, b: EpisodeDetail) => a.ep - b.ep);
                   const lines = [
                     `[${data.genre} 웹툰] 100화 로드맵`,
                     `생성일: ${new Date().toLocaleDateString("ko-KR")}`, "",
                     ...(data.roadmapCard?.arcs ?? []).map(a => `■ ${a.num}막 "${a.name}" (EP ${a.eps[0]}~${a.eps[1]}) — ${a.theme}`), "",
-                    ...allEps.map(ep => `${String(ep.ep).padStart(3, " ")}화 | ${ep.title}\n     → ${ep.event} | 감정: ${ep.emotion}${ep.cliffhanger ? ` | 클리프행어: ${ep.cliffhanger}` : ""}`),
+                    ...allEps.map((ep: EpisodeDetail) => `${String(ep.ep).padStart(3, " ")}화 | ${ep.title}\n     → ${ep.event} | 감정: ${ep.emotion}${ep.cliffhanger ? ` | 클리프행어: ${ep.cliffhanger}` : ""}`),
                   ];
                   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
                   const url = URL.createObjectURL(blob);
@@ -622,13 +712,34 @@ export default function Phase3Page({ params }: { params: { projectId: string } }
                   const saved = localStorage.getItem(`wts_phase3_${projectId}`);
                   if (!saved) return;
                   const data = JSON.parse(saved) as { roadmapCard: RoadmapCard; episodeCards: EpisodeCard[]; genre: string };
-                  const allEps = (data.episodeCards ?? []).flatMap(ec => ec.episodes).sort((a, b) => a.ep - b.ep);
+                  const allEps = (data.episodeCards ?? []).flatMap((ec: EpisodeCard) => ec.episodes).sort((a: EpisodeDetail, b: EpisodeDetail) => a.ep - b.ep);
                   const blob = new Blob([JSON.stringify({ genre: data.genre, arcs: data.roadmapCard?.arcs, episodes: allEps }, null, 2)], { type: "application/json" });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a"); a.href = url; a.download = `roadmap_${projectId}.json`; a.click(); URL.revokeObjectURL(url);
                 }}>📥 JSON 내보내기</button>
                 <button className={s.btnGatingSecondary} onClick={handleRestartNew}>재생성</button>
-                <button className={s.btnGating} onClick={() => router.push(`/projects/${projectId}/phase-4`)}>Phase 4 시작 →</button>
+              </div>
+              {/* 시작 화 선택 + Phase 4 진입 */}
+              <div style={{ width: "100%", marginTop: 12, padding: "12px 14px", background: "rgba(124,108,252,0.06)", border: "1px solid rgba(124,108,252,0.2)", borderRadius: 10 }}>
+                <div style={{ fontSize: 12, color: "#7c6cfc", fontWeight: 700, marginBottom: 8 }}>🎬 Phase 4 시작 화 선택</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
+                  <input
+                    type="number"
+                    min={1} max={100}
+                    value={startEp}
+                    onChange={(e: { target: HTMLInputElement }) => setStartEp(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                    style={{ width: 72, background: "#1e1e2a", border: "1px solid #3a3a5a", borderRadius: 6, color: "#f1f5f9", fontSize: 14, fontWeight: 700, padding: "6px 10px", textAlign: "center" as const }}
+                  />
+                  <span style={{ fontSize: 12, color: "#94a3b8" }}>화부터 시작</span>
+                  {(() => {
+                    const ep = episodeCardsData.flatMap((ec: EpisodeCard) => ec.episodes).find((e: EpisodeDetail) => e.ep === startEp);
+                    return ep ? <span style={{ fontSize: 12, color: "#64748b" }}>— {ep.title}</span> : null;
+                  })()}
+                  <button className={s.btnGating} style={{ marginLeft: "auto" }} onClick={() => {
+                    localStorage.setItem(`wts_phase3_start_ep_${projectId}`, String(startEp));
+                    router.push(`/projects/${projectId}/phase-4`);
+                  }}>Phase 4 시작 →</button>
+                </div>
               </div>
             </div>
           </div>
