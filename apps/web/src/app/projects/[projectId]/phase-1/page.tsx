@@ -1447,31 +1447,105 @@ export default function Phase1Page() {
       agentIndex++;
     };
 
-    // ── 대화 요약 (5턴마다 백그라운드 자동 갱신) ──
-    // 에이전트는 전체 원문 대신 요약 + 직전 발언 1줄만 받는다
-    let conversationSummary = "";
-    let turnsSinceLastSummary = 0;
+    // ── 슬라이딩 메모리 시스템 ──
+    // 구조: 롤링 누적 요약(20턴마다 cascading) + 주제별 맥락 요약 4개
+    // 에이전트는 자신의 전문 분야 주제 요약 + 전체 누적 요약 + 최근 6줄을 받는다
 
-    const refreshSummary = () => {
-      if (transcript.length < 3) return;
-      const summaryKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
-      if (!summaryKey) return;
+    let rollingSummary = "";          // 전체 토론 누적 요약 (7~8줄, cascading)
+    let topicMarket = "";             // 시장·플랫폼·독자층
+    let topicSimilar = "";            // 유사작품·레퍼런스·비교분석
+    let topicStrengths = "";          // 기획 강약점·차별점·개선방향
+    let topicWorldbuilding = "";      // 세계관·캐릭터·설정 보완점
+    let turnsInWindow = 0;            // 현재 20턴 윈도우 카운터
+    let windowBuffer: string[] = [];  // 현재 윈도우 발언 버퍼
+
+    // 에이전트 → 전문 주제 매핑
+    const AGENT_TOPIC: Record<AgentId, "market" | "similar" | "strengths" | "worldbuilding"> = {
+      strategist:   "market",
+      researcher:   "similar",
+      worldbuilder: "worldbuilding",
+      character:    "worldbuilding",
+      scenario:     "strengths",
+      script:       "strengths",
+      producer:     "market",
+      editor:       "market",
+      user:         "market",
+    };
+    const TOPIC_LABEL: Record<string, string> = {
+      market:       "시장·플랫폼 맥락",
+      similar:      "유사작품 맥락",
+      strengths:    "기획 강약점 맥락",
+      worldbuilding:"세계관·캐릭터 맥락",
+    };
+
+    // 20턴마다 롤링 요약 + 주제별 요약을 백그라운드에서 동시에 갱신
+    const updateSummaries = (buffer: string[]) => {
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key || buffer.length === 0) return;
+      const bufText = buffer.join("\n");
+
+      // ① 롤링 누적 요약 (cascading)
       void (async () => {
         let next = "";
         try {
           for await (const chunk of streamClaude({
-            apiKey: summaryKey,
-            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
+            apiKey: key,
+            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 결정·쟁점·미해결 항목을 명확히 기록.",
             messages: [{
               role: "user",
-              content: `${conversationSummary ? `이전 요약: ${conversationSummary}\n\n` : ""}최근 대화:\n${transcript.slice(-5).join("\n")}\n\n합쳐서 2문장 이내 요약. 언급된 작품명·핵심 의견 포함. 마크다운 금지.`,
+              content: `${rollingSummary ? `[이전 누적 요약]\n${rollingSummary}\n\n` : ""}[최근 ${buffer.length}턴 토론]\n${bufText}\n\n위 내용을 합쳐 누적 요약을 업데이트해줘.\n포함 항목: 합의된 결정, 핵심 쟁점과 각 에이전트 입장, 미해결 항목.\n7~8줄 이내. 작품명·수치 등 구체적 내용 반드시 포함. 마크다운 금지.`,
             }],
-            maxTokens: 120,
+            maxTokens: 300,
             tools: [],
           })) next += chunk;
         } catch { /* ignore */ }
-        if (next.trim()) conversationSummary = next.trim();
+        if (next.trim()) rollingSummary = next.trim();
       })();
+
+      // ② 주제별 맥락 요약 (4개를 1번 API 호출로)
+      void (async () => {
+        let raw = "";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            systemPrompt: "웹툰 기획 토론 분석 전문가. 주제별 맥락을 정확히 추출.",
+            messages: [{
+              role: "user",
+              content: `[최근 토론]\n${bufText}\n\n아래 4개 주제별로 이 토론에서 관련된 내용을 추출해줘. 해당 내용 없으면 "언급 없음".\n\n[MARKET]\n시장·플랫폼·독자층·수익·트렌드 관련 논의 (4~5줄)\n[/MARKET]\n[SIMILAR]\n유사작품·레퍼런스·비교분석 관련 논의 (4~5줄)\n[/SIMILAR]\n[STRENGTHS]\n기획의 강점·약점·차별점·개선방향 관련 논의 (4~5줄)\n[/STRENGTHS]\n[WORLDBUILDING]\n세계관·캐릭터·설정·보완점 관련 논의 (4~5줄)\n[/WORLDBUILDING]\n\n마크다운 금지.`,
+            }],
+            maxTokens: 500,
+            tools: [],
+          })) raw += chunk;
+        } catch { /* ignore */ }
+        if (!raw.trim()) return;
+        const extract = (tag: string) => {
+          const m = raw.match(new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[\\/${tag}\\]`));
+          return m ? m[1].trim() : "";
+        };
+        const m = extract("MARKET");
+        const s = extract("SIMILAR");
+        const st = extract("STRENGTHS");
+        const wb = extract("WORLDBUILDING");
+        if (m && m !== "언급 없음") topicMarket = m;
+        if (s && s !== "언급 없음") topicSimilar = s;
+        if (st && st !== "언급 없음") topicStrengths = st;
+        if (wb && wb !== "언급 없음") topicWorldbuilding = wb;
+      })();
+    };
+
+    // 에이전트별 컨텍스트 빌더 — 전체 요약 + 전문 주제 요약 + 최근 6줄
+    const buildAgentContext = (agentId: AgentId): string => {
+      const topicKey = AGENT_TOPIC[agentId] ?? "market";
+      const topicContent = {
+        market: topicMarket, similar: topicSimilar,
+        strengths: topicStrengths, worldbuilding: topicWorldbuilding,
+      }[topicKey];
+      const label = TOPIC_LABEL[topicKey];
+      const parts: string[] = [];
+      if (rollingSummary) parts.push(`[전체 토론 요약]\n${rollingSummary}`);
+      if (topicContent) parts.push(`[${label}]\n${topicContent}`);
+      parts.push(`[최근 대화]\n${transcript.slice(-6).join("\n")}`);
+      return parts.join("\n\n") + "\n\n";
     };
 
     // ── 메인 대화 루프 ──
@@ -1513,8 +1587,6 @@ export default function Phase1Page() {
         round++;
         lastUserMsg = pendingMsg;
         userTurnCount = 4; // 4턴 동안 사용자 의견을 context에 유지
-        refreshSummary();  // 즉시 요약 갱신 — 사용자 발언 바로 반영
-        turnsSinceLastSummary = 0;
         // 마무리 제안 중이면: 동의 → 종료, 그 외 → 계속 대화
         if (wrapUpProposed) {
           if (AGREE_RE.test(pendingMsg.trim())) break debateLoop;
@@ -1526,22 +1598,20 @@ export default function Phase1Page() {
 
       setTurnCount(round);
 
-      // historyText: 요약 있으면 요약+최근 4줄, 없으면 최근 6줄 (초반)
-      // → 에이전트가 대화 흐름 전체를 보고 맥락에 맞게 반응하도록
       const lastLine = transcript[transcript.length - 1] ?? "";
-      const recentContext = transcript.slice(-4).join("\n");
-      const historyText = conversationSummary
-        ? `[지금까지 요약]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 최근 의견]: ${lastUserMsg}\n` : ""}[최근 대화]\n${recentContext}\n\n`
+      // 명령·마무리 등 공통 컨텍스트 (에이전트 미정 상황용)
+      const baseContext = rollingSummary
+        ? `[전체 토론 요약]\n${rollingSummary}\n${userTurnCount > 0 ? `\n[사용자 최근 의견]: ${lastUserMsg}\n` : ""}[최근 대화]\n${transcript.slice(-6).join("\n")}\n\n`
         : `[대화 내용]\n${transcript.slice(-6).join("\n")}\n\n`;
 
       // 3) 명령 핸들러
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
-        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? `${historyText}사용자 요청에 응답해.`;
+        const p = matchedCommand.promptOverride?.replace("{history}", baseContext) ?? `${baseContext}사용자 요청에 응답해.`;
         await runSingleAgent(matchedCommand.speakerAgent, p, matchedCommand.maxTokens ?? 300);
         continue;
       }
       if (matchedCommand?.handler === "summarize_then_end" && matchedCommand.speakerAgent) {
-        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? `${historyText}지금까지 내용 최종 정리해줘.`;
+        const p = matchedCommand.promptOverride?.replace("{history}", baseContext) ?? `${baseContext}지금까지 내용 최종 정리해줘.`;
         await runSingleAgent(matchedCommand.speakerAgent, p, matchedCommand.maxTokens ?? 500);
         break debateLoop;
       }
@@ -1554,7 +1624,7 @@ export default function Phase1Page() {
         continue;
       }
       if (matchedCommand?.handler === "break") {
-        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? "브레이크 타임을 선언해줘.";
+        const p = matchedCommand.promptOverride?.replace("{history}", baseContext) ?? "브레이크 타임을 선언해줘.";
         await runSingleAgent(matchedCommand.speakerAgent ?? "producer", p, matchedCommand.maxTokens ?? 80);
         await sleep(matchedCommand.breakDurationMs ?? 30000);
         continue;
@@ -1570,7 +1640,7 @@ export default function Phase1Page() {
       if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
         wrapUpProposed = true;
         wrapUpProposedAt = Date.now();
-        const wrapPrompt = `${historyText}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
+        const wrapPrompt = `${baseContext}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
         await runSingleAgent("producer", wrapPrompt, 80);
         lastSpeaker = "producer";
         recentSpeakers = (["producer" as AgentId, ...recentSpeakers] as AgentId[]).slice(0, 3);
@@ -1581,29 +1651,35 @@ export default function Phase1Page() {
       const speakerPickLines = transcript.slice(-3);
       const nextAgent = pickNextSpeaker(speakerPickLines, recentSpeakers, lastSpeaker);
 
-      // 5) 프롬프트 구성 — 직전 발언자·내용을 명시해서 실제 반응 유도
+      // 5) 에이전트별 맞춤 컨텍스트 (전체 요약 + 전문 주제 요약 + 최근 6줄)
+      const agentCtx = buildAgentContext(nextAgent);
+
+      // 6) 프롬프트 구성 — 직전 발언자·내용을 명시해서 실제 반응 유도
       const isFirst = transcript.length <= 1;
       let agentPrompt: string;
       if (isFirst) {
         agentPrompt = `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`;
       } else if (userTurnCount > 0) {
-        agentPrompt = `${historyText}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
+        agentPrompt = `${agentCtx}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
       } else {
-        // 직전 발언자와 내용을 추출해 맥락 있는 반응 유도 (s 플래그 대신 [\s\S]+ 사용)
+        // 직전 발언자와 내용을 추출해 맥락 있는 반응 유도
         const prevMatch = lastLine.match(/^\[([^\]]+)\]:\s*([\s\S]+)/);
         const prevLabel = prevMatch ? prevMatch[1] : null;
         const prevContent = prevMatch ? prevMatch[2].slice(0, 100) : null;
         if (prevLabel && prevContent) {
-          agentPrompt = `${historyText}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
+          agentPrompt = `${agentCtx}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
         } else {
-          agentPrompt = `${historyText}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
+          agentPrompt = `${agentCtx}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
         }
       }
 
-      // 6) 에이전트 발언
+      // 7) 에이전트 발언
       await runSingleAgent(nextAgent, agentPrompt, 120);
       lastSpeaker = nextAgent;
       recentSpeakers = ([nextAgent, ...recentSpeakers] as AgentId[]).slice(0, 3);
+      // 윈도우 버퍼에 추가 (마지막 발언이 방금 push됐으므로 transcript 끝에서 가져옴)
+      const lastAdded = transcript[transcript.length - 1];
+      if (lastAdded) windowBuffer.push(lastAdded);
 
       // 사용자 응답 모드 카운트다운
       if (userTurnCount > 0) {
@@ -1611,11 +1687,13 @@ export default function Phase1Page() {
         if (userTurnCount === 0) lastUserMsg = "";
       }
 
-      // 7) 5턴마다 요약 갱신 (백그라운드, 비차단)
-      turnsSinceLastSummary++;
-      if (turnsSinceLastSummary >= 5) {
-        turnsSinceLastSummary = 0;
-        refreshSummary();
+      // 8) 20턴마다 롤링 요약 + 주제별 요약 갱신 (백그라운드, 비차단)
+      turnsInWindow++;
+      if (turnsInWindow >= 20) {
+        turnsInWindow = 0;
+        const bufferSnapshot = [...windowBuffer];
+        windowBuffer = [];
+        updateSummaries(bufferSnapshot);
       }
 
       // 8) 저장
