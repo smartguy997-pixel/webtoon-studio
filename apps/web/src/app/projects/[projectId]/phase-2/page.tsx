@@ -713,6 +713,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const imageAbortRef = useRef(false);
   const imageConceptsRef = useRef<ImageConcept[]>([]);
   const imageSelectedDirRef = useRef(""); // 이전 라운드에서 선택한 방향
+  // 전 스테이지 통합 확정 아이템 목록 — 일관성 컨텍스트 구성에 사용
+  const confirmedAllItemsRef = useRef<ImageItem[]>([]);
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -1284,9 +1286,44 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     updateMsg(msgId, clean, false);
   }, [addMsg, updateMsg]);
 
+  // ── 일관성 컨텍스트 빌더 ──
+  // 이미 확정된 캐릭터/장소 비주얼을 다음 아이템 생성 시 참조로 주입
+  // character 생성 시 → 화풍(MST)만
+  // location 생성 시 → 화풍 + 확정 캐릭터들
+  // prop 생성 시    → 화풍 + 확정 캐릭터 + 확정 장소
+  function buildConsistencyContext(itemType: "character" | "location" | "prop"): string {
+    const confirmed = confirmedAllItemsRef.current;
+    const parts: string[] = [];
+
+    if (conceptStyle) {
+      parts.push(`[확정 화풍 — 반드시 일치]\n${conceptStyle}`);
+    }
+    if (itemType !== "character") {
+      const chars = confirmed.filter((c: ImageItem) => c.type === "character");
+      if (chars.length > 0) {
+        parts.push(
+          `[확정된 캐릭터 비주얼 — 같은 세계에 등장, 스타일 통일 필수]\n` +
+          chars.map((c: ImageItem) => `• ${c.name}: ${c.description.split("\n").slice(0, 3).join(" / ")}`).join("\n")
+        );
+      }
+    }
+    if (itemType === "prop") {
+      const locs = confirmed.filter((c: ImageItem) => c.type === "location");
+      if (locs.length > 0) {
+        parts.push(
+          `[확정된 장소 비주얼 — 소품이 놓일 환경]\n` +
+          locs.map((l: ImageItem) => `• ${l.name}: ${l.description.split("\n").slice(0, 2).join(" / ")}`).join("\n")
+        );
+      }
+    }
+    if (parts.length === 0) return "";
+    return `\n[일관성 참고]\n${parts.join("\n\n")}\n\n[일관성 원칙]\n- 모든 이미지는 같은 웹툰 세계의 일부로, 색감·선화·분위기가 통일되어야 함\n- 이미 확정된 아이템과 나란히 놓였을 때 같은 작품처럼 보여야 함`;
+  }
+
   // 이미지 회의용 에이전트 시스템 프롬프트 생성
   function buildImageAgentSysPrompt(agentId: AgentId, item: ImageItem, topic: string, prevDir?: string): string {
     const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+    const consistencyCtx = buildConsistencyContext(item.type);
     return [
       `너는 웹툰 기획 팀의 ${AGENTS[agentId].label}야.`,
       `성격: ${AGENT_ROLE_DESC[agentId] ?? ""}`,
@@ -1297,10 +1334,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       `[설계 내용]`,
       item.description,
       prevDir ? `\n[이전 라운드 선택 방향]\n${prevDir}` : "",
+      consistencyCtx,
       ``,
       `[대화 방식]`,
       `- 1~2문장, 구어체`,
       `- 구체적인 색감·스타일·구도 언급`,
+      `- 이미 확정된 아이템들과의 일관성을 반드시 고려`,
       `- 마크다운/JSON 금지`,
     ].join("\n");
   }
@@ -1400,6 +1439,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             `확정된 스타일: ${conceptStyle || "Korean webtoon, digital illustration"}\n\n` +
             `[회의 내용]\n${transcript.slice(0, 3000)}\n\n` +
             `[아이템 설계]\n${item.description}\n\n` +
+            (buildConsistencyContext(item.type) ? `${buildConsistencyContext(item.type)}\n\n` : "") +
+            `[중요] 4개 프롬프트 모두 위의 확정 화풍·캐릭터 스타일과 일관성을 유지해야 합니다.\n` +
             `아래 JSON만 출력 (설명 없이):\n` +
             `[DIRECTIONS]\n{"A":"영문 프롬프트 40-60단어","B":"...","C":"...","D":"..."}\n[/DIRECTIONS]`,
         }],
@@ -1691,11 +1732,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const handleFinalConfirm = useCallback((label: "A"|"B"|"C"|"D") => {
     const concept = imageConceptsRef.current.find((c: ImageConcept) => c.label === label);
     const idx = imageCurrentItemIdxRef.current;
+    const confirmedItem = imageItemsRef.current[idx];
     const updated = imageItemsRef.current.map((it: ImageItem, i: number) =>
       i === idx ? { ...it, imageUrl: concept?.imageUrl, confirmed: true } : it
     );
     imageItemsRef.current = updated;
     setImageItems(updated);
+    // 전 스테이지 통합 확정 목록에 추가 (다음 아이템 일관성 컨텍스트에 사용)
+    if (confirmedItem) {
+      confirmedAllItemsRef.current = [
+        ...confirmedAllItemsRef.current,
+        { ...confirmedItem, imageUrl: concept?.imageUrl, confirmed: true },
+      ];
+    }
     setImageCustomDir("");
     setImageRoundNum(1);
     setImageConcepts([]);
