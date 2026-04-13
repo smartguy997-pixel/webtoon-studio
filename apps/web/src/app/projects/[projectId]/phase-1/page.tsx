@@ -1664,7 +1664,7 @@ export default function Phase1Page() {
 
       // 1) 에이전트 발언 후 대기 — 사용자 타이핑 중이면 계속 기다림
       if (transcript.length > 0) {
-        const minWait = 9000 + Math.random() * 6000; // 9~15s
+        const minWait = 5000 + Math.random() * 5000; // 5~10s
         const maxWait = 60000;
         const start = Date.now();
         while (Date.now() - start < maxWait) {
