@@ -1739,7 +1739,7 @@ export default function Phase1Page() {
             systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 결정·쟁점·미해결 항목을 명확히 기록.",
             messages: [{
               role: "user",
-              content: `${rollingSummary ? `[이전 누적 요약]\n${rollingSummary}\n\n` : ""}[최근 ${buffer.length}턴 토론]\n${bufText}\n\n위 내용을 합쳐 누적 요약을 업데이트해줘.\n포함 항목: 합의된 결정, 핵심 쟁점과 각 에이전트 입장, 미해결 항목.\n7~8줄 이내. 작품명·수치 등 구체적 내용 반드시 포함. 마크다운 금지.`,
+              content: `${rollingSummary ? `[이전 누적 요약]\n${rollingSummary}\n\n` : ""}[최근 ${buffer.length}턴 토론]\n${bufText}\n\n위 내용을 합쳐 누적 요약을 업데이트해줘.\n포함 항목: 합의된 결정, 핵심 쟁점과 각 에이전트 입장, 미해결 항목.\n7~8줄 이내. 작품명·수치 등 구체적 내용 반드시 포함. 마크다운 금지.${rejectedWorksRef.current.length > 0 ? `\n\n주의: 다음 작품들은 존재하지 않거나 유사하지 않다고 판명됨 — 요약에 절대 포함하지 마: ${rejectedWorksRef.current.join(", ")}` : ""}`,
             }],
             maxTokens: 300,
             tools: [],
@@ -1964,6 +1964,21 @@ export default function Phase1Page() {
       if (lastAdded) {
         saveTurn(lastAdded, nextAgent, round);  // Firestore RAG 저장
         windowBuffer.push(lastAdded);
+
+        // ── 에이전트 자기수정 감지 → 자동 블랙리스트 ──
+        // "실제 작품이 아니야", "잘못 참고했어" 등 → 해당 발언의 작품명 자동 차단
+        const SELF_CORRECT_RE = /실제\s*(작품|웹툰|드라마|영화|만화)이?\s*(아니|없)|잘못\s*(참고|알고|언급)|존재하지\s*않|없는\s*(작품|제목|웹툰)|만들어\s*낸|허구|가상의\s*작품|제가\s*잘못/;
+        if (SELF_CORRECT_RE.test(lastAdded)) {
+          const wpRe = /[<「『《""]([^>」』》""\n]{1,30})[>」』》""]/g;
+          const autoBlocked = new Set<string>();
+          let wm: RegExpExecArray | null;
+          while ((wm = wpRe.exec(lastAdded)) !== null) autoBlocked.add(wm[1].trim());
+          if (autoBlocked.size > 0) {
+            const next = [...rejectedWorksRef.current, ...autoBlocked].filter((v, i, a) => a.indexOf(v) === i);
+            rejectedWorksRef.current = next;
+            setRejectedWorks(next);
+          }
+        }
       }
 
       // 사용자 응답 모드 카운트다운
