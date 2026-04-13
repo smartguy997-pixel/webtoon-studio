@@ -1,61 +1,56 @@
 /**
- * Server-side image search proxy.
- * Primary  : Bing Images HTML scraping (murl field = original image URL)
- * Fallback : Jikan (MyAnimeList) manga covers
+ * Server-side image search — DuckDuckGo two-step (vqd token → JSON results)
+ * Fallback: Jikan (MyAnimeList) for manga covers
  */
 
 export const runtime = "nodejs";
 
-// ── Bing Images scraper ───────────────────────────────────────────────────────
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-async function fetchBingImages(query: string): Promise<string[]> {
-  const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1&tsc=ImageBasicHover`;
+// ── DuckDuckGo image search ───────────────────────────────────────────────────
+
+async function fetchDDGImages(query: string): Promise<string[]> {
   try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-        "Referer": "https://www.bing.com/",
+    // Step 1: load the search page to obtain the vqd token
+    const initRes = await fetch(
+      `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iar=images&iax=images&ia=images`,
+      {
+        headers: { "User-Agent": UA, "Accept": "text/html" },
+        signal: AbortSignal.timeout(7000),
       },
-      signal: AbortSignal.timeout(8000),
+    );
+    if (!initRes.ok) return [];
+    const html = await initRes.text();
+
+    // vqd appears as  vqd='4-abc...'  or  vqd="4-abc..."
+    const vqdMatch = html.match(/vqd[=:]['"]([^'"&\s]+)['"]/);
+    if (!vqdMatch) return [];
+    const vqd = vqdMatch[1];
+
+    // Step 2: fetch JSON image results
+    const params = new URLSearchParams({ q: query, o: "json", vqd, f: ",,,,,", p: "1" });
+    const imgRes = await fetch(`https://duckduckgo.com/i.js?${params.toString()}`, {
+      headers: {
+        "User-Agent": UA,
+        "Referer": "https://duckduckgo.com/",
+        "Accept": "application/json, */*",
+      },
+      signal: AbortSignal.timeout(7000),
     });
-    if (!res.ok) return [];
-    const html = await res.text();
+    if (!imgRes.ok) return [];
 
-    const urls: string[] = [];
-
-    // Bing stores original URLs as `"murl":"https://..."` in inline JSON
-    const re = /"murl":"(https?:[^"]+)"/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(html)) !== null && urls.length < 6) {
-      const decoded = decodeURIComponent(m[1]);
-      if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(decoded)) {
-        urls.push(decoded);
-      }
-    }
-
-    // Second pattern: mediaurl inside href attributes
-    if (urls.length === 0) {
-      const re2 = /mediaurl=([^&"]+)/g;
-      while ((m = re2.exec(html)) !== null && urls.length < 6) {
-        try {
-          const decoded = decodeURIComponent(m[1]);
-          if (decoded.startsWith("http") && /\.(jpe?g|png|webp|gif)/i.test(decoded)) {
-            urls.push(decoded);
-          }
-        } catch { /* ignore */ }
-      }
-    }
-
-    return urls;
+    const data = (await imgRes.json()) as { results?: Array<{ image?: string }> };
+    return (data.results ?? [])
+      .map((r) => r.image ?? "")
+      .filter((u) => u.startsWith("http"))
+      .slice(0, 6);
   } catch {
     return [];
   }
 }
 
-// ── Jikan (MyAnimeList) fallback — manga covers ───────────────────────────────
+// ── Jikan (MyAnimeList) fallback ──────────────────────────────────────────────
 
 interface JikanResponse {
   data: Array<{
@@ -93,16 +88,15 @@ async function fetchJikanImages(query: string): Promise<string[]> {
 export async function GET(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const query = (searchParams.get("q") ?? "").trim();
-
   if (!query) return Response.json({ urls: [] });
 
-  // Try Bing first (good bot tolerance, broad coverage including K-dramas/movies)
-  let urls = await fetchBingImages(query);
+  let urls = await fetchDDGImages(query);
+  if (urls.length === 0) urls = await fetchJikanImages(query);
 
-  // Fallback to Jikan if Bing returns nothing (e.g. specific manga titles)
-  if (urls.length === 0) {
-    urls = await fetchJikanImages(query);
-  }
+  // Return proxied URLs so hotlinking / CORS never blocks the browser
+  const proxied = urls
+    .slice(0, 4)
+    .map((u) => `/api/image-proxy?url=${encodeURIComponent(u)}`);
 
-  return Response.json({ urls: urls.slice(0, 4) });
+  return Response.json({ urls: proxied });
 }
