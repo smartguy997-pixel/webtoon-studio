@@ -1434,34 +1434,32 @@ function StageReportInChat({
         {content}
 
         {/* ── 액션 버튼 ── */}
-        <div style={{ display:"flex", gap:10, marginTop:20 }}>
-          <button
-            onClick={onContinueDebate}
-            style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b", transition:"border-color 0.15s" }}>
-            ✎ 계속 토론
-          </button>
-          <button
-            onClick={onNextStage}
-            style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
-            {nextBtnLabel}
-          </button>
-        </div>
-        {/* ── 다시 분석 버튼 ── */}
-        {onReanalyze && (
-          <div style={{ marginTop:10, textAlign:"center" }}>
+        <div style={{ display:"flex", flexDirection:"column" as const, gap:8, marginTop:20 }}>
+          <div style={{ display:"flex", gap:10 }}>
             <button
-              disabled={reanalyzing}
-              onClick={async () => {
-                setReanalyzing(true);
-                try { await onReanalyze(); } finally { setReanalyzing(false); }
-              }}
-              style={{ padding:"8px 20px", borderRadius:8, fontSize:12, fontWeight:700, cursor: reanalyzing ? "default" : "pointer", background:"transparent", border:`1px solid ${reanalyzing ? "#2a2a3d" : "#3a3a52"}`, color: reanalyzing ? "#3a3a52" : "#94a3b8", transition:"all 0.15s", display:"inline-flex", alignItems:"center", gap:6 }}>
-              {reanalyzing
-                ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite", fontSize:13 }}>⟳</span> 분석 중...</>
-                : "🔄 기존 내용 다시 분석"}
+              onClick={onContinueDebate}
+              style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b", transition:"border-color 0.15s" }}>
+              ✎ 계속 토론
+            </button>
+            <button
+              onClick={onNextStage}
+              style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
+              {nextBtnLabel}
             </button>
           </div>
-        )}
+          {/* ── 다시 분석 버튼 ── */}
+          <button
+            disabled={reanalyzing}
+            onClick={async () => {
+              setReanalyzing(true);
+              try { await onReanalyze?.(); } finally { setReanalyzing(false); }
+            }}
+            style={{ width:"100%", padding:"10px 0", borderRadius:10, fontSize:12, fontWeight:700, cursor: reanalyzing ? "default" : "pointer", background:"rgba(255,255,255,0.03)", border:"1px solid #252535", color: reanalyzing ? "#3a3a52" : "#64748b", transition:"all 0.15s", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+            {reanalyzing
+              ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span> 분석 중...</>
+              : "🔄 기존 내용 다시 분석"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3550,7 +3548,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               </a>
             </div>
             {/* 채팅 기록 + 보고서 */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 0 24px" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 0 60px" }}>
               {histMsgs.length > 0
                 ? histMsgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)
                 : <div style={{ padding: "40px 20px", textAlign: "center", color: "#3a3a52", fontSize: 13 }}>토론 기록이 없습니다.</div>
