@@ -2054,9 +2054,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Asset List Review: 에셋 목록 확인 (Stage 2 완료 후, 스타일 전) ──
   const runAssetListReview = useCallback(async () => {
-    // synopsisAssetsRef.current should already have extracted assets from Stage 2 completion
-    const assets = synopsisAssetsRef.current ?? { characters: [], locations: [], props: [] };
-    setEditableAssets(assets);
+    // editableAssets는 이미 각 스테이지 확정 시 누적됨 — synopsisAssetsRef는 AI fallback
+    // setEditableAssets는 이미 최신 상태이므로 덮어쓰지 않음 (synopsisAssets가 있을 때만 병합)
+    if (synopsisAssetsRef.current) {
+      const syn = synopsisAssetsRef.current;
+      setEditableAssets((prev: SynopsisAssets) => ({
+        characters: [...new Set([...prev.characters, ...syn.characters])],
+        locations:  [...new Set([...prev.locations,  ...syn.locations])],
+        props:      [...new Set([...prev.props,      ...syn.props])],
+      }));
+    }
     setAssetListPhase("reviewing");
 
     // Producer announces the asset list review
@@ -3090,7 +3097,37 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     stageResultsRef.current = newResults;
     setStageResults(newResults);
 
-    // 시놉시스(Stage 2) 완료 시 → 에셋 목록 자동 추출
+    // ── 스테이지 확정 시 에셋 목록 즉시 업데이트 ──
+    // 각 스테이지의 JSON 데이터에서 이름을 추출해 editableAssets에 누적
+    setEditableAssets((prev: SynopsisAssets) => {
+      const names = (arr: unknown, key: string): string[] =>
+        Array.isArray(arr)
+          ? (arr as Record<string, string>[]).map(x => x[key]).filter(Boolean)
+          : [];
+      let chars = [...prev.characters];
+      let locs   = [...prev.locations];
+      let props  = [...prev.props];
+
+      if (stage.id === 1) {
+        chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
+        locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
+      } else if (stage.id === 2) {
+        chars = [...new Set([...chars, ...names(data.key_characters_brief, "name")])];
+        locs  = [...new Set([...locs,  ...names(data.key_locations_brief,  "name")])];
+      } else if (stage.id === 3) {
+        chars = [...new Set([...chars, ...names(data.characters, "name")])];
+      } else if (stage.id === 4) {
+        locs  = [...new Set([...locs,  ...names(data.locations, "name")])];
+      } else if (stage.id === 5) {
+        props = [...new Set([...props, ...names(data.props, "name")])];
+      }
+
+      const next: SynopsisAssets = { characters: chars, locations: locs, props };
+      localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+      return next;
+    });
+
+    // 시놉시스(Stage 2) 완료 시 → 에셋 목록 자동 추출 (AI fallback)
     if (stage.id === 2 && summary) {
       void (async () => {
         try {
@@ -3198,40 +3235,104 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const isStyleView = viewParam === "style";
     const hasData = viewResult ?? (isAssetsView && editableAssets.characters.length + editableAssets.locations.length + editableAssets.props.length > 0) ?? (isStyleView && !!conceptStyle);
 
+    // 스테이지 토론 기록 뷰
+    if (viewResult && stageId) {
+      const stageIdx = stageId - 1; // stageId 1→idx 0, 2→idx 1 ...
+      const viewStageObj = STAGES.find(st => st.id === stageId)!;
+      const histMsgs: Msg[] = stageHistoryMsgs[stageIdx] ?? [];
+      return (
+        <div className={s.page}>
+          <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+            {/* 헤더 */}
+            <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e1e2a", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: viewStageObj.color, margin: 0 }}>
+                ✓ {viewStageObj.name} 토론 기록
+              </h2>
+              <a href={`/projects/${projectId}/phase-2`} style={{ fontSize: 12, color: "#7c6cfc", textDecoration: "none", padding: "5px 12px", border: "1px solid rgba(124,108,252,0.3)", borderRadius: 6, background: "rgba(124,108,252,0.05)" }}>
+                ← 현재 단계로 돌아가기
+              </a>
+            </div>
+            {/* 채팅 기록 + 보고서 */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 0 24px" }}>
+              {histMsgs.length > 0
+                ? histMsgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)
+                : <div style={{ padding: "40px 20px", textAlign: "center", color: "#3a3a52", fontSize: 13 }}>토론 기록이 없습니다.</div>
+              }
+              {/* 인라인 보고서 */}
+              <StageReportInChat
+                result={viewResult}
+                stage={viewStageObj}
+                onNextStage={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
+                onContinueDebate={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
+                nextStageName={null}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (hasData) {
       return (
         <div className={s.page}>
           <div style={{ padding: "16px 20px", maxWidth: 900, margin: "0 auto" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: "#c8d0e0", margin: 0 }}>
-                {stageId ? STAGES.find(st => st.id === stageId)?.name : isAssetsView ? "에셋 리스트" : "스타일"}
+                {isAssetsView ? "에셋 리스트" : "스타일"}
               </h2>
               <a href={`/projects/${projectId}/phase-2`} style={{ fontSize: 12, color: "#7c6cfc", textDecoration: "none", padding: "5px 12px", border: "1px solid rgba(124,108,252,0.3)", borderRadius: 6, background: "rgba(124,108,252,0.05)" }}>
                 ← 현재 단계로 돌아가기
               </a>
             </div>
 
-            {viewResult && <StageResultCard result={viewResult} />}
+            {isAssetsView && (() => {
+              // 스테이지별 상세 데이터 참조
+              const charData  = (stageResults.find((r: StageResult) => r.stageId === 3)?.data?.characters
+                              ?? stageResults.find((r: StageResult) => r.stageId === 1)?.data?.key_characters
+                              ?? []) as Record<string, string>[];
+              const locData   = (stageResults.find((r: StageResult) => r.stageId === 4)?.data?.locations
+                              ?? stageResults.find((r: StageResult) => r.stageId === 1)?.data?.key_locations
+                              ?? []) as Record<string, string>[];
+              const propData  = (stageResults.find((r: StageResult) => r.stageId === 5)?.data?.props ?? []) as Record<string, string>[];
 
-            {isAssetsView && (
-              <div style={{ background: "#0e0e1a", border: "1px solid #1e1e2a", borderRadius: 10, padding: "16px 18px" }}>
-                {(["characters", "locations", "props"] as const).map(key => {
-                  const labels = { characters: "캐릭터", locations: "장소", props: "소품·장비" };
-                  const colors = { characters: "#fb923c", locations: "#a78bfa", props: "#e879f9" };
-                  return (
-                    <div key={key} style={{ marginBottom: 14 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>{labels[key]}</div>
-                      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
-                        {editableAssets[key].map((name, i) => (
-                          <span key={i} style={{ background: `${colors[key]}18`, border: `1px solid ${colors[key]}40`, borderRadius: 99, padding: "2px 10px", fontSize: 12, color: colors[key] }}>{name}</span>
-                        ))}
-                        {editableAssets[key].length === 0 && <span style={{ fontSize: 12, color: "#3a3a52" }}>(없음)</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+              const AssetCard = ({ item, color }: { item: Record<string, string>; color: string }) => (
+                <div style={{ background: "#12121e", borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${color}`, marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", marginBottom: 6 }}>
+                    {item.name}
+                    {item.role && <span style={{ fontSize: 11, color, marginLeft: 8, fontWeight: 700 }}>{item.role}</span>}
+                    {item.type && <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>{item.type}</span>}
+                  </div>
+                  {item.face && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>얼굴</span>{item.face}</div>}
+                  {item.outfit && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>복장</span>{item.outfit}</div>}
+                  {item.personality && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>성격</span>{item.personality}</div>}
+                  {item.visual && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>시각</span>{item.visual}</div>}
+                  {item.atmosphere && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>분위기</span>{item.atmosphere}</div>}
+                  {item.function && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>기능</span>{item.function}</div>}
+                </div>
+              );
+
+              const Section = ({ label, color, items, names }: { label: string; color: string; items: Record<string,string>[]; names: string[] }) => {
+                // 상세 데이터가 있으면 카드, 없으면 이름만 태그로
+                const merged = names.map(n => items.find(it => it.name === n) ?? { name: n });
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10 }}>{label} ({names.length})</div>
+                    {merged.length === 0
+                      ? <div style={{ fontSize: 12, color: "#3a3a52" }}>(없음)</div>
+                      : merged.map((it, i) => <div key={i}><AssetCard item={it} color={color} /></div>)
+                    }
+                  </div>
+                );
+              };
+
+              return (
+                <div>
+                  <Section label="캐릭터" color="#fb923c" items={charData} names={editableAssets.characters} />
+                  <Section label="장소" color="#a78bfa" items={locData} names={editableAssets.locations} />
+                  <Section label="소품·장비" color="#e879f9" items={propData} names={editableAssets.props} />
+                </div>
+              );
+            })()}
 
             {isStyleView && conceptStyle && (
               <div style={{ background: "#0e0e1a", border: "1px solid #f59e0b40", borderRadius: 10, padding: "16px 18px" }}>
