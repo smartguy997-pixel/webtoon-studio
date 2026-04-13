@@ -940,6 +940,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const pendingImageMsgRef = useRef<string | null>(null);
   const imageDebateRunRef = useRef(false);
   const imageAbortRef = useRef(false);
+  const isComposingRef = useRef(false);
   const imageConceptsRef = useRef<ImageConcept[]>([]);
   const imageSelectedDirRef = useRef(""); // 이전 라운드에서 선택한 방향
   // 전 스테이지 통합 확정 아이템 목록 — 일관성 컨텍스트 구성에 사용
@@ -2639,27 +2640,40 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
           {/* Chat input during running */}
           {debatePhase === "running" && (
-            <div className={s.inputRow} style={{ flexDirection: "column", gap: 0 }}>
+            <div className={s.chatInputRow} style={{ flexDirection: "column", gap: 0, padding: 0 }}>
               {/* Reply-to 표시 */}
               {replyTo && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 12px", background: "rgba(99,102,241,0.12)", borderBottom: "1px solid rgba(99,102,241,0.2)", fontSize: 11, color: "#a5b4fc" }}>
-                  <span>↩ <b>{replyTo.agentLabel}</b> — {replyTo.preview}{replyTo.preview.length >= 60 ? "..." : ""}</span>
-                  <button onClick={() => setReplyTo(null)} style={{ background: "none", border: "none", color: "#a5b4fc", cursor: "pointer", fontSize: 13, padding: "0 4px" }}>✕</button>
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "6px 12px", background: "rgba(99,102,241,0.12)",
+                  borderTop: "1px solid rgba(99,102,241,0.25)",
+                  borderLeft: "3px solid rgba(99,102,241,0.6)",
+                  fontSize: 12, color: "#a5b4fc",
+                }}>
+                  <span>
+                    <span style={{ fontWeight: 700 }}>↩ {replyTo.agentLabel}</span>
+                    <span style={{ opacity: 0.75 }}> — {replyTo.preview}{replyTo.preview.length >= 60 ? "..." : ""}</span>
+                  </span>
+                  <button
+                    onClick={() => setReplyTo(null)}
+                    style={{ background: "none", border: "none", color: "#a5b4fc", cursor: "pointer", fontSize: 14, padding: "0 4px" }}
+                  >✕</button>
                 </div>
               )}
-              <div style={{ display: "flex", gap: 8, padding: "8px" }}>
+              <div style={{ display: "flex", width: "100%" }}>
                 <textarea
                   ref={chatInputRef}
-                  className={s.chatInput} rows={1}
-                  placeholder={replyTo ? `${replyTo.agentLabel}에게 댓글... (Enter 전송 · Esc 취소)` : "의견 입력 (Enter 전송) · 토론에 개입하려면 여기에 입력"}
+                  className={s.chatInput}
                   value={chatInput}
-                  onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
-                  onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+                  rows={2}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setChatInput(e.target.value)}
+                  onCompositionStart={() => { isComposingRef.current = true; }}
+                  onCompositionEnd={() => { isComposingRef.current = false; }}
+                  onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
                     if (e.key === "Escape") { setReplyTo(null); return; }
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && chatInput.trim()) {
                       e.preventDefault();
                       const text = chatInput.trim();
-                      if (!text) return;
                       const quote = replyTo
                         ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
                         : "";
@@ -2673,22 +2687,27 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                       setChatInput(""); setReplyTo(null);
                     }
                   }}
+                  placeholder={replyTo ? `${replyTo.agentLabel}에게 댓글... (Enter 전송 · Esc 취소)` : "아무 때나 끼어들어도 돼! (Enter 전송 · Shift+Enter 줄바꿈)"}
+                  style={{ resize: "none", flex: 1 }}
                 />
-                <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => {
-                  const text = chatInput.trim();
-                  if (!text) return;
-                  const quote = replyTo
-                    ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
-                    : "";
-                  pendingUserMsgRef.current = quote + text;
-                  setMsgs((prev: Msg[]) => [...prev, {
-                    id: Math.random().toString(36).slice(2),
-                    agent: "user" as AgentId, text,
-                    replyQuote: replyTo ? { agentLabel: replyTo.agentLabel, preview: replyTo.preview } : undefined,
-                    streaming: false,
-                  }]);
-                  setChatInput(""); setReplyTo(null);
-                }}>전송</button>
+                <button
+                  className={s.btnSend}
+                  onClick={() => {
+                    const text = chatInput.trim();
+                    if (!text) return;
+                    const quote = replyTo
+                      ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
+                      : "";
+                    pendingUserMsgRef.current = quote + text;
+                    setMsgs((prev: Msg[]) => [...prev, {
+                      id: Math.random().toString(36).slice(2),
+                      agent: "user" as AgentId, text,
+                      replyQuote: replyTo ? { agentLabel: replyTo.agentLabel, preview: replyTo.preview } : undefined,
+                      streaming: false,
+                    }]);
+                    setChatInput(""); setReplyTo(null);
+                  }}
+                >전송</button>
               </div>
             </div>
           )}

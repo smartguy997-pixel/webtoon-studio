@@ -330,8 +330,8 @@
 .chatInputRow {
   flex-shrink: 0;
   display: flex;
-  gap: 10px;
-  padding: 14px 20px;
+  gap: 8px;
+  padding: 12px 16px;
   background: #0d0d14;
   border-top: 1px solid #2a2a3d;
   align-items: flex-end;
@@ -341,16 +341,16 @@
   flex: 1;
   background: #16161f;
   border: 1px solid #2a2a3d;
-  border-radius: 10px;
+  border-radius: 8px;
   color: #f1f5f9;
   font-size: 14px;
   font-family: inherit;
-  padding: 11px 14px;
+  padding: 10px 14px;
   outline: none;
   resize: none;
-  line-height: 1.55;
-  min-height: 42px;
-  max-height: 120px;
+  line-height: 1.5;
+  min-height: 56px;
+  max-height: 160px;
   overflow-y: auto;
   transition: border-color 0.15s;
 }
@@ -360,7 +360,7 @@
 }
 
 .chatInput::placeholder {
-  color: #3a3a52;
+  color: #4a4a6a;
 }
 
 .chatInput:disabled {
@@ -370,16 +370,16 @@
 .btnSend {
   background: #7c6cfc;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   color: #fff;
   font-size: 13px;
   font-weight: 700;
-  padding: 10px 18px;
+  padding: 10px 20px;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s, opacity 0.15s;
-  align-self: flex-end;
-  height: 42px;
+  align-self: stretch;
+  flex-shrink: 0;
 }
 
 .btnSend:hover:not(:disabled) {
