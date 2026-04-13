@@ -133,7 +133,8 @@ function pickNextSpeaker(
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Msg { id: string; agent: AgentId; round: number; text: string; streaming: boolean; }
+interface ReplyQuote { agentLabel: string; preview: string; }
+interface Msg { id: string; agent: AgentId; round: number; text: string; streaming: boolean; replyQuote?: ReplyQuote; }
 interface USP { icon: string; title: string; desc: string; prediction: string; }
 interface Competitor {
   title: string; platform: string; period: string; readers: string;
@@ -671,13 +672,19 @@ function renderMsgLine(line: string, i: number, agentColor: string) {
   );
 }
 
-function MsgBubble({ msg }: { msg: Msg; key?: string }) {
+function MsgBubble({ msg, onReply }: { msg: Msg; key?: string; onReply?: (msg: Msg) => void }) {
+  const [hovered, setHovered] = useState(false);
   const agent = AGENTS[msg.agent] ?? { label: msg.agent, emoji: "🤖", color: "#94a3b8", bg: "rgba(148,163,184,0.10)" };
   const isUser = msg.agent === "user";
   const displayText = msg.agent === "producer" ? stripResultBlock(msg.text) : msg.text;
 
   return (
-    <div className={`${styles.msgRow} ${isUser ? styles.msgRowUser : ""}`}>
+    <div
+      className={`${styles.msgRow} ${isUser ? styles.msgRowUser : ""}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ position: "relative" }}
+    >
       {!isUser && (
         <div className={styles.avatar} style={{ background: agent.bg, borderColor: agent.color }}>
           {agent.emoji}
@@ -693,6 +700,18 @@ function MsgBubble({ msg }: { msg: Msg; key?: string }) {
           className={`${styles.bubble} ${isUser ? styles.bubbleUser : ""}`}
           style={!isUser ? { borderLeftColor: agent.color, background: agent.bg } : {}}
         >
+          {/* 댓글 대상 말풍선 인용 표시 */}
+          {isUser && msg.replyQuote && (
+            <div style={{
+              borderLeft: "2px solid rgba(165,180,252,0.5)",
+              paddingLeft: 8, marginBottom: 6,
+              color: "rgba(165,180,252,0.8)", fontSize: 11,
+            }}>
+              <span style={{ fontWeight: 600 }}>{msg.replyQuote.agentLabel}</span>
+              {" — "}
+              <span style={{ opacity: 0.85 }}>{msg.replyQuote.preview}</span>
+            </div>
+          )}
           {isUser
             ? displayText.split("\n").map((line, i) => (
                 <span key={i}>{line}{i < displayText.split("\n").length - 1 && <br />}</span>
@@ -702,6 +721,20 @@ function MsgBubble({ msg }: { msg: Msg; key?: string }) {
           {msg.streaming && <span className={styles.streamCursor} />}
           {msg.streaming && !displayText && <ThinkingDots />}
         </div>
+        {/* 댓글 버튼 — 호버 시 표시, 에이전트 발언에만 */}
+        {!isUser && !msg.streaming && onReply && hovered && (
+          <button
+            onClick={() => onReply(msg)}
+            style={{
+              marginTop: 4, padding: "2px 10px", fontSize: 11,
+              background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)",
+              borderRadius: 99, color: "#a5b4fc", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4,
+            }}
+          >
+            ↩ 댓글 달기
+          </button>
+        )}
       </div>
       {isUser && (
         <div className={styles.avatar} style={{ background: agent.bg, borderColor: agent.color }}>
@@ -1217,6 +1250,8 @@ export default function Phase1Page() {
   const [chatInput, setChatInput] = useState("");
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<AgendaId[]>([]); // 다뤄진 아젠다 항목 (UI 표시용)
   const [statusMsg, setStatusMsg] = useState(""); // 진행 상태 안내 메시지
+  const [replyTo, setReplyTo] = useState<{ msg: Msg; agentLabel: string; preview: string } | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Refs ──
   const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -2154,7 +2189,19 @@ export default function Phase1Page() {
         {/* Chat body */}
         <div className={styles.chatBody} ref={chatBodyRef}>
           {msgs.map((msg: Msg) => (
-            <MsgBubble key={msg.id} msg={msg} />
+            <MsgBubble
+              key={msg.id}
+              msg={msg}
+              onReply={debatePhase === "running" ? (m) => {
+                const agent = AGENTS[m.agent];
+                setReplyTo({
+                  msg: m,
+                  agentLabel: agent?.label ?? m.agent,
+                  preview: (agent?.label === "총괄프로듀서" ? stripResultBlock(m.text) : m.text).slice(0, 60).trim(),
+                });
+                setTimeout(() => chatInputRef.current?.focus(), 50);
+              } : undefined}
+            />
           ))}
 
           {/* Paused — offer resume */}
@@ -2240,48 +2287,91 @@ export default function Phase1Page() {
 
       {/* ── User chat input (during debate) ── */}
       {debatePhase === "running" && (
-        <div className={styles.chatInputRow}>
-          <textarea
-            className={styles.chatInputBox}
-            value={chatInput}
-            rows={2}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
-              setChatInput(e.target.value);
-              userTypingRef.current = e.target.value.length > 0;
-            }}
-            onCompositionStart={() => { isComposingRef.current = true; }}
-            onCompositionEnd={() => { isComposingRef.current = false; }}
-            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-              if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && chatInput.trim()) {
-                e.preventDefault();
-                const text = chatInput.trim();
-                const id = `user_${Date.now()}_${Math.random()}`;
-                pendingUserMsgRef.current = text;
-                pendingUserMsgIdRef.current = id;
-                userTypingRef.current = false;
-                setMsgs(prev => [...prev, { id, agent: "user" as AgentId, round: 0, text, streaming: false }]);
-                setChatInput("");
-              }
-            }}
-            placeholder={"아무 때나 끼어들어도 돼! (Enter 전송 · Shift+Enter 줄바꿈)\n끝내려면 '끝내자' 입력"}
-            style={{ resize: "none" }}
-          />
-          <button
-            className={styles.chatSendBtn}
-            onClick={() => {
-              if (chatInput.trim()) {
-                const text = chatInput.trim();
-                const id = `user_${Date.now()}_${Math.random()}`;
-                pendingUserMsgRef.current = text;
-                pendingUserMsgIdRef.current = id;
-                userTypingRef.current = false;
-                setMsgs(prev => [...prev, { id, agent: "user" as AgentId, round: 0, text, streaming: false }]);
-                setChatInput("");
-              }
-            }}
-          >
-            전송
-          </button>
+        <div className={styles.chatInputRow} style={{ flexDirection: "column", gap: 0, padding: 0 }}>
+          {/* 댓글 대상 표시 바 */}
+          {replyTo && (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "6px 12px", background: "rgba(99,102,241,0.12)",
+              borderTop: "1px solid rgba(99,102,241,0.25)",
+              borderLeft: "3px solid rgba(99,102,241,0.6)",
+              fontSize: 12, color: "#a5b4fc",
+            }}>
+              <span>
+                <span style={{ fontWeight: 700 }}>↩ {replyTo.agentLabel}</span>
+                <span style={{ opacity: 0.75 }}> — {replyTo.preview}{replyTo.preview.length >= 60 ? "..." : ""}</span>
+              </span>
+              <button
+                onClick={() => setReplyTo(null)}
+                style={{ background: "none", border: "none", color: "#a5b4fc", cursor: "pointer", fontSize: 14, padding: "0 4px" }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <div style={{ display: "flex", width: "100%" }}>
+            <textarea
+              ref={chatInputRef}
+              className={styles.chatInputBox}
+              value={chatInput}
+              rows={2}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                setChatInput(e.target.value);
+                userTypingRef.current = e.target.value.length > 0;
+              }}
+              onCompositionStart={() => { isComposingRef.current = true; }}
+              onCompositionEnd={() => { isComposingRef.current = false; }}
+              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                if (e.key === "Escape") { setReplyTo(null); return; }
+                if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && chatInput.trim()) {
+                  e.preventDefault();
+                  const text = chatInput.trim();
+                  const id = `user_${Date.now()}_${Math.random()}`;
+                  const quote = replyTo
+                    ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
+                    : "";
+                  const fullText = quote + text;
+                  pendingUserMsgRef.current = fullText;
+                  pendingUserMsgIdRef.current = id;
+                  userTypingRef.current = false;
+                  setMsgs((prev: Msg[]) => [...prev, {
+                    id, agent: "user" as AgentId, round: 0, text,
+                    replyQuote: replyTo ? { agentLabel: replyTo.agentLabel, preview: replyTo.preview } : undefined,
+                    streaming: false,
+                  }]);
+                  setChatInput("");
+                  setReplyTo(null);
+                }
+              }}
+              placeholder={replyTo ? `${replyTo.agentLabel}에게 댓글... (Enter 전송 · Esc 취소)` : "아무 때나 끼어들어도 돼! (Enter 전송 · Shift+Enter 줄바꿈)\n끝내려면 '끝내자' 입력"}
+              style={{ resize: "none", flex: 1 }}
+            />
+            <button
+              className={styles.chatSendBtn}
+              onClick={() => {
+                if (chatInput.trim()) {
+                  const text = chatInput.trim();
+                  const id = `user_${Date.now()}_${Math.random()}`;
+                  const quote = replyTo
+                    ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
+                    : "";
+                  const fullText = quote + text;
+                  pendingUserMsgRef.current = fullText;
+                  pendingUserMsgIdRef.current = id;
+                  userTypingRef.current = false;
+                  setMsgs((prev: Msg[]) => [...prev, {
+                    id, agent: "user" as AgentId, round: 0, text,
+                    replyQuote: replyTo ? { agentLabel: replyTo.agentLabel, preview: replyTo.preview } : undefined,
+                    streaming: false,
+                  }]);
+                  setChatInput("");
+                  setReplyTo(null);
+                }
+              }}
+            >
+              전송
+            </button>
+          </div>
         </div>
       )}
 
