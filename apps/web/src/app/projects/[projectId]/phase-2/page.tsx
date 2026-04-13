@@ -4036,24 +4036,37 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   const handleRestartNew = useCallback(() => {
     abortRef.current = true;
-    localStorage.removeItem(`p2_msgs_${projectId}`);
-    localStorage.removeItem(`wts_phase2_${projectId}`);
-    localStorage.removeItem(`wts_asset_list_${projectId}`);
-    STAGES.forEach((_, idx) => {
-      localStorage.removeItem(`p2_conv_${idx}_${projectId}`);
-      localStorage.removeItem(`p2_msgs_${idx}_${projectId}`);
-    });
+    const idx = currentStageIdx;
+    // 현재 스테이지 대화만 지우고, 이전 스테이지 결과는 보존
+    localStorage.removeItem(`p2_conv_${idx}_${projectId}`);
+    localStorage.removeItem(`p2_msgs_${idx}_${projectId}`);
+    // 이전 결과는 유지, 현재 스테이지부터 제거
+    const keptResults = stageResultsRef.current.filter((r: StageResult) => r.stageId < STAGES[idx].id);
+    const keptHistory: Record<number, Msg[]> = {};
+    for (let i = 0; i < idx; i++) keptHistory[i] = stageHistoryMsgs[i] ?? [];
+    try {
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+        stageResults: keptResults,
+        currentStageIdx: idx,
+        stageHistoryMsgs: keptHistory,
+      }));
+    } catch { /* ignore */ }
     resumeDataRef.current = null;
     convRef.current = [];
-    stageResultsRef.current = [];
+    stageResultsRef.current = keptResults;
     runningRef.current = false;
-    synopsisAssetsRef.current = null;
-    setMsgs([]); setStageResults([]); setCurrentStageIdx(0); setApiError(null);
-    setStageHistoryMsgs({});
-    setAssetListPhase("idle");
-    setEditableAssets({ characters: [], locations: [], props: [] });
+    // synopsis step 초기화
+    synopsisStepRef.current = "idle";
+    loglineResolverRef.current = null;
+    setMsgs([]);
+    setStageResults(keptResults);
+    setStageHistoryMsgs(keptHistory);
+    setApiError(null);
+    setSynopsisStep("idle");
+    setSynopsisLoglines([]);
+    setSelectedLogline("");
     setDebatePhase("idle");
-  }, [projectId]);
+  }, [projectId, currentStageIdx, stageHistoryMsgs]);
 
   // ── 뷰 모드 전용: 과거 스테이지 이어서 토론 (기존 트랜스크립트 resume) ──
   const handleResumeStageFromView = useCallback((stageIdx: number) => {
