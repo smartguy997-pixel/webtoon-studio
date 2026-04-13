@@ -79,6 +79,16 @@ interface ImageItem {
   confirmed: boolean;
 }
 
+interface ImageConcept {
+  label: "A" | "B" | "C" | "D";
+  direction: string;       // 영문 이미지 생성 방향 프롬프트
+  imageUrl?: string;
+  prompt?: string;
+  generating: boolean;
+  error?: string;
+  recommendations: Array<{ agentId: AgentId; reason: string }>;
+}
+
 // Phase 1 → Phase 2 인계 데이터 타입 (최소한만)
 interface P1Data {
   concept?: string;
@@ -146,9 +156,9 @@ function buildPhase1Context(p1: P1Data): string {
 const STAGE_PROMPTS: Record<StageId, string> = {
   1: "세계관 — 이 세계의 시대·배경·핵심 규칙·분위기·특수 설정. 독자가 이 세계에 발을 들여놓는 순간 느끼는 감각까지 구체적으로.",
   2: "시놉시스 — 로그라인·전제·핵심 갈등·3막 구조·해결 방향. 나중에 100화 로드맵을 짤 수 있을 만큼 구체적으로.",
-  3: "등장인물 — 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 쓸 수 있을 만큼 시각적으로 구체적으로. 인물당 충분히 깊이 파고들어.",
-  4: "주요 장소 — 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로 묘사해. 시각적 이미지가 눈에 그려져야 해.",
-  5: "소품·장비·도구 — 탈것(택배차·오토바이·전함 등)·무기·특수 아이템·장비·일상용품. 이야기에서 의미 있는 모든 물건을 이미지로 그릴 수 있을 만큼 시각적으로 설계해. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
+  3: "등장인물 전체 목록 — 주인공·빌런·조력자·단역까지 이 이야기에 등장하는 모든 인물. 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 바로 쓸 수 있을 만큼 시각적으로 구체적으로. 시놉시스에 이름이 나온 인물은 한 명도 빠지면 안 돼.",
+  4: "장소 전체 목록 — 1화라도 등장하는 모든 장소. 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로. 스쳐 지나가는 배경도 시각적 정체성이 있어야 해.",
+  5: "소품·장비·도구 전체 목록 — 탈것·무기·특수 아이템·장비·일상용품·상징물. 이야기에서 단 한 번이라도 의미 있게 등장하는 모든 물건. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
 };
 
 // 단계별 구조화 데이터 → 에이전트용 풍부한 다줄 요약 (모든 필드 포함)
@@ -296,10 +306,26 @@ function buildStyleAgentPrompt(
 - 대사만. 이름 접두어 없음. 마크다운 금지. JSON 금지.`;
 }
 
-function buildExtractionPrompt(stageId: StageId, genre: string, debateText: string): string {
+function buildExtractionPrompt(
+  stageId: StageId,
+  genre: string,
+  debateText: string,
+  synopsisContext?: string,  // Stage 2 요약 — 완전성 기준
+): string {
   const stage = STAGES.find(s => s.id === stageId)!;
-  return `다음 토론에서 "${stage.name}" 관련 합의된 내용을 JSON으로 정리하세요.
+  const isBibleStage = stageId === 3 || stageId === 4 || stageId === 5;
+  const bibleNote = isBibleStage
+    ? `\n[제작 바이블 원칙 — 반드시 준수]\n` +
+      `- 시놉시스·세계관에 이름/언급이 있는 모든 항목을 포함\n` +
+      `- 토론에서 덜 다뤄진 항목도 기본 정보로 추가 (누락 금지)\n` +
+      `- 한 번이라도 등장하면 반드시 리스트업\n`
+    : "";
+  const synopsisNote = (isBibleStage && synopsisContext)
+    ? `\n[시놉시스 — 이 내용에 등장하는 항목을 기준으로 완전성 검증]\n${synopsisContext.slice(0, 1500)}\n`
+    : "";
 
+  return `다음 토론에서 "${stage.name}" 관련 합의된 내용을 JSON으로 정리하세요.
+${synopsisNote}${bibleNote}
 토론:
 ${debateText.slice(0, 4000)}
 
@@ -472,9 +498,11 @@ async function extractStageData(
   genre: string,
   debateText: string,
   apiKey: string,
+  synopsisContext?: string,  // Stage 2 요약 — 완전성 기준으로 활용
 ): Promise<{ data: Record<string, unknown>; summary: string }> {
 
   const slicedDebate = debateText.slice(0, 8000);
+  const isBibleStage = stage.id === 3 || stage.id === 4 || stage.id === 5;
 
   // ① JSON 추출 + ② 상세 내러티브 요약 — 병렬 실행
   const [jsonResult, narrativeResult] = await Promise.allSettled([
@@ -486,8 +514,8 @@ async function extractStageData(
         for await (const chunk of streamClaude({
           apiKey,
           systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
-          messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate) }],
-          maxTokens: (stage.id === 3 || stage.id === 4) ? 3000 : 1500,
+          messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate, synopsisContext) }],
+          maxTokens: (stage.id === 3 || stage.id === 4) ? 4000 : 2000,
         })) fullText += chunk;
       } catch { /* ignore */ }
       // 태그 파싱 → 루즈 JSON 파싱 순서로 시도
@@ -516,8 +544,45 @@ async function extractStageData(
     })(),
   ]);
 
-  const structured = jsonResult.status === "fulfilled" ? jsonResult.value : null;
+  let structured = jsonResult.status === "fulfilled" ? jsonResult.value : null;
   const narrative  = narrativeResult.status === "fulfilled" ? narrativeResult.value : "";
+
+  // ③ 완전성 보충 — Stage 3/4/5에서 시놉시스 기준으로 누락 항목 추가
+  // 토론에서 다루지 않은 인물·장소·소품을 자동으로 채워 바이블을 완성
+  if (isBibleStage && structured && synopsisContext) {
+    const listKey = stage.id === 3 ? "characters" : stage.id === 4 ? "locations" : "props";
+    const currentList = Array.isArray(structured[listKey]) ? (structured[listKey] as Record<string, unknown>[]) : [];
+    const currentNames = currentList.map(item => String(item.name ?? "")).filter(Boolean);
+
+    let patchText = "";
+    try {
+      for await (const chunk of streamClaude({
+        apiKey,
+        systemPrompt: "웹툰 제작 바이블 완전성 검증 전문가. 누락된 항목만 JSON 배열로 출력.",
+        messages: [{
+          role: "user",
+          content:
+            `[시놉시스]\n${synopsisContext.slice(0, 1500)}\n\n` +
+            `[이미 추출된 ${stage.name} 목록]\n${currentNames.map(n => `- ${n}`).join("\n") || "(없음)"}\n\n` +
+            `시놉시스에 언급되었지만 위 목록에 없는 ${stage.name}이 있으면 추가해줘.\n` +
+            `없으면 빈 배열 []만 출력.\n\n` +
+            `출력 형식 (JSON 배열만, 설명 없이):\n[PATCH]\n[${stage.schema.includes('"characters"') ? '{"name":"이름","role":"역할","gender":"","age":"","face":"","height":"","build":"","weight":"","outfit":"","personality":"","motivation":"","speech":"","story_role":""}' : stage.id === 4 ? '{"name":"장소명","type":"","visual":"","architecture":"","lighting":"","color_palette":"","atmosphere":"","sound":"","significance":"","key_scenes":"","symbolic_meaning":""}' : '{"name":"소품명","type":"","visual":"","condition":"","function":"","story_role":"","symbolic_meaning":"","owner":""}'}]\n[/PATCH]`,
+        }],
+        maxTokens: 1500,
+        tools: [],
+      })) patchText += chunk;
+    } catch { /* ignore */ }
+
+    const patchMatch = patchText.match(/\[PATCH\]\s*([\s\S]*?)\s*\[\/PATCH\]/);
+    if (patchMatch) {
+      try {
+        const additions = JSON.parse(patchMatch[1]) as Record<string, unknown>[];
+        if (Array.isArray(additions) && additions.length > 0) {
+          structured = { ...structured, [listKey]: [...currentList, ...additions] };
+        }
+      } catch { /* ignore */ }
+    }
+  }
 
   // data: 구조화 JSON 우선, 없으면 내러티브를 raw_summary로
   const data: Record<string, unknown> = structured ?? (narrative ? { raw_summary: narrative } : { raw_summary: "(추출 실패)" });
@@ -664,14 +729,22 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [styleGenError, setStyleGenError] = useState<string | null>(null);
   const [styleInput, setStyleInput] = useState(""); // 사용자가 편집하는 스타일 텍스트
 
-  // ── 이미지 생성 State (Stage 3/4/5 완료 후 삽입) ──
-  type ImageGenPhase = "idle" | "generating" | "discussing" | "feedback";
-  const [imageGenPhase, setImageGenPhase] = useState<ImageGenPhase>("idle");
+  // ── 이미지 컨셉 회의 State (Stage 3/4/5 완료 후 삽입) ──
+  // pre-debate: 사전 회의 (방향 논의)
+  // extracting: 4방향 추출 중
+  // generating: 4개 이미지 병렬 생성
+  // post-debate: 검토 회의 (이미지 평가)
+  // recommending: 에이전트 추천 발표
+  // selecting: 사용자 선택 대기
+  type ImageSessionPhase = "idle" | "pre-debate" | "extracting" | "generating" | "post-debate" | "recommending" | "selecting";
+  const [imageSessionPhase, setImageSessionPhase] = useState<ImageSessionPhase>("idle");
   const [imageItems, setImageItems] = useState<ImageItem[]>([]);
   const [currentImageItemIdx, setCurrentImageItemIdx] = useState(0);
+  const [imageConcepts, setImageConcepts] = useState<ImageConcept[]>([]);
+  const [imageRoundNum, setImageRoundNum] = useState(1);
   const [imageGenLoading, setImageGenLoading] = useState(false);
   const [imageGenError, setImageGenError] = useState<string | null>(null);
-  const [imageRefinement, setImageRefinement] = useState("");
+  const [imageCustomDir, setImageCustomDir] = useState(""); // 사용자 커스텀 방향 입력
 
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -688,7 +761,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const pendingStyleMsgRef = useRef<string | null>(null);
   const imageItemsRef = useRef<ImageItem[]>([]);
   const imageTargetStageIdxRef = useRef<number>(0);
-  const imageDiscussingRef = useRef(false);
+  const imageCurrentItemIdxRef = useRef(0);
+  const imageConvRef = useRef<string[]>([]);
+  const pendingImageMsgRef = useRef<string | null>(null);
+  const imageDebateRunRef = useRef(false);
+  const imageAbortRef = useRef(false);
+  const imageConceptsRef = useRef<ImageConcept[]>([]);
+  const imageSelectedDirRef = useRef(""); // 이전 라운드에서 선택한 방향
+  // 전 스테이지 통합 확정 아이템 목록 — 일관성 컨텍스트 구성에 사용
+  const confirmedAllItemsRef = useRef<ImageItem[]>([]);
 
   // ── Mount: restore from localStorage ──
   useEffect(() => {
@@ -1002,7 +1083,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       if (apiKey) {
         const debateText = convRef.current.join("\n");
         const extractId = addMsg("producer", "결과 정리 중...", true);
-        const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
+        const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+        const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
         updateMsg(extractId, "", false);
         setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
 
@@ -1189,35 +1271,366 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     void runDebate(2);
   }, [styleInput, conceptStyle, projectId, runDebate]);
 
-  // ── Image Generation Phase ──
+  // ── 이미지 컨셉 회의 Phase ──
 
-  // 다음 스테이지로 이동 (이미지 생성 완료 후)
+  // 전체 이미지 세션 종료 → 다음 스테이지로
   const proceedAfterAllImages = useCallback(() => {
     const stageIdx = imageTargetStageIdxRef.current;
     const nextIdx = stageIdx + 1;
-    setImageGenPhase("idle");
+    setImageSessionPhase("idle");
     setImageItems([]);
+    setImageConcepts([]);
     imageItemsRef.current = [];
+    imageConceptsRef.current = [];
     setMsgs([]);
     convRef.current = [];
     setCurrentStageIdx(nextIdx);
-    if (nextIdx >= STAGES.length) {
-      setDebatePhase("done");
-    } else {
-      void runDebate(nextIdx);
-    }
+    if (nextIdx >= STAGES.length) setDebatePhase("done");
+    else void runDebate(nextIdx);
   }, [runDebate]);
 
-  // 에이전트 3명이 생성된 이미지에 대해 토론
-  const runImageAgentDiscussion = useCallback(async (item: ImageItem) => {
-    if (imageDiscussingRef.current) return;
-    imageDiscussingRef.current = true;
+  // 현재 아이템 완료 → 다음 아이템 또는 전체 종료
+  const proceedToNextItem = useCallback((startDebate: (item: ImageItem) => void) => {
+    const items = imageItemsRef.current;
+    const nextIdx = imageCurrentItemIdxRef.current + 1;
+    if (nextIdx < items.length) {
+      setCurrentImageItemIdx(nextIdx);
+      imageCurrentItemIdxRef.current = nextIdx;
+      imageSelectedDirRef.current = "";
+      setImageRoundNum(1);
+      setImageConcepts([]);
+      imageConceptsRef.current = [];
+      setMsgs([]);
+      imageConvRef.current = [];
+      startDebate(items[nextIdx]);
+    } else {
+      proceedAfterAllImages();
+    }
+  }, [proceedAfterAllImages]);
+
+  // 에이전트 1명 발언 (이미지 토론용 — typewriter 포함)
+  const runImageAgent = useCallback(async (
+    agentId: AgentId,
+    systemPrompt: string,
+    userPrompt: string,
+    maxTokens = 200,
+  ): Promise<void> => {
+    const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(0));
+    if (!key) return;
+    const msgId = addMsg(agentId, "", true);
+    let text = "";
+    try {
+      for await (const chunk of streamClaude({
+        apiKey: key, systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+        maxTokens, tools: [],
+      })) {
+        if (imageAbortRef.current) break;
+        text += chunk;
+      }
+    } catch {
+      setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId));
+      return;
+    }
+    const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+    if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); return; }
+    for (let j = 2; j < clean.length; j += 2) {
+      if (imageAbortRef.current) break;
+      updateMsg(msgId, clean.slice(0, j), true);
+      await sleep(100);
+    }
+    updateMsg(msgId, clean, false);
+  }, [addMsg, updateMsg]);
+
+  // ── 일관성 컨텍스트 빌더 ──
+  // 이미 확정된 캐릭터/장소 비주얼을 다음 아이템 생성 시 참조로 주입
+  // character 생성 시 → 화풍(MST)만
+  // location 생성 시 → 화풍 + 확정 캐릭터들
+  // prop 생성 시    → 화풍 + 확정 캐릭터 + 확정 장소
+  function buildConsistencyContext(itemType: "character" | "location" | "prop"): string {
+    const confirmed = confirmedAllItemsRef.current;
+    const parts: string[] = [];
+
+    if (conceptStyle) {
+      parts.push(`[확정 화풍 — 반드시 일치]\n${conceptStyle}`);
+    }
+    if (itemType !== "character") {
+      const chars = confirmed.filter((c: ImageItem) => c.type === "character");
+      if (chars.length > 0) {
+        parts.push(
+          `[확정된 캐릭터 비주얼 — 같은 세계에 등장, 스타일 통일 필수]\n` +
+          chars.map((c: ImageItem) => `• ${c.name}: ${c.description.split("\n").slice(0, 3).join(" / ")}`).join("\n")
+        );
+      }
+    }
+    if (itemType === "prop") {
+      const locs = confirmed.filter((c: ImageItem) => c.type === "location");
+      if (locs.length > 0) {
+        parts.push(
+          `[확정된 장소 비주얼 — 소품이 놓일 환경]\n` +
+          locs.map((l: ImageItem) => `• ${l.name}: ${l.description.split("\n").slice(0, 2).join(" / ")}`).join("\n")
+        );
+      }
+    }
+    if (parts.length === 0) return "";
+    return `\n[일관성 참고]\n${parts.join("\n\n")}\n\n[일관성 원칙]\n- 모든 이미지는 같은 웹툰 세계의 일부로, 색감·선화·분위기가 통일되어야 함\n- 이미 확정된 아이템과 나란히 놓였을 때 같은 작품처럼 보여야 함`;
+  }
+
+  // 이미지 회의용 에이전트 시스템 프롬프트 생성
+  function buildImageAgentSysPrompt(agentId: AgentId, item: ImageItem, topic: string, prevDir?: string): string {
     const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
-    const discussAgents: AgentId[] = ["character", "script", "worldbuilder"];
-    for (let i = 0; i < 3; i++) {
-      if (abortRef.current) break;
-      if (i > 0) await sleep(2500 + Math.random() * 2000);
-      const agentId = discussAgents[i];
+    const consistencyCtx = buildConsistencyContext(item.type);
+    return [
+      `너는 웹툰 기획 팀의 ${AGENTS[agentId].label}야.`,
+      `성격: ${AGENT_ROLE_DESC[agentId] ?? ""}`,
+      `장르: ${genre}`,
+      ``,
+      `지금 주제: "${item.name}" ${typeLabel} ${topic}`,
+      ``,
+      `[설계 내용]`,
+      item.description,
+      prevDir ? `\n[이전 라운드 선택 방향]\n${prevDir}` : "",
+      consistencyCtx,
+      ``,
+      `[대화 방식]`,
+      `- 1~2문장, 구어체`,
+      `- 구체적인 색감·스타일·구도 언급`,
+      `- 이미 확정된 아이템들과의 일관성을 반드시 고려`,
+      `- 마크다운/JSON 금지`,
+    ].join("\n");
+  }
+
+  // ── 사전 회의: 4가지 방향 논의 ──
+  const runPreGenDebate = useCallback(async (item: ImageItem, prevDir?: string) => {
+    if (imageDebateRunRef.current) return;
+    imageDebateRunRef.current = true;
+    imageAbortRef.current = false;
+    setImageSessionPhase("pre-debate");
+    setMsgs([]);
+    imageConvRef.current = [];
+    pendingImageMsgRef.current = null;
+
+    const IMG_AGENTS: AgentId[] = ["character", "script", "worldbuilder", "scenario", "editor"];
+    let agentIdx = 0;
+    let lastSpeaker: AgentId | null = null;
+    let transcript: string[] = [];
+    const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+    const topic = `컨셉 시안 방향 회의${prevDir ? " (개선 라운드)" : ""}`;
+
+    for (let turn = 0; turn < 7; turn++) {
+      if (imageAbortRef.current) break;
+      if (turn > 0) {
+        const wait = 5000 + Math.random() * 3000;
+        const start = Date.now();
+        while (Date.now() - start < wait) {
+          if (imageAbortRef.current || pendingImageMsgRef.current) break;
+          await sleep(150);
+        }
+      }
+      const pending = pendingImageMsgRef.current;
+      if (pending) {
+        pendingImageMsgRef.current = null;
+        addMsg("user", pending, false);
+        transcript.push(`[사용자]: ${pending}`);
+        imageConvRef.current = transcript;
+      }
+      if (imageAbortRef.current) break;
+
+      const avail = IMG_AGENTS.filter(a => a !== lastSpeaker);
+      const next: AgentId = turn === 0 ? "character"
+        : avail[Math.floor(Math.random() * avail.length)] ?? IMG_AGENTS[0];
+
+      const hist = transcript.slice(-3).join("\n");
+      const prompt = turn === 0
+        ? `"${item.name}" ${typeLabel}를 위한 시각적 시안 방향을 제안해줘. ${
+            prevDir ? `이전에 선택된 방향: "${prevDir}"을 기반으로 발전된 아이디어로.`
+            : "서로 다른 스타일 접근법 중 하나를 먼저 꺼내봐."}`
+        : `[지금까지]\n${hist}\n\n앞 얘기 받아서 시안 방향에 대해 한마디.`;
+
+      await runImageAgent(next, buildImageAgentSysPrompt(next, item, topic, prevDir), prompt);
+      transcript.push(`[${AGENTS[next].label}]: (발언)`);
+      imageConvRef.current = transcript;
+      agentIdx++;
+      lastSpeaker = next;
+    }
+
+    // 프로듀서가 4가지 방향으로 정리
+    if (!imageAbortRef.current) {
+      const hist = transcript.slice(-4).join("\n");
+      await runImageAgent("producer",
+        buildImageAgentSysPrompt("producer", item, topic, prevDir),
+        `${hist}\n\n팀 의견을 종합해서 A안/B안/C안/D안 네 가지 서로 다른 시안 방향을 자연스럽게 제안해줘. 각각 색감·스타일이 뚜렷이 다르게. 한 문장씩.`,
+        400,
+      );
+    }
+
+    imageDebateRunRef.current = false;
+    if (!imageAbortRef.current) {
+      // 자동 진행
+      void extractAndGenerate(item);
+    }
+  }, [genre, addMsg, runImageAgent]);  // eslint-disable-line
+
+  // ── 4방향 추출 + 4개 이미지 병렬 생성 ──
+  const extractAndGenerate = useCallback(async (item: ImageItem) => {
+    setImageSessionPhase("extracting");
+    setImageGenError(null);
+    const apiKey = getAnthropicKey();
+    if (!apiKey) { setImageGenError("Anthropic API 키가 필요합니다"); return; }
+
+    const transcript = imageConvRef.current.join("\n");
+    const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+
+    // Claude로 4방향 추출
+    let dirJSON = "";
+    try {
+      for await (const chunk of streamClaude({
+        apiKey,
+        systemPrompt: "이미지 생성 프롬프트 전문가. JSON만 출력.",
+        messages: [{
+          role: "user",
+          content:
+            `다음 "${item.name}" ${typeLabel} 시안 방향 회의 내용에서 4가지 서로 다른 영문 이미지 생성 프롬프트를 추출하세요.\n` +
+            `각각 색감·스타일·구도가 뚜렷이 달라야 합니다.\n` +
+            `확정된 스타일: ${conceptStyle || "Korean webtoon, digital illustration"}\n\n` +
+            `[회의 내용]\n${transcript.slice(0, 3000)}\n\n` +
+            `[아이템 설계]\n${item.description}\n\n` +
+            (buildConsistencyContext(item.type) ? `${buildConsistencyContext(item.type)}\n\n` : "") +
+            `[중요] 4개 프롬프트 모두 위의 확정 화풍·캐릭터 스타일과 일관성을 유지해야 합니다.\n` +
+            `아래 JSON만 출력 (설명 없이):\n` +
+            `[DIRECTIONS]\n{"A":"영문 프롬프트 40-60단어","B":"...","C":"...","D":"..."}\n[/DIRECTIONS]`,
+        }],
+        maxTokens: 600,
+        tools: [],
+      })) { dirJSON += chunk; }
+    } catch { /* ignore */ }
+
+    const m = dirJSON.match(/\[DIRECTIONS\]\s*([\s\S]*?)\s*\[\/DIRECTIONS\]/);
+    let directions: Record<"A"|"B"|"C"|"D", string> = {
+      A: `${item.description} — style 1: bright and clean`,
+      B: `${item.description} — style 2: dark and dramatic`,
+      C: `${item.description} — style 3: detailed and realistic`,
+      D: `${item.description} — style 4: stylized and abstract`,
+    };
+    if (m) {
+      try { directions = JSON.parse(m[1]) as Record<"A"|"B"|"C"|"D", string>; } catch { /* fallback */ }
+    }
+
+    // 4개 초기 컨셉 설정
+    const LABELS = ["A", "B", "C", "D"] as const;
+    const initConcepts: ImageConcept[] = LABELS.map((label, i) => ({
+      label, direction: directions[label] ?? `direction ${i+1}`, imageUrl: undefined,
+      prompt: undefined, generating: true, recommendations: [],
+    }));
+    setImageConcepts(initConcepts);
+    imageConceptsRef.current = initConcepts;
+    setImageSessionPhase("generating");
+    setImageGenLoading(true);
+
+    // 4개 병렬 생성
+    const results = await Promise.allSettled(
+      LABELS.map(label =>
+        fetch(`${API_BASE}/api/assets/${projectId}/generate-concept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: directions[label],
+            style: conceptStyle,
+            type: item.type,
+            anthropicApiKey: apiKey,
+          }),
+        }).then(r => r.json() as Promise<{ imageUrl: string; prompt: string }>)
+      )
+    );
+
+    const updatedConcepts: ImageConcept[] = LABELS.map((label, i) => {
+      const r = results[i];
+      if (r.status === "fulfilled") {
+        return { ...initConcepts[i], imageUrl: r.value.imageUrl, prompt: r.value.prompt, generating: false };
+      }
+      return { ...initConcepts[i], generating: false, error: "생성 실패" };
+    });
+    setImageConcepts(updatedConcepts);
+    imageConceptsRef.current = updatedConcepts;
+    setImageGenLoading(false);
+
+    // 검토 회의로
+    void runPostGenDebate(item, updatedConcepts);
+  }, [projectId, conceptStyle, runImageAgent]);  // eslint-disable-line
+
+  // ── 검토 회의: 4개 이미지 평가 토론 ──
+  const runPostGenDebate = useCallback(async (item: ImageItem, concepts: ImageConcept[]) => {
+    if (imageDebateRunRef.current) return;
+    imageDebateRunRef.current = true;
+    imageAbortRef.current = false;
+    setImageSessionPhase("post-debate");
+    setMsgs([]);
+    imageConvRef.current = [];
+    pendingImageMsgRef.current = null;
+
+    const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+    const conceptSummary = concepts.map(c => `${c.label}안: ${c.direction}`).join("\n");
+    const topic = `시안 검토 회의 — A/B/C/D 4개 이미지 평가`;
+    const postSysPrompt = (agentId: AgentId) =>
+      buildImageAgentSysPrompt(agentId, item, topic) + `\n\n[4개 시안 방향]\n${conceptSummary}` +
+      `\n\nA/B/C/D를 구체적으로 언급하며 장단점을 얘기해줘.`;
+
+    const POST_AGENTS: AgentId[] = ["script", "worldbuilder", "character", "scenario", "editor"];
+    let lastSpeaker: AgentId | null = null;
+    let transcript: string[] = [];
+
+    for (let turn = 0; turn < 5; turn++) {
+      if (imageAbortRef.current) break;
+      if (turn > 0) {
+        const wait = 5000 + Math.random() * 3000;
+        const start = Date.now();
+        while (Date.now() - start < wait) {
+          if (imageAbortRef.current || pendingImageMsgRef.current) break;
+          await sleep(150);
+        }
+      }
+      const pending = pendingImageMsgRef.current;
+      if (pending) {
+        pendingImageMsgRef.current = null;
+        addMsg("user", pending, false);
+        transcript.push(`[사용자]: ${pending}`);
+        imageConvRef.current = transcript;
+      }
+      if (imageAbortRef.current) break;
+
+      const avail = POST_AGENTS.filter(a => a !== lastSpeaker);
+      const next: AgentId = turn === 0 ? "script"
+        : avail[Math.floor(Math.random() * avail.length)] ?? POST_AGENTS[0];
+
+      const hist = transcript.slice(-3).join("\n");
+      const prompt = turn === 0
+        ? `4개 시안(A/B/C/D)을 검토해줘. 어떤 방향이 "${item.name}"의 설계 의도에 가장 맞는지 첫 의견.`
+        : `${hist ? `[지금까지]\n${hist}\n\n` : ""}앞 의견 받아서 시안 평가 한마디.`;
+
+      await runImageAgent(next, postSysPrompt(next), prompt);
+      transcript.push(`[${AGENTS[next].label}]: (발언)`);
+      imageConvRef.current = transcript;
+      lastSpeaker = next;
+    }
+
+    imageDebateRunRef.current = false;
+    if (!imageAbortRef.current) {
+      void runAgentRecommendations(item, concepts);
+    }
+  }, [addMsg, runImageAgent]);  // eslint-disable-line
+
+  // ── 에이전트 추천 발표 ──
+  const runAgentRecommendations = useCallback(async (item: ImageItem, concepts: ImageConcept[]) => {
+    setImageSessionPhase("recommending");
+    const conceptSummary = concepts.map(c => `${c.label}안: ${c.direction}`).join("\n");
+    const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+    const REC_AGENTS: AgentId[] = ["character", "script", "worldbuilder", "editor"];
+    const updatedConcepts = [...imageConceptsRef.current];
+
+    for (let i = 0; i < REC_AGENTS.length; i++) {
+      if (imageAbortRef.current) break;
+      if (i > 0) await sleep(2000 + Math.random() * 1500);
+      const agentId = REC_AGENTS[i];
       const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(i));
       if (!key) continue;
       const msgId = addMsg(agentId, "", true);
@@ -1229,16 +1642,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           messages: [{
             role: "user",
             content:
-              `방금 "${item.name}" ${typeLabel} 컨셉 이미지가 생성됐어.\n\n` +
+              `"${item.name}" ${typeLabel} 시안 4개 중 하나를 추천해줘.\n\n` +
+              `[시안 방향]\n${conceptSummary}\n\n` +
               `[설계 내용]\n${item.description}\n\n` +
-              `[사용된 프롬프트]\n${item.prompt ?? ""}\n\n` +
-              `이 이미지가 설계 내용에 얼마나 맞는지, 어떤 부분이 좋고 어떤 점이 아쉬운지 짧게 한마디. ` +
-              `구체적으로 (색감, 구도, 외형 등). 딱 1~2문장.`,
+              `반드시 A/B/C/D 중 하나를 선택해서 "저는 [X]안을 추천합니다. {이유 1문장}" 형식으로.`,
           }],
-          maxTokens: 180,
+          maxTokens: 150,
           tools: [],
         })) {
-          if (abortRef.current) break;
+          if (imageAbortRef.current) break;
           text += chunk;
         }
       } catch {
@@ -1248,60 +1660,47 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
       if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); continue; }
       for (let j = 2; j < clean.length; j += 2) {
-        if (abortRef.current) break;
+        if (imageAbortRef.current) break;
         updateMsg(msgId, clean.slice(0, j), true);
-        await sleep(100);
+        await sleep(80);
       }
       updateMsg(msgId, clean, false);
-    }
-    imageDiscussingRef.current = false;
-    setImageGenPhase("feedback");
-  }, [addMsg, updateMsg]);
 
-  // 현재 아이템 이미지 생성 → 에이전트 토론
-  const generateCurrentItem = useCallback(async (idx: number, refinement?: string) => {
-    const items = imageItemsRef.current;
-    if (idx >= items.length) return;
-    const item = items[idx];
-    setCurrentImageItemIdx(idx);
-    setImageGenLoading(true);
-    setImageGenError(null);
-    setImageGenPhase("generating");
-    setMsgs([]);
-    const description = refinement ? `${item.description}\n\n추가 요청: ${refinement}` : item.description;
-    try {
-      const res = await fetch(`${API_BASE}/api/assets/${projectId}/generate-concept`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description,
-          style: conceptStyle,
-          type: item.type,
-          anthropicApiKey: getAnthropicKey(),
-        }),
-      });
-      if (!res.ok) {
-        const errData = await res.json() as { error?: string };
-        throw new Error(errData.error ?? `서버 오류 ${res.status}`);
+      // 추천 라벨 파싱 (A/B/C/D)
+      const recMatch = clean.match(/[ABCD]안/);
+      if (recMatch) {
+        const label = recMatch[0][0] as "A"|"B"|"C"|"D";
+        const conceptIdx = ["A","B","C","D"].indexOf(label);
+        if (conceptIdx >= 0) {
+          updatedConcepts[conceptIdx] = {
+            ...updatedConcepts[conceptIdx],
+            recommendations: [...updatedConcepts[conceptIdx].recommendations, { agentId, reason: clean }],
+          };
+          setImageConcepts([...updatedConcepts]);
+          imageConceptsRef.current = [...updatedConcepts];
+        }
       }
-      const { imageUrl, prompt } = await res.json() as { imageUrl: string; prompt: string };
-      const updatedItems = items.map((it: ImageItem, i: number) => i === idx ? { ...it, imageUrl, prompt } : it);
-      imageItemsRef.current = updatedItems;
-      setImageItems(updatedItems);
-      // 이미지 메시지 추가
-      const imgId = uid();
-      setMsgs((prev: Msg[]) => [...prev, { id: imgId, agent: "producer" as AgentId, text: `${item.name} 컨셉 이미지`, streaming: false, imageUrl }]);
-      setImageGenLoading(false);
-      setImageGenPhase("discussing");
-      await runImageAgentDiscussion({ ...item, imageUrl, prompt });
-    } catch (err) {
-      setImageGenError(err instanceof Error ? err.message : String(err));
-      setImageGenLoading(false);
-      setImageGenPhase("feedback");
     }
-  }, [projectId, conceptStyle, runImageAgentDiscussion]);
 
-  // 이미지 생성 단계 진입 (stage 결과에서 아이템 목록 구성)
+    // 프로듀서 종합 추천
+    if (!imageAbortRef.current) {
+      await sleep(1500);
+      const recCounts = updatedConcepts.map(c => ({ label: c.label, count: c.recommendations.length }))
+        .sort((a, b) => b.count - a.count);
+      const topLabel = recCounts[0]?.label ?? "A";
+      await runImageAgent("producer",
+        `너는 총괄 프로듀서야. 장르: ${genre}`,
+        `팀 추천 집계: ${recCounts.map(r => `${r.label}안 ${r.count}표`).join(", ")}.\n\n` +
+        `팀 의견을 종합해서 "${topLabel}안"을 중심으로 최종 추천 의견을 1~2문장으로 자연스럽게.` +
+        ` 그리고 사용자(감독님)에게 최종 결정을 부탁해줘.`,
+        200,
+      );
+    }
+
+    setImageSessionPhase("selecting");
+  }, [genre, addMsg, updateMsg, runImageAgent]);
+
+  // ── 이미지 생성 단계 진입 (stage 결과에서 아이템 목록 구성) ──
   const enterImageGenPhase = useCallback((stageIdx: number) => {
     const stageId = STAGES[stageIdx].id;
     const stageResult = stageResultsRef.current.find((r: StageResult) => r.stageId === stageId);
@@ -1362,34 +1761,75 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     imageItemsRef.current = items;
     setImageItems(items);
     setCurrentImageItemIdx(0);
-    setImageRefinement("");
+    imageCurrentItemIdxRef.current = 0;
+    imageSelectedDirRef.current = "";
+    setImageRoundNum(1);
+    setImageConcepts([]);
+    imageConceptsRef.current = [];
     setMsgs([]);
     convRef.current = [];
-    void generateCurrentItem(0);
-  }, [generateCurrentItem, runDebate]);
+    void runPreGenDebate(items[0], undefined);
+  }, [runPreGenDebate, runDebate]);
 
-  // 현재 아이템 확정 → 다음으로
-  const confirmCurrentItem = useCallback(() => {
-    const idx = currentImageItemIdx;
-    const items = imageItemsRef.current;
-    const updated = items.map((it: ImageItem, i: number) => i === idx ? { ...it, confirmed: true } : it);
+  // ── 사용자가 "다음 라운드" 선택: 선택 시안 기반으로 새 라운드 ──
+  const handleNextRound = useCallback((label: "A"|"B"|"C"|"D") => {
+    const concept = imageConceptsRef.current.find((c: ImageConcept) => c.label === label);
+    const dir = imageCustomDir.trim() || concept?.direction || "";
+    imageSelectedDirRef.current = dir;
+    setImageCustomDir("");
+    setImageRoundNum((r: number) => r + 1);
+    setImageConcepts([]);
+    imageConceptsRef.current = [];
+    const item = imageItemsRef.current[imageCurrentItemIdxRef.current];
+    void runPreGenDebate(item, dir);
+  }, [imageCustomDir, runPreGenDebate]);
+
+  // ── 사용자가 "최종 확정" ──
+  const handleFinalConfirm = useCallback((label: "A"|"B"|"C"|"D") => {
+    const concept = imageConceptsRef.current.find((c: ImageConcept) => c.label === label);
+    const idx = imageCurrentItemIdxRef.current;
+    const confirmedItem = imageItemsRef.current[idx];
+    const updated = imageItemsRef.current.map((it: ImageItem, i: number) =>
+      i === idx ? { ...it, imageUrl: concept?.imageUrl, confirmed: true } : it
+    );
     imageItemsRef.current = updated;
     setImageItems(updated);
-    setImageRefinement("");
-    const nextIdx = idx + 1;
-    if (nextIdx < items.length) void generateCurrentItem(nextIdx);
-    else proceedAfterAllImages();
-  }, [currentImageItemIdx, generateCurrentItem, proceedAfterAllImages]);
+    // 전 스테이지 통합 확정 목록에 추가 (다음 아이템 일관성 컨텍스트에 사용)
+    if (confirmedItem) {
+      confirmedAllItemsRef.current = [
+        ...confirmedAllItemsRef.current,
+        { ...confirmedItem, imageUrl: concept?.imageUrl, confirmed: true },
+      ];
+    }
+    setImageCustomDir("");
+    setImageRoundNum(1);
+    setImageConcepts([]);
+    imageConceptsRef.current = [];
+    imageSelectedDirRef.current = "";
+    proceedToNextItem((nextItem: ImageItem) => void runPreGenDebate(nextItem, undefined));
+  }, [proceedToNextItem, runPreGenDebate]);
 
-  // 현재 아이템 건너뛰기 → 다음으로
-  const skipCurrentItem = useCallback(() => {
-    const idx = currentImageItemIdx;
-    const items = imageItemsRef.current;
-    setImageRefinement("");
-    const nextIdx = idx + 1;
-    if (nextIdx < items.length) void generateCurrentItem(nextIdx);
-    else proceedAfterAllImages();
-  }, [currentImageItemIdx, generateCurrentItem, proceedAfterAllImages]);
+  // ── 수동으로 사전 회의 종료 → 시안 생성 ──
+  const handleEndPreDebate = useCallback(() => {
+    imageAbortRef.current = true;
+    void (async () => {
+      while (imageDebateRunRef.current) await new Promise<void>(r => setTimeout(r, 100));
+      imageAbortRef.current = false;
+      const item = imageItemsRef.current[imageCurrentItemIdxRef.current];
+      void extractAndGenerate(item);
+    })();
+  }, [extractAndGenerate]);
+
+  // ── 수동으로 검토 회의 종료 → 추천 발표 ──
+  const handleEndPostDebate = useCallback(() => {
+    imageAbortRef.current = true;
+    void (async () => {
+      while (imageDebateRunRef.current) await new Promise<void>(r => setTimeout(r, 100));
+      imageAbortRef.current = false;
+      const item = imageItemsRef.current[imageCurrentItemIdxRef.current];
+      void runAgentRecommendations(item, imageConceptsRef.current);
+    })();
+  }, [runAgentRecommendations]);
 
   // ── Confirm current stage: stop debate → extract JSON → save ──
   const handleConfirm = useCallback(async (stageIdx: number) => {
@@ -1406,8 +1846,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     const debateText = convRef.current.join("\n");
     const extractId = addMsg("producer", "결과 정리 중...", true);
+    const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
 
-    const { data, summary } = await extractStageData(stage, genre, debateText, apiKey);
+    const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
 
     updateMsg(extractId, "", false);
     setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
@@ -1534,8 +1975,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               </div>
             )}
           </div>
-          {/* 이미지 생성 아이템 진행 표시기 */}
-          {imageGenPhase !== "idle" && imageItems.length > 0 && (
+          {/* 이미지 컨셉 회의 아이템 진행 표시기 */}
+          {imageSessionPhase !== "idle" && imageItems.length > 0 && (
             <div style={{ display: "flex", gap: 6, padding: "4px 16px 0", overflowX: "auto", flexShrink: 0 }}>
               {imageItems.map((item: ImageItem, i: number) => (
                 <div key={i} style={{
@@ -1545,7 +1986,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   border: `1px solid ${i === currentImageItemIdx ? "#7c6cfc" : item.confirmed ? "#34d399" : "#2a2a3d"}`,
                   fontSize: 11, color: i === currentImageItemIdx ? "#7c6cfc" : item.confirmed ? "#34d399" : "#4a4a6a",
                 }}>
-                  {item.confirmed ? "✓" : i === currentImageItemIdx ? (imageGenPhase === "generating" ? "⏳" : "→") : "·"} {item.name}
+                  {item.confirmed ? "✓" : i === currentImageItemIdx ? "→" : "·"} {item.name}
+                  {i === currentImageItemIdx && imageRoundNum > 1 && (
+                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>R{imageRoundNum}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -1588,55 +2032,142 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         <div className={s.chatBody}>
           {msgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)}
+
+          {/* ── 4개 이미지 그리드 (selecting 단계) ── */}
+          {imageSessionPhase === "selecting" && imageConcepts.length > 0 && (
+            <div style={{ padding: "16px", borderTop: "1px solid #1e1e2a" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#7c6cfc", marginBottom: 10, letterSpacing: "0.05em" }}>
+                🖼️ {imageItems[currentImageItemIdx]?.name} 시안 — 라운드 {imageRoundNum}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {imageConcepts.map((concept: ImageConcept) => {
+                  const recCount = concept.recommendations.length;
+                  return (
+                    <div key={concept.label} style={{ position: "relative", borderRadius: 10, overflow: "hidden", border: "2px solid #2a2a3d", background: "#0d0d1a" }}>
+                      {/* 라벨 배지 */}
+                      <div style={{ position: "absolute", top: 8, left: 8, zIndex: 1, background: "#7c6cfc", color: "#fff", fontSize: 12, fontWeight: 800, padding: "2px 8px", borderRadius: 6 }}>
+                        {concept.label}안
+                      </div>
+                      {/* 추천 카운트 배지 */}
+                      {recCount > 0 && (
+                        <div style={{ position: "absolute", top: 8, right: 8, zIndex: 1, background: "rgba(251,191,36,0.9)", color: "#000", fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6 }}>
+                          ⭐ {recCount}
+                        </div>
+                      )}
+                      {/* 이미지 */}
+                      {concept.imageUrl
+                        ? <img src={concept.imageUrl} alt={`${concept.label}안`} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
+                        : <div style={{ width: "100%", aspectRatio: "1", background: "#1a1a26", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#4a4a6a" }}>
+                            {concept.error ? "⚠ 생성 실패" : "⏳ 생성 중"}
+                          </div>
+                      }
+                      {/* 방향 설명 */}
+                      <div style={{ padding: "6px 8px", fontSize: 10, color: "#7878a0", lineHeight: 1.4, maxHeight: 48, overflow: "hidden" }}>
+                        {concept.direction.slice(0, 80)}...
+                      </div>
+                      {/* 추천 에이전트 이름들 */}
+                      {concept.recommendations.length > 0 && (
+                        <div style={{ padding: "0 8px 6px", display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+                          {concept.recommendations.map((r: { agentId: AgentId; reason: string }, i: number) => (
+                            <span key={i} style={{ fontSize: 10, color: AGENTS[r.agentId].color, background: AGENTS[r.agentId].bg, padding: "1px 5px", borderRadius: 4 }}>
+                              {AGENTS[r.agentId].label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* 선택 버튼들 */}
+                      <div style={{ padding: "6px 8px 10px", display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => handleNextRound(concept.label)}
+                          style={{ flex: 1, background: "rgba(124,108,252,0.1)", border: "1px solid rgba(124,108,252,0.4)", borderRadius: 6, color: "#7c6cfc", fontSize: 11, fontWeight: 700, padding: "6px 0", cursor: "pointer" }}>
+                          이 방향으로 →
+                        </button>
+                        <button
+                          onClick={() => handleFinalConfirm(concept.label)}
+                          style={{ flex: 1, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.4)", borderRadius: 6, color: "#34d399", fontSize: 11, fontWeight: 700, padding: "6px 0", cursor: "pointer" }}>
+                          ✓ 최종 확정
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 커스텀 방향 입력 */}
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <textarea
+                  value={imageCustomDir}
+                  onChange={(e: { target: HTMLTextAreaElement }) => setImageCustomDir(e.target.value)}
+                  placeholder="직접 방향 입력 (선택 안 하고 새 방향 제시) — 비워두면 선택한 시안 방향으로 진행"
+                  rows={1}
+                  style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "8px 10px", resize: "none", fontFamily: "inherit" }}
+                />
+              </div>
+              {imageGenError && <div style={{ fontSize: 12, color: "#f87171", marginTop: 6 }}>⚠ {imageGenError}</div>}
+            </div>
+          )}
+
+          {/* generating: 4개 생성 중 표시 */}
+          {imageSessionPhase === "generating" && (
+            <div style={{ padding: "16px", borderTop: "1px solid #1e1e2a" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", marginBottom: 10 }}>
+                ⏳ {imageItems[currentImageItemIdx]?.name} 시안 4개 생성 중...
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {(["A","B","C","D"] as const).map(label => {
+                  const c = imageConcepts.find((x: ImageConcept) => x.label === label);
+                  return (
+                    <div key={label} style={{ borderRadius: 8, background: "#1a1a26", border: "1px solid #2a2a3d", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#4a4a6a", flexDirection: "column" as const, gap: 6 }}>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: "#7c6cfc" }}>{label}안</span>
+                      {c?.imageUrl ? <span style={{ color: "#34d399", fontSize: 11 }}>✓ 완료</span> : <ThinkingDots />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div ref={bottomRef} />
         </div>
 
         <div className={s.chatBottom}>
 
-          {/* ── 이미지 생성 단계 UI (imageGenPhase가 활성이면 스타일/일반 바텀바 대체) ── */}
-          {imageGenPhase !== "idle" ? (
+          {/* ── 이미지 컨셉 회의 단계 바텀바 ── */}
+          {imageSessionPhase !== "idle" && imageSessionPhase !== "selecting" && imageSessionPhase !== "generating" ? (
             <div>
-              {/* 현재 아이템 정보 헤더 */}
               <div style={{ padding: "8px 16px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#7c6cfc" }}>
-                  🖼️ {imageItems[currentImageItemIdx]?.name ?? ""} 컨셉 이미지
-                  <span style={{ fontSize: 11, fontWeight: 400, color: "#4a4a6a", marginLeft: 8 }}>
-                    ({currentImageItemIdx + 1} / {imageItems.length})
-                  </span>
+                  {imageSessionPhase === "pre-debate" && `🎯 사전 회의 — ${imageItems[currentImageItemIdx]?.name} 방향 논의`}
+                  {imageSessionPhase === "extracting" && "⚙️ 4가지 방향 추출 중..."}
+                  {imageSessionPhase === "post-debate" && `🔍 검토 회의 — 시안 평가`}
+                  {imageSessionPhase === "recommending" && "💬 팀 추천 발표 중..."}
+                  {imageRoundNum > 1 && <span style={{ fontSize: 10, color: "#4a4a6a", marginLeft: 8 }}>라운드 {imageRoundNum}</span>}
                 </div>
-                {imageGenPhase === "generating" && <span style={{ fontSize: 11, color: "#fbbf24" }}>⏳ 생성 중...</span>}
-                {imageGenPhase === "discussing" && <span style={{ fontSize: 11, color: "#34d399" }}>💬 팀 피드백 중...</span>}
               </div>
-              {imageGenError && (
-                <div style={{ padding: "4px 16px", fontSize: 12, color: "#f87171" }}>⚠ {imageGenError}</div>
-              )}
-              {imageGenPhase === "feedback" && (
+              {imageGenError && <div style={{ padding: "4px 16px", fontSize: 12, color: "#f87171" }}>⚠ {imageGenError}</div>}
+              {/* 사전 회의 또는 검토 회의 중: 사용자 개입 + 마무리 버튼 */}
+              {(imageSessionPhase === "pre-debate" || imageSessionPhase === "post-debate") && (
                 <>
                   <div style={{ padding: "6px 16px 0" }}>
-                    <textarea
-                      value={imageRefinement}
-                      onChange={(e: { target: HTMLTextAreaElement }) => setImageRefinement(e.target.value)}
-                      placeholder="수정 요청 (예: 더 어둡게, 머리색 빨간색으로 변경...) — 비워두면 동일 설정으로 재생성"
-                      rows={1}
-                      style={{ width: "100%", background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "8px 10px", resize: "none", boxSizing: "border-box" as const, fontFamily: "inherit" }}
-                    />
+                    <button
+                      onClick={imageSessionPhase === "pre-debate" ? handleEndPreDebate : handleEndPostDebate}
+                      style={{ width: "100%", background: `rgba(124,108,252,0.08)`, border: `1px solid rgba(124,108,252,0.3)`, borderRadius: 8, color: "#7c6cfc", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
+                      {imageSessionPhase === "pre-debate" ? "🎨 시안 생성 →" : "⭐ 추천 받기 →"}
+                    </button>
                   </div>
-                  <div style={{ padding: "6px 16px 10px", display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => void generateCurrentItem(currentImageItemIdx, imageRefinement || undefined)}
-                      style={{ flex: 1, background: "rgba(124,108,252,0.08)", border: "1px solid rgba(124,108,252,0.3)", borderRadius: 8, color: "#7c6cfc", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
-                      🔄 재생성
-                    </button>
-                    <button
-                      onClick={confirmCurrentItem}
-                      style={{ flex: 1, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
-                      ✓ 확정 →
-                    </button>
-                    <button
-                      onClick={skipCurrentItem}
-                      style={{ flex: 1, background: "transparent", border: "1px solid #2a2a3d", borderRadius: 8, color: "#4a4a6a", fontSize: 13, fontWeight: 700, padding: "9px 0", cursor: "pointer" }}>
-                      건너뛰기
-                    </button>
+                  <div className={s.inputRow}>
+                    <textarea
+                      className={s.chatInput} rows={1}
+                      placeholder="의견 입력 (Enter 전송) — 토론에 개입"
+                      value={chatInput}
+                      onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
+                      onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          if (chatInput.trim()) { pendingImageMsgRef.current = chatInput.trim(); setChatInput(""); }
+                        }
+                      }}
+                    />
+                    <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => { if (chatInput.trim()) { pendingImageMsgRef.current = chatInput.trim(); setChatInput(""); } }}>전송</button>
                   </div>
                 </>
               )}
@@ -1644,7 +2175,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           ) : null}
 
           {/* ── 스타일 정의 단계 UI (stylePhase가 활성이면 일반 바텀바 대체) ── */}
-          {imageGenPhase !== "idle" ? null : stylePhase === "debating" && (
+          {imageSessionPhase !== "idle" ? null : stylePhase === "debating" && (
             <>
               <div style={{ padding:"6px 16px 0" }}>
                 <button
@@ -1671,7 +2202,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             </>
           )}
 
-          {imageGenPhase === "idle" && (stylePhase === "reviewing" || stylePhase === "generating") && (
+          {imageSessionPhase === "idle" && (stylePhase === "reviewing" || stylePhase === "generating") && (
             <div>
               {/* 생성된 테스트 이미지들 */}
               {styleTestImages.length > 0 && (
@@ -1716,7 +2247,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           )}
 
           {/* 이미지/스타일 단계 활성 중엔 아래 일반 바텀바 숨김 */}
-          {imageGenPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") ? null : (<>
+          {imageSessionPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") ? null : (<>
 
           {/* Paused: 이전 토론 이어하기 */}
           {debatePhase === "paused" && (

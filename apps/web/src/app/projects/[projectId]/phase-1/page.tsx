@@ -8,7 +8,10 @@ import {
   RadialBarChart, RadialBar,
   ResponsiveContainer, Legend, Tooltip,
 } from "recharts";
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc, setDoc, getDoc, serverTimestamp,
+  collection, addDoc, getDocs, query, where, orderBy, limit,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { streamClaude, fetchImagesWithClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
 import { AGENT_PERSONAS, DEBATE_RULES, USER_COMMAND_PATTERNS } from "./debate-config";
@@ -43,23 +46,37 @@ function getApiKeyIndexForAgent(agentIndex: number): number {
   return (agentIndex % Math.max(1, keys.length)) + 1;
 }
 
-// 마지막 대화 내용 기반으로 다음 발언자 선택 (last speaker 제외)
-function pickNextSpeaker(lastLine: string, lastSpeaker: AgentId | null): AgentId {
-  const m = lastLine.toLowerCase();
-  const candidates = AGENT_SPEAKING_ORDER_P1.filter(a => a !== lastSpeaker);
-  const find = (...ids: AgentId[]) => ids.find(a => candidates.includes(a)) ?? candidates[0];
+// 최근 대화 흐름 기반으로 다음 발언자 선택
+// - recentLines: 최근 3줄 (누가 어떤 말을 했는지)
+// - recentSpeakers: 최근 3명 발언자 (중복 방지)
+// - lastSpeaker: 방금 발언한 에이전트 (연속 발언 방지)
+function pickNextSpeaker(
+  recentLines: string[],
+  recentSpeakers: AgentId[],
+  lastSpeaker: AgentId | null,
+): AgentId {
+  const combined = recentLines.join(" ").toLowerCase();
 
-  if (/캐릭터|주인공|감정|인물|성격|매력/.test(m)) return find("character", "scenario");
-  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프/.test(m)) return find("scenario", "character");
-  if (/세계관|설정|배경|규칙|시스템|마법|능력/.test(m)) return find("worldbuilder", "researcher");
-  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오/.test(m)) return find("strategist", "researcher");
-  if (/유사|비슷|참고|작품|웹툰/.test(m)) return find("researcher", "scenario");
-  if (/그림|비주얼|스타일|연출|색감|그림체/.test(m)) return find("script", "character");
-  if (/정리|요약|방향|결론|다음|어떻게/.test(m)) return find("producer", "researcher");
+  // 최근 3턴에 발언 안 한 에이전트를 우선 후보로
+  const all = AGENT_SPEAKING_ORDER_P1.filter(a => a !== lastSpeaker);
+  const fresh = all.filter(a => !recentSpeakers.includes(a));
+  const pool = fresh.length > 0 ? fresh : all;
 
-  // 매칭 없으면 lastSpeaker 제외하고 랜덤 (producer 마지막 순위)
-  const pool = candidates.filter(a => a !== "producer");
-  return (pool.length > 0 ? pool : candidates)[Math.floor(Math.random() * (pool.length || candidates.length))];
+  const find = (...ids: AgentId[]) => ids.find(a => pool.includes(a)) ?? pool[0];
+
+  // 최근 대화 주제 → 전문 에이전트 매핑
+  if (/캐릭터|주인공|감정|인물|성격|매력|관계|빌런/.test(combined)) return find("character", "scenario");
+  if (/스토리|서사|플롯|훅|전개|결말|1화|클리프|기승전결/.test(combined)) return find("scenario", "character");
+  if (/세계관|설정|배경|규칙|시스템|마법|능력|세계/.test(combined)) return find("worldbuilder", "researcher");
+  if (/시장|플랫폼|성공|독자|수익|화제|네이버|카카오|트렌드/.test(combined)) return find("strategist", "researcher");
+  if (/유사|비슷|참고|작품|웹툰|레퍼런스|사례/.test(combined)) return find("researcher", "scenario");
+  if (/그림|비주얼|스타일|연출|색감|그림체|컷|패널/.test(combined)) return find("script", "character");
+  if (/정리|요약|방향|결론|어떻게|다음 단계/.test(combined)) return find("producer", "strategist");
+
+  // 매칭 없으면 fresh 후보 중 랜덤 (producer는 최하위 우선순위)
+  const nonProducer = pool.filter(a => a !== "producer");
+  const finalPool = nonProducer.length > 0 ? nonProducer : pool;
+  return finalPool[Math.floor(Math.random() * finalPool.length)];
 }
 
 // 에이전트별 성격·역할 (Phase 1: 유사 웹툰 리서치 전문가 팀)
@@ -142,6 +159,15 @@ const MOCK_RESULT: Phase1Result = {
   feasibility_breakdown: { market: 88, originality: 82, producibility: 78, commercial: 87 },
   verdict: "go",
   summary: "헌터물 포화 시장에서 '관계 서사+도덕적 딜레마' 차별화로 네이버 10~20대 공략 가능. Phase 2 적극 권장.",
+  genre_analysis: { genre: "헌터 판타지", trend: "관계 서사 하이브리드 부상", audience: "10~20대 남성", key_success: "성장+감정 균형" },
+  market_analysis: { platform: "네이버웹툰", market_size: "2조 원+", growth: "연 12%", competition_level: "높음", opportunity: "단순 성장물 공백 공략" },
+  similar_works: [
+    { title: "나 혼자만 레벨업", platform: "카카오페이지", similarity: "스탯+성장 판타지", lesson: "압도적 스펙터클 필수, 관계 서사 보완 필요" },
+    { title: "전지적 독자시점", platform: "네이버웹툰", similarity: "메타 서사+몰입", lesson: "신규 독자 진입 장벽 최소화" },
+  ],
+  strengths: ["관계 서사+도덕 딜레마 차별화", "글로벌 IP 확장성", "세로 스크롤 최적 연출"],
+  weaknesses: ["헌터물 클리셰 리스크", "빌런 동기 논리 보완 필요"],
+  improvements: ["Phase 2에서 능력 체계 명확화", "빌런 배경 서사 구체화"],
   usp: [
     {
       icon: "⚡",
@@ -1117,7 +1143,7 @@ const PLATFORMS = [
 ] as const;
 type PlatformValue = typeof PLATFORMS[number]["value"];
 
-const EPISODE_COUNTS = ["50화", "100화", "150화", "200화", "미정"] as const;
+const EPISODE_COUNTS = ["30화", "50화", "100화", "150화", "200화", "미정"] as const;
 type EpisodeCount = typeof EPISODE_COUNTS[number];
 
 export default function Phase1Page() {
@@ -1129,7 +1155,7 @@ export default function Phase1Page() {
   const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
   const [genre, setGenre] = useState(GENRES[0]);
   const [platform, setPlatform] = useState<PlatformValue>("undecided");
-  const [episodeCount, setEpisodeCount] = useState<EpisodeCount>("100화");
+  const [episodeCount, setEpisodeCount] = useState<EpisodeCount>("30화");
   const [concept, setConcept] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [result, setResult] = useState<Phase1Result | null>(null);
@@ -1269,12 +1295,13 @@ export default function Phase1Page() {
 
     // Write cross-phase canonical key so Phase 2/3/4/5 can read Phase 1 data.
     // Structure covers all access patterns used across the codebase:
-    //   p1?.input?.genre  (Phase 2, 3, 4)
-    //   p1?.data?.genre   (Phase 5)
+    //   p1?.input?.genre        (Phase 2, 3, 4)
+    //   p1?.input?.episodeCount (Phase 3 — 화수 계획)
+    //   p1?.data?.genre         (Phase 5)
     //   p1?.data?.feasibility_score  (Projects list)
     localStorage.setItem(`wts_phase1_${projectId}`, JSON.stringify({
-      input: { genre: g, concept: c, savedAt },
-      data: { ...res, genre: g, concept: c, savedAt },
+      input: { genre: g, concept: c, episodeCount: ep, platform: plat, savedAt },
+      data: { ...res, genre: g, concept: c, episodeCount: ep, savedAt },
     }));
 
     // Best-effort Firestore save
@@ -1363,6 +1390,7 @@ export default function Phase1Page() {
     let round = transcript.filter(l => !l.startsWith("[사용자]")).length + 1;
     setTurnCount(round);
     let lastSpeaker: AgentId | null = null;
+    let recentSpeakers: AgentId[] = [];  // 최근 3명 발언자 (중복 방지)
     let lastUserMsg = "";   // 가장 최근 사용자 발언
     let userTurnCount = 0;  // > 0 이면 "사용자 응답 모드"
     let wrapUpProposed = false;     // 프로듀서가 마무리 제안 중
@@ -1422,31 +1450,205 @@ export default function Phase1Page() {
       agentIndex++;
     };
 
-    // ── 대화 요약 (5턴마다 백그라운드 자동 갱신) ──
-    // 에이전트는 전체 원문 대신 요약 + 직전 발언 1줄만 받는다
-    let conversationSummary = "";
-    let turnsSinceLastSummary = 0;
+    // ── 슬라이딩 메모리 시스템 ──
+    // 구조: 롤링 누적 요약(20턴마다 cascading) + 주제별 맥락 요약 4개
+    // 에이전트는 자신의 전문 분야 주제 요약 + 전체 누적 요약 + 최근 6줄을 받는다
 
-    const refreshSummary = () => {
-      if (transcript.length < 3) return;
-      const summaryKey = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
-      if (!summaryKey) return;
+    let rollingSummary = "";          // 전체 토론 누적 요약 (7~8줄, cascading)
+    let topicMarket = "";             // 시장·플랫폼·독자층
+    let topicSimilar = "";            // 유사작품·레퍼런스·비교분석
+    let topicStrengths = "";          // 기획 강약점·차별점·개선방향
+    let topicWorldbuilding = "";      // 세계관·캐릭터·설정 보완점
+    let turnsInWindow = 0;            // 현재 20턴 윈도우 카운터
+    let windowBuffer: string[] = [];  // 현재 윈도우 발언 버퍼
+
+    // ── 메모리 복원: Firestore 우선, localStorage 폴백 ──
+    const MEMORY_KEY = `p1_memory_${projectId}`;
+    const TURNS_COL  = `p1_turns_${projectId}`;   // Firestore 컬렉션명
+    const MEMORY_DOC = () => db ? doc(db, "p1_memory", projectId) : null;
+
+    // Firestore에서 메모리 로드
+    if (db) {
+      try {
+        const snap = await getDoc(doc(db, "p1_memory", projectId));
+        if (snap.exists()) {
+          const m = snap.data() as {
+            rolling?: string; market?: string; similar?: string;
+            strengths?: string; worldbuilding?: string;
+            turnsInWindow?: number; windowBuffer?: string[];
+          };
+          if (m.rolling)       rollingSummary     = m.rolling;
+          if (m.market)        topicMarket        = m.market;
+          if (m.similar)       topicSimilar       = m.similar;
+          if (m.strengths)     topicStrengths     = m.strengths;
+          if (m.worldbuilding) topicWorldbuilding = m.worldbuilding;
+          if (m.turnsInWindow) turnsInWindow      = m.turnsInWindow;
+          if (m.windowBuffer)  windowBuffer       = m.windowBuffer;
+        }
+      } catch { /* Firestore unavailable → fallback */ }
+    }
+    // Firestore에 없으면 localStorage 폴백
+    if (!rollingSummary) {
+      try {
+        const saved = localStorage.getItem(MEMORY_KEY);
+        if (saved) {
+          const m = JSON.parse(saved) as {
+            rolling?: string; market?: string; similar?: string;
+            strengths?: string; worldbuilding?: string;
+            turnsInWindow?: number; windowBuffer?: string[];
+          };
+          if (m.rolling)       rollingSummary     = m.rolling;
+          if (m.market)        topicMarket        = m.market;
+          if (m.similar)       topicSimilar       = m.similar;
+          if (m.strengths)     topicStrengths     = m.strengths;
+          if (m.worldbuilding) topicWorldbuilding = m.worldbuilding;
+          if (m.turnsInWindow) turnsInWindow      = m.turnsInWindow;
+          if (m.windowBuffer)  windowBuffer       = m.windowBuffer;
+        }
+      } catch { /* quota or parse error */ }
+    }
+
+    // 메모리 저장: Firestore 기본, localStorage 동시 백업
+    const saveMemory = () => {
+      const payload = {
+        rolling: rollingSummary,
+        market: topicMarket, similar: topicSimilar,
+        strengths: topicStrengths, worldbuilding: topicWorldbuilding,
+        turnsInWindow, windowBuffer,
+        savedAt: new Date().toISOString(),
+      };
+      // Firestore (비동기, 백그라운드)
+      const mdoc = MEMORY_DOC();
+      if (mdoc) void setDoc(mdoc, { ...payload, savedAt: serverTimestamp() }).catch(() => {});
+      // localStorage (동기, 폴백)
+      try { localStorage.setItem(MEMORY_KEY, JSON.stringify(payload)); } catch { /* quota */ }
+    };
+
+    // ── 발언 1개를 Firestore에 저장 (RAG 검색 대상) ──
+    // topic 태그로 분류 → 나중에 벡터 임베딩 추가 시 vector 필드만 추가하면 됨
+    const saveTurn = (text: string, speaker: AgentId, turnNum: number) => {
+      if (!db) return;
+      const topic = AGENT_TOPIC[speaker] ?? "market";
+      void addDoc(collection(db, TURNS_COL), {
+        text, speaker, topic, turn: turnNum,
+        isUser: speaker === "user",
+        createdAt: serverTimestamp(),
+        // vector: null  ← 나중에 임베딩 API 연동 시 여기에 추가
+      }).catch(() => {});
+    };
+
+    // ── 에이전트 전문 주제의 관련 과거 발언을 Firestore에서 검색 ──
+    // V1: topic 기준 최신 5개 (turn 내림차순)
+    // V2 (예정): findNearest(vector, queryVector, {limit:5}) 로 교체
+    const fetchRelevantTurns = async (agentId: AgentId): Promise<string[]> => {
+      if (!db) return [];
+      try {
+        const topic = AGENT_TOPIC[agentId] ?? "market";
+        const q = query(
+          collection(db, TURNS_COL),
+          where("topic", "==", topic),
+          orderBy("turn", "desc"),
+          limit(5),
+        );
+        const snap = await getDocs(q);
+        // 오래된 것부터 정렬해서 반환 (시간 순서로 읽히도록)
+        return snap.docs.map((d: import("firebase/firestore").QueryDocumentSnapshot) => d.data().text as string).reverse();
+      } catch { return []; }
+    };
+
+    // 에이전트 → 전문 주제 매핑
+    const AGENT_TOPIC: Record<AgentId, "market" | "similar" | "strengths" | "worldbuilding"> = {
+      strategist:   "market",
+      researcher:   "similar",
+      worldbuilder: "worldbuilding",
+      character:    "worldbuilding",
+      scenario:     "strengths",
+      script:       "strengths",
+      producer:     "market",
+      editor:       "market",
+      user:         "market",
+    };
+    const TOPIC_LABEL: Record<string, string> = {
+      market:       "시장·플랫폼 맥락",
+      similar:      "유사작품 맥락",
+      strengths:    "기획 강약점 맥락",
+      worldbuilding:"세계관·캐릭터 맥락",
+    };
+
+    // 20턴마다 롤링 요약 + 주제별 요약을 백그라운드에서 동시에 갱신
+    const updateSummaries = (buffer: string[]) => {
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key || buffer.length === 0) return;
+      const bufText = buffer.join("\n");
+
+      // ① 롤링 누적 요약 (cascading)
       void (async () => {
         let next = "";
         try {
           for await (const chunk of streamClaude({
-            apiKey: summaryKey,
-            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
+            apiKey: key,
+            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심 결정·쟁점·미해결 항목을 명확히 기록.",
             messages: [{
               role: "user",
-              content: `${conversationSummary ? `이전 요약: ${conversationSummary}\n\n` : ""}최근 대화:\n${transcript.slice(-5).join("\n")}\n\n합쳐서 2문장 이내 요약. 언급된 작품명·핵심 의견 포함. 마크다운 금지.`,
+              content: `${rollingSummary ? `[이전 누적 요약]\n${rollingSummary}\n\n` : ""}[최근 ${buffer.length}턴 토론]\n${bufText}\n\n위 내용을 합쳐 누적 요약을 업데이트해줘.\n포함 항목: 합의된 결정, 핵심 쟁점과 각 에이전트 입장, 미해결 항목.\n7~8줄 이내. 작품명·수치 등 구체적 내용 반드시 포함. 마크다운 금지.`,
             }],
-            maxTokens: 120,
+            maxTokens: 300,
             tools: [],
           })) next += chunk;
         } catch { /* ignore */ }
-        if (next.trim()) conversationSummary = next.trim();
+        if (next.trim()) { rollingSummary = next.trim(); saveMemory(); }
       })();
+
+      // ② 주제별 맥락 요약 (4개를 1번 API 호출로)
+      void (async () => {
+        let raw = "";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            systemPrompt: "웹툰 기획 토론 분석 전문가. 주제별 맥락을 정확히 추출.",
+            messages: [{
+              role: "user",
+              content: `[최근 토론]\n${bufText}\n\n아래 4개 주제별로 이 토론에서 관련된 내용을 추출해줘. 해당 내용 없으면 "언급 없음".\n\n[MARKET]\n시장·플랫폼·독자층·수익·트렌드 관련 논의 (4~5줄)\n[/MARKET]\n[SIMILAR]\n유사작품·레퍼런스·비교분석 관련 논의 (4~5줄)\n[/SIMILAR]\n[STRENGTHS]\n기획의 강점·약점·차별점·개선방향 관련 논의 (4~5줄)\n[/STRENGTHS]\n[WORLDBUILDING]\n세계관·캐릭터·설정·보완점 관련 논의 (4~5줄)\n[/WORLDBUILDING]\n\n마크다운 금지.`,
+            }],
+            maxTokens: 500,
+            tools: [],
+          })) raw += chunk;
+        } catch { /* ignore */ }
+        if (!raw.trim()) return;
+        const extract = (tag: string) => {
+          const m = raw.match(new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[\\/${tag}\\]`));
+          return m ? m[1].trim() : "";
+        };
+        const m = extract("MARKET");
+        const s = extract("SIMILAR");
+        const st = extract("STRENGTHS");
+        const wb = extract("WORLDBUILDING");
+        if (m && m !== "언급 없음") topicMarket = m;
+        if (s && s !== "언급 없음") topicSimilar = s;
+        if (st && st !== "언급 없음") topicStrengths = st;
+        if (wb && wb !== "언급 없음") topicWorldbuilding = wb;
+        saveMemory();
+      })();
+    };
+
+    // 에이전트별 컨텍스트 빌더 — 전체 요약 + 전문 주제 요약 + Firestore 관련 발언 + 최근 6줄
+    const buildAgentContext = async (agentId: AgentId): Promise<string> => {
+      const topicKey = AGENT_TOPIC[agentId] ?? "market";
+      const topicContent = {
+        market: topicMarket, similar: topicSimilar,
+        strengths: topicStrengths, worldbuilding: topicWorldbuilding,
+      }[topicKey];
+      const label = TOPIC_LABEL[topicKey];
+
+      // Firestore에서 해당 주제의 관련 과거 발언 검색 (RAG)
+      const relevantTurns = await fetchRelevantTurns(agentId);
+
+      const parts: string[] = [];
+      if (rollingSummary)          parts.push(`[전체 토론 요약]\n${rollingSummary}`);
+      if (topicContent)            parts.push(`[${label}]\n${topicContent}`);
+      if (relevantTurns.length > 0) parts.push(`[${label} 관련 과거 발언]\n${relevantTurns.join("\n")}`);
+      parts.push(`[최근 대화]\n${transcript.slice(-6).join("\n")}`);
+      return parts.join("\n\n") + "\n\n";
     };
 
     // ── 메인 대화 루프 ──
@@ -1485,11 +1687,10 @@ export default function Phase1Page() {
           addMsg("user", round, pendingMsg, false);
         }
         transcript.push(`[사용자]: ${pendingMsg}`);
+        saveTurn(`[사용자]: ${pendingMsg}`, "user", round); // 사용자 발언도 Firestore 저장
         round++;
         lastUserMsg = pendingMsg;
         userTurnCount = 4; // 4턴 동안 사용자 의견을 context에 유지
-        refreshSummary();  // 즉시 요약 갱신 — 사용자 발언 바로 반영
-        turnsSinceLastSummary = 0;
         // 마무리 제안 중이면: 동의 → 종료, 그 외 → 계속 대화
         if (wrapUpProposed) {
           if (AGREE_RE.test(pendingMsg.trim())) break debateLoop;
@@ -1501,21 +1702,20 @@ export default function Phase1Page() {
 
       setTurnCount(round);
 
-      // historyText: 요약 있으면 요약+직전 1줄, 없으면 최근 3줄 (초반)
       const lastLine = transcript[transcript.length - 1] ?? "";
-      // 사용자 발언이 활성 상태면 historyText에 고정으로 유지 (밀려나지 않게)
-      const historyText = conversationSummary
-        ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
-        : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
+      // 명령·마무리 등 공통 컨텍스트 (에이전트 미정 상황용)
+      const baseContext = rollingSummary
+        ? `[전체 토론 요약]\n${rollingSummary}\n${userTurnCount > 0 ? `\n[사용자 최근 의견]: ${lastUserMsg}\n` : ""}[최근 대화]\n${transcript.slice(-6).join("\n")}\n\n`
+        : `[대화 내용]\n${transcript.slice(-6).join("\n")}\n\n`;
 
       // 3) 명령 핸들러
       if (matchedCommand?.handler === "single_turn" && matchedCommand.speakerAgent) {
-        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? `${historyText}사용자 요청에 응답해.`;
+        const p = matchedCommand.promptOverride?.replace("{history}", baseContext) ?? `${baseContext}사용자 요청에 응답해.`;
         await runSingleAgent(matchedCommand.speakerAgent, p, matchedCommand.maxTokens ?? 300);
         continue;
       }
       if (matchedCommand?.handler === "summarize_then_end" && matchedCommand.speakerAgent) {
-        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? `${historyText}지금까지 내용 최종 정리해줘.`;
+        const p = matchedCommand.promptOverride?.replace("{history}", baseContext) ?? `${baseContext}지금까지 내용 최종 정리해줘.`;
         await runSingleAgent(matchedCommand.speakerAgent, p, matchedCommand.maxTokens ?? 500);
         break debateLoop;
       }
@@ -1528,7 +1728,7 @@ export default function Phase1Page() {
         continue;
       }
       if (matchedCommand?.handler === "break") {
-        const p = matchedCommand.promptOverride?.replace("{history}", historyText) ?? "브레이크 타임을 선언해줘.";
+        const p = matchedCommand.promptOverride?.replace("{history}", baseContext) ?? "브레이크 타임을 선언해줘.";
         await runSingleAgent(matchedCommand.speakerAgent ?? "producer", p, matchedCommand.maxTokens ?? 80);
         await sleep(matchedCommand.breakDurationMs ?? 30000);
         continue;
@@ -1536,34 +1736,57 @@ export default function Phase1Page() {
 
       // 4) 마무리 제안 시점 확인 (20턴 or 대화 수렴 감지)
       const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]") && l.trim()).length;
-      // 옵션3: 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
-      const recentLines = transcript.slice(-4).join(" ");
+      // 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
+      const convergenceCheck = transcript.slice(-4).join(" ");
       const converging = agentTurnsSoFar >= 15 &&
-        (recentLines.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
+        (convergenceCheck.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
 
       if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
         wrapUpProposed = true;
         wrapUpProposedAt = Date.now();
-        const wrapPrompt = `${historyText}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
+        const wrapPrompt = `${baseContext}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
         await runSingleAgent("producer", wrapPrompt, 80);
         lastSpeaker = "producer";
+        recentSpeakers = (["producer" as AgentId, ...recentSpeakers] as AgentId[]).slice(0, 3);
         continue; // 이번 턴은 프로듀서 제안으로 끝
       }
 
-      // 5) 다음 발언자: 직전 발언 맥락 기반으로 선택
-      const nextAgent = pickNextSpeaker(lastLine, lastSpeaker);
+      // 5) 다음 발언자: 최근 3줄 주제 + 최근 발언자 중복 회피로 선택
+      const speakerPickLines = transcript.slice(-3);
+      const nextAgent = pickNextSpeaker(speakerPickLines, recentSpeakers, lastSpeaker);
 
-      // 5) 프롬프트 구성
+      // 5) 에이전트별 맞춤 컨텍스트 (전체 요약 + 전문 주제 요약 + Firestore 관련 발언 + 최근 6줄)
+      const agentCtx = await buildAgentContext(nextAgent);
+
+      // 6) 프롬프트 구성 — 직전 발언자·내용을 명시해서 실제 반응 유도
       const isFirst = transcript.length <= 1;
-      const agentPrompt = isFirst
-        ? `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`
-        : userTurnCount > 0
-          ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
-          : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
+      let agentPrompt: string;
+      if (isFirst) {
+        agentPrompt = `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`;
+      } else if (userTurnCount > 0) {
+        agentPrompt = `${agentCtx}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
+      } else {
+        // 직전 발언자와 내용을 추출해 맥락 있는 반응 유도
+        const prevMatch = lastLine.match(/^\[([^\]]+)\]:\s*([\s\S]+)/);
+        const prevLabel = prevMatch ? prevMatch[1] : null;
+        const prevContent = prevMatch ? prevMatch[2].slice(0, 100) : null;
+        if (prevLabel && prevContent) {
+          agentPrompt = `${agentCtx}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
+        } else {
+          agentPrompt = `${agentCtx}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
+        }
+      }
 
-      // 6) 에이전트 발언
-      await runSingleAgent(nextAgent, agentPrompt, 100);
+      // 7) 에이전트 발언
+      await runSingleAgent(nextAgent, agentPrompt, 120);
       lastSpeaker = nextAgent;
+      recentSpeakers = ([nextAgent, ...recentSpeakers] as AgentId[]).slice(0, 3);
+      // 발언 완료 후 Firestore 저장 + 윈도우 버퍼 추가
+      const lastAdded = transcript[transcript.length - 1];
+      if (lastAdded) {
+        saveTurn(lastAdded, nextAgent, round);  // Firestore RAG 저장
+        windowBuffer.push(lastAdded);
+      }
 
       // 사용자 응답 모드 카운트다운
       if (userTurnCount > 0) {
@@ -1571,11 +1794,14 @@ export default function Phase1Page() {
         if (userTurnCount === 0) lastUserMsg = "";
       }
 
-      // 7) 5턴마다 요약 갱신 (백그라운드, 비차단)
-      turnsSinceLastSummary++;
-      if (turnsSinceLastSummary >= 5) {
-        turnsSinceLastSummary = 0;
-        refreshSummary();
+      // 8) 20턴마다 롤링 요약 + 주제별 요약 갱신 (백그라운드, 비차단)
+      turnsInWindow++;
+      saveMemory(); // 윈도우 버퍼·카운터 매 턴 저장 (중단 복원용)
+      if (turnsInWindow >= 20) {
+        turnsInWindow = 0;
+        const bufferSnapshot = [...windowBuffer];
+        windowBuffer = [];
+        updateSummaries(bufferSnapshot);
       }
 
       // 8) 저장
