@@ -2968,28 +2968,65 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     imageTargetStageIdxRef.current = stageIdx;
     const items: ImageItem[] = [];
     const data = stageResult.data;
-    if (stageIdx === 2 && Array.isArray(data.characters)) {
-      for (const ch of data.characters as Record<string, string>[]) {
+    if (stageIdx === 2) {
+      // Stage 3(캐릭터 설정) + Stage 1(세계관 key_characters) 병합 — 누락 방지
+      const stage3Chars = Array.isArray(data.characters) ? data.characters as Record<string,string>[] : [];
+      const stage1 = stageResultsRef.current.find((r: StageResult) => r.stageId === 1);
+      const stage1Chars = Array.isArray(stage1?.data?.key_characters) ? stage1!.data.key_characters as Record<string,string>[] : [];
+
+      const seen = new Set<string>();
+      const merged: Record<string,string>[] = [];
+      for (const ch of [...stage3Chars, ...stage1Chars]) {
+        const name = (ch.name ?? "").trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        // Stage 3 데이터를 우선, Stage 1로 부족한 필드 보완
+        const base = stage3Chars.find(c => c.name === name) ?? ch;
+        const sup  = stage1Chars.find(c => c.name === name) ?? {};
+        merged.push({ ...sup, ...base }); // Stage 3 우선
+      }
+
+      for (const ch of merged) {
         const desc = [
-          `이름: ${ch.name ?? ""}${ch.role ? ` (${ch.role})` : ""}`,
+          `이름: ${ch.name}${ch.role ? ` (${ch.role})` : ""}`,
           ch.gender && `성별: ${ch.gender}`,
           ch.age && `나이: ${ch.age}`,
           ch.face && `얼굴: ${ch.face}`,
           (ch.height || ch.build) && `키/체형: ${[ch.height, ch.build, ch.weight].filter(Boolean).join(", ")}`,
           ch.outfit && `복장: ${ch.outfit}`,
           ch.personality && `성격: ${ch.personality}`,
+          ch.motivation && `동기: ${ch.motivation}`,
+          ch.backstory && `배경/상처: ${ch.backstory}`,
+          ch.speech && `말투: ${ch.speech}`,
         ].filter(Boolean).join("\n");
         items.push({ type: "character", name: ch.name ?? "캐릭터", description: desc, stageId: 3, confirmed: false });
       }
-    } else if (stageIdx === 3 && Array.isArray(data.locations)) {
-      for (const loc of data.locations as Record<string, string>[]) {
+    } else if (stageIdx === 3) {
+      // Stage 4(장소 설정) + Stage 1(세계관 key_locations) 병합 — 누락 방지
+      const stage4Locs = Array.isArray(data.locations) ? data.locations as Record<string,string>[] : [];
+      const stage1 = stageResultsRef.current.find((r: StageResult) => r.stageId === 1);
+      const stage1Locs = Array.isArray(stage1?.data?.key_locations) ? stage1!.data.key_locations as Record<string,string>[] : [];
+
+      const seen = new Set<string>();
+      const merged: Record<string,string>[] = [];
+      for (const loc of [...stage4Locs, ...stage1Locs]) {
+        const name = (loc.name ?? "").trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        const base = stage4Locs.find(l => l.name === name) ?? loc;
+        const sup  = stage1Locs.find(l => l.name === name) ?? {};
+        merged.push({ ...sup, ...base });
+      }
+
+      for (const loc of merged) {
         const desc = [
-          `장소명: ${loc.name ?? ""}${loc.type ? ` (${loc.type})` : ""}`,
+          `장소명: ${loc.name}${loc.type ? ` (${loc.type})` : ""}`,
           loc.visual && `시각적 묘사: ${loc.visual}`,
           loc.architecture && `건축 구조: ${loc.architecture}`,
           loc.lighting && `조명: ${loc.lighting}`,
           loc.color_palette && `색채: ${loc.color_palette}`,
           loc.atmosphere && `분위기: ${loc.atmosphere}`,
+          loc.sound && `소리: ${loc.sound}`,
         ].filter(Boolean).join("\n");
         items.push({ type: "location", name: loc.name ?? "장소", description: desc, stageId: 4, confirmed: false });
       }
