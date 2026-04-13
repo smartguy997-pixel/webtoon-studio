@@ -839,11 +839,7 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
   const ag = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   return (
-    <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}
-      style={{ position: "relative" }}
-      onMouseEnter={e => { if (onReply) (e.currentTarget.querySelector(".reply-btn") as HTMLElement | null)?.style.setProperty("display", "flex"); }}
-      onMouseLeave={e => { if (onReply) (e.currentTarget.querySelector(".reply-btn") as HTMLElement | null)?.style.setProperty("display", "none"); }}
-    >
+    <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
       {!isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>{ag.ini}</div>}
       <div className={s.msgMain}>
         {!isUser && <div className={s.agentName} style={{ color: ag.color }}>{ag.label}</div>}
@@ -852,7 +848,12 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
             ↩ <b>{msg.replyQuote.agentLabel}</b> — {msg.replyQuote.preview}{msg.replyQuote.preview.length >= 60 ? "..." : ""}
           </div>
         )}
-        <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`} style={!isUser ? { borderLeft: `3px solid ${ag.color}60` } : {}}>
+        <div
+          className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`}
+          style={{ ...(!isUser ? { borderLeft: `3px solid ${ag.color}60` } : {}), ...(onReply ? { cursor: "pointer" } : {}) }}
+          onClick={() => { if (onReply && !msg.streaming) onReply(msg); }}
+          title={onReply && !msg.streaming ? "클릭해서 댓글 달기" : undefined}
+        >
           {msg.streaming && !msg.text ? <ThinkingDots /> : (
             <span className={s.msgText} style={{ whiteSpace: "pre-wrap" }}>{renderMsgText(msg.text)}{msg.streaming && <StreamCursor />}</span>
           )}
@@ -864,12 +865,6 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
         </div>
       </div>
       {isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>나</div>}
-      {onReply && (
-        <button className="reply-btn" onClick={() => onReply(msg)}
-          style={{ display: "none", position: "absolute", right: isUser ? 52 : 8, top: 8, alignItems: "center", gap: 3, fontSize: 10, color: "#7878a0", background: "rgba(15,20,40,0.9)", border: "1px solid #2a2a3d", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>
-          ↩ 댓글
-        </button>
-      )}
     </div>
   );
 }
