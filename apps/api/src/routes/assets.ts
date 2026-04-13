@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { collections } from "../services/firestore.js";
 import { generateConceptImage } from "../services/whisk.js";
 import { generateConceptImageNanoBanana } from "../services/nano-banana.js";
+import { generateConceptImageRunway } from "../services/runway.js";
 
 export const assetsRouter = Router();
 
@@ -17,12 +18,14 @@ assetsRouter.post("/:projectId/generate-concept", async (req, res) => {
     style,
     type,
     anthropicApiKey,
+    runwayApiKey,
     negativePrompt,
   } = req.body as {
     description: string;           // 한국어 설명
     style?: string;                // 확정된 스타일 토큰 (없으면 기본 웹툰 스타일)
     type: "character" | "location" | "style_test" | "prop" | "mastershot";
     anthropicApiKey?: string;      // 클라이언트에서 전달 (없으면 서버 env 사용)
+    runwayApiKey?: string;         // Runway API 키 (없으면 서버 env 사용)
     negativePrompt?: string;
   };
 
@@ -74,18 +77,40 @@ assetsRouter.post("/:projectId/generate-concept", async (req, res) => {
     const block = promptRes.content[0];
     const imagePrompt = block.type === "text" ? block.text.trim() : description;
 
-    // 2. Whisk 호출 → 실패 시 Nano Banana 폴백
-    let imageUrl: string;
-    try {
-      imageUrl = await generateConceptImage(imagePrompt, negativePrompt);
-    } catch (whiskErr) {
+    // 2. 이미지 생성 — Whisk → Nano Banana → Runway 순서로 폴백
+    let imageUrl: string | undefined;
+    const errors: string[] = [];
+
+    // 2-1. Whisk
+    if (!imageUrl && process.env.WHISK_API_KEY) {
+      try {
+        imageUrl = await generateConceptImage(imagePrompt, negativePrompt);
+      } catch (e) {
+        errors.push(`Whisk: ${String(e)}`);
+      }
+    }
+
+    // 2-2. Nano Banana
+    if (!imageUrl && process.env.NANO_BANANA_API_KEY) {
       try {
         imageUrl = await generateConceptImageNanoBanana(imagePrompt, negativePrompt);
-      } catch (nbErr) {
-        throw new Error(
-          `이미지 생성 실패: Whisk(${String(whiskErr)}), NanoBanana(${String(nbErr)})`
-        );
+      } catch (e) {
+        errors.push(`NanoBanana: ${String(e)}`);
       }
+    }
+
+    // 2-3. Runway (키 있을 때만)
+    const rwKey = runwayApiKey ?? process.env.RUNWAY_API_KEY;
+    if (!imageUrl && rwKey) {
+      try {
+        imageUrl = await generateConceptImageRunway(imagePrompt, rwKey, type);
+      } catch (e) {
+        errors.push(`Runway: ${String(e)}`);
+      }
+    }
+
+    if (!imageUrl) {
+      throw new Error(`이미지 생성 실패 — 모든 서비스 실패: ${errors.join(" | ")}`);
     }
 
     res.json({ imageUrl, prompt: imagePrompt });

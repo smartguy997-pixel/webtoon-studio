@@ -25,6 +25,11 @@ function getApiKeyIndexForAgent(agentIdx: number): number {
   return (agentIdx % Math.max(1, keys.length)) + 1;
 }
 
+// Runway API 키 — Settings에서 저장한 키 읽기
+function getRunwayKey(): string {
+  return (typeof window !== "undefined" ? localStorage.getItem("wts_runway_key") : null) ?? "";
+}
+
 const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
   worldbuilder:
     "세계관 설계 전문가. 이 세계가 실제로 존재하는 것처럼 만들어야 해. " +
@@ -1283,6 +1288,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           style: styleInput || conceptStyle,
           type: "style_test",
           anthropicApiKey: getAnthropicKey(),
+          runwayApiKey: getRunwayKey(),
         }),
       });
       if (!res.ok) {
@@ -1580,6 +1586,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             style: conceptStyle,
             type: item.type,
             anthropicApiKey: apiKey,
+            runwayApiKey: getRunwayKey(),
           }),
         }).then(r => r.json() as Promise<{ imageUrl: string; prompt: string }>)
       )
