@@ -133,11 +133,11 @@ function matchCommandP2(msg: string): P2CommandPattern | null {
 // 각 스테이지마다 반드시 다뤄야 할 하위 주제들
 // 스테이지별 주제당 최소 턴 수 — 세계관(1)은 깊이가 중요해서 더 많이
 const MIN_TURNS_BY_STAGE: Record<number, number> = {
-  1: 18, // 세계관 — A4 분량 깊이 필요 (인물 시각 설계 + 장소 시각 설계 추가)
-  2: 10, // 시놉시스
-  3: 8,  // 캐릭터
-  4: 8,  // 장소
-  5: 7,  // 소품
+  1: 3,  // 세계관 — 5개 프레임워크, 주제당 3회 키워드 감지 시 완료 처리 (WRAP_UP_AFTER = 35)
+  2: 4,  // 시놉시스
+  3: 3,  // 캐릭터
+  4: 3,  // 장소
+  5: 3,  // 소품
 };
 const MIN_TURNS_PER_TOPIC_P2 = 7; // fallback (UI 표시용)
 
@@ -2006,7 +2006,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     // 이 스테이지의 아젠다 항목 수 × 최소 턴 + 여유
     const stageAgenda = STAGE_AGENDA[stage.id] ?? [];
     const minTurnsForStage = MIN_TURNS_BY_STAGE[stage.id] ?? MIN_TURNS_PER_TOPIC_P2;
-    const WRAP_UP_AFTER = stageAgenda.length * minTurnsForStage + (stage.id === 1 ? 20 : 10);
+    // Stage 1: 5개 프레임워크 × 3 + 20 = 35턴 상한 (오케스트레이터가 전환 관리)
+    const WRAP_UP_AFTER = stage.id === 1 ? 35 : stageAgenda.length * minTurnsForStage + 10;
     const WRAP_UP_AUTO_MS = 30_000;
     // 아젠다 추적 (스테이지마다 초기화)
     const coveredAgenda = new Set<string>();
@@ -2214,20 +2215,38 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           }
         }
 
-        // 3턴마다 — 가장 덜 다뤄진 미완료 주제를 프로듀서가 꺼냄
+        // 오케스트레이터 조율 — 주제 전환 + 진행 상황 공지
         if (nudgeCooldown > 0) {
           nudgeCooldown--;
-        } else if (agentTurnsSoFar > 0 && agentTurnsSoFar % 3 === 0) {
+        } else if (agentTurnsSoFar > 0) {
           const uncovered = stageAgenda.filter(item => !coveredAgenda.has(item.id));
-          if (uncovered.length > 0) {
-            const pick = uncovered.sort(
-              (a, b) => (agendaTurns[a.id] ?? 0) - (agendaTurns[b.id] ?? 0)
-            )[0];
-            const currentTurns = agendaTurns[pick.id] ?? 0;
+          const covered   = stageAgenda.filter(item =>  coveredAgenda.has(item.id));
+
+          // Stage 1: 8턴마다 프로듀서가 진행 상황 공지 + 다음 주제 안내
+          const shouldProgress = stage.id === 1 && agentTurnsSoFar % 8 === 0 && uncovered.length > 0;
+          // 나머지 스테이지: 3턴마다 미완료 주제 넛지
+          const shouldNudge = !shouldProgress && agentTurnsSoFar % 3 === 0 && uncovered.length > 0;
+
+          if (shouldProgress) {
+            const pick = uncovered.sort((a, b) => (agendaTurns[a.id] ?? 0) - (agendaTurns[b.id] ?? 0))[0];
+            const coveredStr = covered.length > 0
+              ? `"${covered.map(i => i.label).join('", "')}"는 어느 정도 얘기됐어.`
+              : "";
+            const remainStr = `아직 "${uncovered.map(i => i.label).join('", "')}" ${uncovered.length}개가 남았어.`;
             await runSingleAgent(
               "producer",
-              `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데 아직 충분하지 않아. 각자 어떤 방향이 좋은지 의견을 내고 서로 반응해봐 — 일단 여러 선택지를 놓고 토론해야 최선의 답이 나와.`,
-              stage.id === 1 ? 400 : 200,
+              `${historyText}[진행 상황 정리] 프로듀서로서 토론 흐름을 짧게 정리하고 다음 주제로 안내해줘. ${coveredStr} ${remainStr} 지금은 "${pick.label}" 주제에 집중하자. ${pick.nudge} 2~3문장, 자연스럽게.`,
+              stage.id === 1 ? 350 : 200,
+            );
+            lastSpeaker = "producer";
+            nudgeCooldown = 3;
+            continue;
+          } else if (shouldNudge) {
+            const pick = uncovered.sort((a, b) => (agendaTurns[a.id] ?? 0) - (agendaTurns[b.id] ?? 0))[0];
+            await runSingleAgent(
+              "producer",
+              `${historyText}${pick.nudge} 여러 선택지를 놓고 서로 의견을 주고받아봐.`,
+              stage.id === 1 ? 300 : 200,
             );
             lastSpeaker = "producer";
             nudgeCooldown = 2;
@@ -2237,15 +2256,21 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         // 마무리 조건 체크 — 모든 아젠다 완료 or WRAP_UP_AFTER 턴 초과
         const allCovered = stageAgenda.length > 0 && coveredAgenda.size >= stageAgenda.length;
-        const converging = agentTurnsSoFar >= 8 &&
-          (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2;
+        // Stage 1: 최소 10턴 이상 + 모든 프레임워크 완료 시 수렴 신호 1개만 있어도 마무리
+        const minTurnsForConverge = stage.id === 1 ? 10 : 8;
+        const converging = agentTurnsSoFar >= minTurnsForConverge && (
+          stage.id === 1
+            ? (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계|좋아|됐어|완성/g) ?? []).length >= 1
+            : (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2
+        );
 
         if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging))) {
           wrapUpProposed = true;
           wrapUpProposedAt = Date.now();
+          const coveredLabels = stageAgenda.map(i => i.label);
           await runSingleAgent("producer",
-            `${historyText}[${stage.name}] 단계의 모든 주요 항목을 충분히 다뤘어. 프로듀서로서 이 단계를 마무리하고 확인하자고 자연스럽게 제안해줘. 1~2문장.`,
-            150);
+            `${historyText}5개 프레임워크 — "${coveredLabels.join('", "')}" — 모두 충분히 다뤘어. 프로듀서로서 이 단계를 마무리하자고 자연스럽게 제안해줘. 1~2문장.`,
+            180);
           lastSpeaker = "producer";
           continue;
         }
