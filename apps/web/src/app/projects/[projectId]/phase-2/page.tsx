@@ -1150,6 +1150,7 @@ function StageReportInChat({
   onContinueDebate,
   nextStageName,
   onReanalyze,
+  onNewDebate,
 }: {
   result: StageResult;
   stage: typeof STAGES[number];
@@ -1157,8 +1158,10 @@ function StageReportInChat({
   onContinueDebate: () => void;
   nextStageName: string | null;
   onReanalyze?: () => Promise<void>;
+  onNewDebate?: () => void;   // 뷰 모드 전용: 기존 내용 지우고 새로 토론
 }) {
   const [reanalyzing, setReanalyzing] = useState(false);
+  const isViewMode = !!onNewDebate; // onNewDebate가 있으면 뷰 모드
   const c = stage.color;
   const { data } = result;
 
@@ -1523,18 +1526,35 @@ function StageReportInChat({
 
         {/* ── 액션 버튼 ── */}
         <div style={{ display:"flex", flexDirection:"column" as const, gap:8, marginTop:20 }}>
-          <div style={{ display:"flex", gap:10 }}>
-            <button
-              onClick={onContinueDebate}
-              style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b", transition:"border-color 0.15s" }}>
-              ✎ 계속 토론
-            </button>
-            <button
-              onClick={onNextStage}
-              style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
-              {nextBtnLabel}
-            </button>
-          </div>
+          {isViewMode ? (
+            /* 뷰 모드: 이어서 토론 / 새로 토론하기 */
+            <div style={{ display:"flex", gap:10 }}>
+              <button
+                onClick={onNewDebate}
+                style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #3a2a2a", color:"#f87171", transition:"all 0.15s" }}>
+                🗑 새로 토론
+              </button>
+              <button
+                onClick={onContinueDebate}
+                style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
+                ↩ 이어서 토론
+              </button>
+            </div>
+          ) : (
+            /* 인라인 모드: 계속 토론 / 다음 단계 */
+            <div style={{ display:"flex", gap:10 }}>
+              <button
+                onClick={onContinueDebate}
+                style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b", transition:"border-color 0.15s" }}>
+                ✎ 계속 토론
+              </button>
+              <button
+                onClick={onNextStage}
+                style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
+                {nextBtnLabel}
+              </button>
+            </div>
+          )}
           {/* ── 다시 분석 버튼 ── */}
           <button
             disabled={reanalyzing}
@@ -3550,14 +3570,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         })) updateText += chunk;
       } catch { /* ignore */ }
 
-      if (updateText) {
-        historyUpdates[laterIdx] = {
-          id: uid(),
-          agent: "producer",
-          text: `[${stage.name} 업데이트] ${updateText.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1")}`,
-          streaming: false,
-        };
+      // AI 생성 실패 시 fallback 메시지 보장
+      if (!updateText) {
+        updateText = `${stage.name} 내용이 업데이트됐어. 변경된 내용이 이 단계에 영향을 줄 수 있으니 다시 확인해봐. "↩ 이어서 토론"으로 업데이트 내용을 반영해서 계속할 수 있어.`;
       }
+      historyUpdates[laterIdx] = {
+        id: uid(),
+        agent: "producer",
+        text: `[🔄 ${stage.name} 업데이트] ${updateText.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1")}`,
+        streaming: false,
+      };
     }
 
     // 히스토리 업데이트 + localStorage 저장
@@ -3567,9 +3589,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         updated[Number(k)] = [...(updated[Number(k)] ?? []), msg];
       }
       try {
+        const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
+        const existingParsed = savedData ? JSON.parse(savedData) as { currentStageIdx?: number } : {};
         localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
           stageResults: newResults,
-          currentStageIdx: stageIdx + 1,
+          currentStageIdx: existingParsed.currentStageIdx ?? (stageIdx + 1),
           stageHistoryMsgs: updated,
         }));
       } catch { /* ignore */ }
@@ -3611,6 +3635,48 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setDebatePhase("idle");
   }, [projectId]);
 
+  // ── 뷰 모드 전용: 과거 스테이지 이어서 토론 (기존 트랜스크립트 resume) ──
+  const handleResumeStageFromView = useCallback((stageIdx: number) => {
+    const histMsgs = stageHistoryMsgs[stageIdx] ?? [];
+    const transcript = histMsgs
+      .filter((m: Msg) => !m.streaming && m.text)
+      .map((m: Msg) => {
+        const agData = AGENTS[m.agent as AgentId];
+        const label = agData ? agData.label : "사용자";
+        return `[${label}]: ${m.text}`;
+      });
+    // resume 데이터로 저장 (mount 시 자동 복원)
+    try {
+      localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
+      localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(histMsgs));
+      const saved = localStorage.getItem(`wts_phase2_${projectId}`);
+      const parsed = saved ? JSON.parse(saved) as Record<string, unknown> : {};
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({ ...parsed, currentStageIdx: stageIdx }));
+    } catch { /* ignore */ }
+    window.location.href = `/projects/${projectId}/phase-2`;
+  }, [projectId, stageHistoryMsgs]);
+
+  // ── 뷰 모드 전용: 과거 스테이지 새로 토론 (해당 스테이지 + 이후 초기화) ──
+  const handleRestartStageFromView = useCallback((stageIdx: number) => {
+    // 해당 스테이지 이후 결과 제거
+    const newResults = stageResultsRef.current.filter((r: StageResult) => r.stageId <= stageIdx);
+    const newHistory: Record<number, Msg[]> = {};
+    for (let i = 0; i < stageIdx; i++) newHistory[i] = stageHistoryMsgs[i] ?? [];
+    // localStorage 정리
+    for (let i = stageIdx; i < STAGES.length; i++) {
+      localStorage.removeItem(`p2_conv_${i}_${projectId}`);
+      localStorage.removeItem(`p2_msgs_${i}_${projectId}`);
+    }
+    try {
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+        stageResults: newResults,
+        currentStageIdx: stageIdx,
+        stageHistoryMsgs: newHistory,
+      }));
+    } catch { /* ignore */ }
+    window.location.href = `/projects/${projectId}/phase-2`;
+  }, [projectId, stageHistoryMsgs]);
+
   // ── UI ──
 
   // ── View mode: sidebar 내비게이션 ──
@@ -3651,7 +3717,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 result={viewResult}
                 stage={viewStageObj}
                 onNextStage={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
-                onContinueDebate={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
+                onContinueDebate={() => handleResumeStageFromView(stageIdx)}
+                onNewDebate={() => handleRestartStageFromView(stageIdx)}
                 nextStageName={stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null}
                 onReanalyze={() => handleReanalyze(stageIdx)}
               />
