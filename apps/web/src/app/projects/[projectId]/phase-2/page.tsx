@@ -1149,13 +1149,16 @@ function StageReportInChat({
   onNextStage,
   onContinueDebate,
   nextStageName,
+  onReanalyze,
 }: {
   result: StageResult;
   stage: typeof STAGES[number];
   onNextStage: () => void;
   onContinueDebate: () => void;
   nextStageName: string | null;
+  onReanalyze?: () => Promise<void>;
 }) {
+  const [reanalyzing, setReanalyzing] = useState(false);
   const c = stage.color;
   const { data } = result;
 
@@ -1443,6 +1446,22 @@ function StageReportInChat({
             {nextBtnLabel}
           </button>
         </div>
+        {/* ── 다시 분석 버튼 ── */}
+        {onReanalyze && (
+          <div style={{ marginTop:10, textAlign:"center" }}>
+            <button
+              disabled={reanalyzing}
+              onClick={async () => {
+                setReanalyzing(true);
+                try { await onReanalyze(); } finally { setReanalyzing(false); }
+              }}
+              style={{ padding:"8px 20px", borderRadius:8, fontSize:12, fontWeight:700, cursor: reanalyzing ? "default" : "pointer", background:"transparent", border:`1px solid ${reanalyzing ? "#2a2a3d" : "#3a3a52"}`, color: reanalyzing ? "#3a3a52" : "#94a3b8", transition:"all 0.15s", display:"inline-flex", alignItems:"center", gap:6 }}>
+              {reanalyzing
+                ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite", fontSize:13 }}>⟳</span> 분석 중...</>
+                : "🔄 기존 내용 다시 분석"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1722,7 +1741,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (!document.getElementById(id)) {
       const el = document.createElement("style");
       el.id = id;
-      el.textContent = "@keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }";
+      el.textContent = "@keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} } @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }";
       document.head.appendChild(el);
     }
   }, []);
@@ -3362,6 +3381,124 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }, [runDebate, runStyleDebate, runAssetListReview, stylePhase, assetListPhase, enterImageGenPhase]);
 
+  // ── Re-analyze: 기존 토론 내용을 다시 추출 + 이후 스테이지에 공지 삽입 ──
+  const handleReanalyze = useCallback(async (stageIdx: number): Promise<void> => {
+    const stage = STAGES[stageIdx];
+    const apiKey = getAnthropicKey();
+    if (!apiKey) return;
+
+    // 저장된 메시지에서 토론 텍스트 복원
+    const histMsgs = stageHistoryMsgs[stageIdx] ?? [];
+    const debateText = histMsgs
+      .filter((m: Msg) => !m.streaming && m.text)
+      .map((m: Msg) => {
+        const agData = AGENTS[m.agent as AgentId];
+        const label = agData ? agData.label : "사용자";
+        return `[${label}]: ${m.text}`;
+      })
+      .join("\n");
+
+    if (!debateText) return;
+
+    // 재추출
+    const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+    const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
+
+    // 해당 스테이지 결과 교체
+    const result: StageResult = { stageId: stage.id, data, summary };
+    const newResults = stageResultsRef.current.map((r: StageResult) =>
+      r.stageId === stage.id ? result : r
+    );
+    stageResultsRef.current = newResults;
+    setStageResults(newResults);
+
+    // 에셋 목록 재동기화
+    setEditableAssets((prev: SynopsisAssets) => {
+      const names = (arr: unknown, key: string): string[] =>
+        Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
+      let chars = [...prev.characters];
+      let locs   = [...prev.locations];
+      if (stage.id === 1) {
+        chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
+        locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
+      } else if (stage.id === 2) {
+        chars = [...new Set([...chars, ...names(data.key_characters_brief, "name")])];
+        locs  = [...new Set([...locs,  ...names(data.key_locations_brief,  "name")])];
+      }
+      const next: SynopsisAssets = { characters: chars, locations: locs, props: prev.props };
+      localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+      synopsisAssetsRef.current = next;
+      return next;
+    });
+
+    // 이후 완료된 스테이지에 업데이트 공지 AI 생성
+    const laterResults = newResults.filter((r: StageResult) => r.stageId > stage.id);
+    const historyUpdates: Record<number, Msg> = {};
+
+    for (const laterResult of laterResults) {
+      const laterStage = STAGES.find(s => s.id === laterResult.stageId);
+      if (!laterStage) continue;
+      const laterIdx = laterResult.stageId - 1;
+
+      let updateText = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey,
+          model: "claude-sonnet-4-6",
+          systemPrompt: "웹툰 기획 팀의 총괄 프로듀서. 자연스러운 구어체, 2~3문장.",
+          messages: [{
+            role: "user",
+            content:
+              `[${stage.name}] 내용이 새로 분석됐어.\n\n` +
+              `[업데이트된 ${stage.name} 핵심 요약]\n${summary.slice(0, 600)}\n\n` +
+              `[기존 ${laterStage.name} 요약]\n${laterResult.summary.slice(0, 400)}\n\n` +
+              `팀에게 자연스럽게 알려줘: "${stage.name}이 업데이트됐고, ${laterStage.name}에서 구체적으로 어떤 부분을 다시 확인해야 하는지". 구어체, 2~3문장, 마크다운 금지.`,
+          }],
+          maxTokens: 200,
+          tools: [],
+        })) updateText += chunk;
+      } catch { /* ignore */ }
+
+      if (updateText) {
+        historyUpdates[laterIdx] = {
+          id: uid(),
+          agent: "producer",
+          text: `[${stage.name} 업데이트] ${updateText.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1")}`,
+          streaming: false,
+        };
+      }
+    }
+
+    // 히스토리 업데이트 + localStorage 저장
+    setStageHistoryMsgs((prev: Record<number, Msg[]>) => {
+      const updated = { ...prev };
+      for (const [k, msg] of Object.entries(historyUpdates)) {
+        updated[Number(k)] = [...(updated[Number(k)] ?? []), msg];
+      }
+      try {
+        localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+          stageResults: newResults,
+          currentStageIdx: stageIdx + 1,
+          stageHistoryMsgs: updated,
+        }));
+      } catch { /* ignore */ }
+      return updated;
+    });
+
+    // 완료 공지 (현재 채팅 또는 view mode에서 카드 업데이트됨)
+    const laterNames = laterResults
+      .map((r: StageResult) => STAGES.find(s => s.id === r.stageId)?.name)
+      .filter(Boolean)
+      .join(", ");
+    addMsg(
+      "producer",
+      laterNames
+        ? `${stage.name} 다시 분석 완료. 이미 완료된 [${laterNames}] 토론 기록에 업데이트 내용을 추가했어. 해당 단계 채팅에서 확인해봐.`
+        : `${stage.name} 다시 분석 완료. 업데이트된 결과 카드를 확인해봐.`,
+      false,
+    );
+  }, [genre, projectId, addMsg, stageHistoryMsgs]);
+
   const handleRestartNew = useCallback(() => {
     abortRef.current = true;
     localStorage.removeItem(`p2_msgs_${projectId}`);
@@ -3425,6 +3562,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 onNextStage={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
                 onContinueDebate={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
                 nextStageName={stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null}
+                onReanalyze={() => handleReanalyze(stageIdx)}
               />
             </div>
           </div>
@@ -3694,6 +3832,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 onNextStage={() => handleNextStage(currentStageIdx)}
                 onContinueDebate={() => { void runDebate(currentStageIdx); }}
                 nextStageName={nextStageName}
+                onReanalyze={() => handleReanalyze(currentStageIdx)}
               />
             );
           })()}
