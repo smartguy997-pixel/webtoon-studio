@@ -175,11 +175,15 @@ function buildAgentPromptP1(
   concept: string,
   platLabel: string,
   ep: string,
+  blockedWorks: string[] = [],
 ): string {
   const agentLabel = AGENTS[agentId].label;
   const personality = AGENT_PERSONAS[agentId] ?? "";
+  const blockSection = blockedWorks.length > 0
+    ? `\n[🚫 절대 언급 금지 — 존재하지 않거나 이 기획과 무관한 작품]\n${blockedWorks.map(w => `• ${w}`).join("\n")}\n이 작품들은 어떤 맥락에서도 절대 언급하지 마. 예시·비교·유사작품 어디에도 쓰지 마. 이전 대화에 나왔더라도 완전히 무시해.\n`
+    : "";
   return `너는 웹툰 기획 리서치 팀의 ${agentLabel}야.
-
+${blockSection}
 [네 정체]
 ${personality}
 
@@ -1554,7 +1558,7 @@ export default function Phase1Page() {
         try {
           for await (const chunk of streamClaude({
             apiKey: key,
-            systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep),
+            systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep, rejectedWorksRef.current),
             messages: msgs,
             maxTokens: tokens,
             tools: [],
@@ -1796,12 +1800,19 @@ export default function Phase1Page() {
       // Firestore에서 해당 주제의 관련 과거 발언 검색 (RAG)
       const relevantTurns = await fetchRelevantTurns(agentId);
 
+      // rolling summary에서 차단 작품 문장 실시간 제거
+      const sanitize = (text: string) => {
+        if (!rejectedWorksRef.current.length) return text;
+        return text
+          .split(/(?<=[.!?。])\s+/)
+          .filter(sentence => !rejectedWorksRef.current.some(w => sentence.includes(w)))
+          .join(" ");
+      };
+
       const parts: string[] = [];
-      if (rollingSummary)          parts.push(`[전체 토론 요약]\n${rollingSummary}`);
-      if (topicContent)            parts.push(`[${label}]\n${topicContent}`);
-      if (relevantTurns.length > 0) parts.push(`[${label} 관련 과거 발언]\n${relevantTurns.join("\n")}`);
-      if (rejectedWorksRef.current.length > 0)
-        parts.push(`[언급 금지 작품 — 사용자가 유사하지 않다고 명시적으로 부정함]\n${rejectedWorksRef.current.map(w => `• ${w}`).join("\n")}\n위 작품들은 절대 언급하거나 유사작품으로 분석하지 마.`);
+      if (rollingSummary)           parts.push(`[전체 토론 요약]\n${sanitize(rollingSummary)}`);
+      if (topicContent)             parts.push(`[${label}]\n${sanitize(topicContent)}`);
+      if (relevantTurns.length > 0) parts.push(`[${label} 관련 과거 발언]\n${sanitize(relevantTurns.join("\n"))}`);
       parts.push(`[최근 대화]\n${transcript.slice(-6).join("\n")}`);
       return parts.join("\n\n") + "\n\n";
     };
