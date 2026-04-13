@@ -1,52 +1,61 @@
 /**
  * Server-side image search proxy.
- * Primary: Google Images HTML scraping ("ou" field = original image URL)
- * Fallback: Jikan (MyAnimeList) for manga covers
+ * Primary  : Bing Images HTML scraping (murl field = original image URL)
+ * Fallback : Jikan (MyAnimeList) manga covers
  */
 
 export const runtime = "nodejs";
 
-// ── Google Images scraper ─────────────────────────────────────────────────────
+// ── Bing Images scraper ───────────────────────────────────────────────────────
 
-async function fetchGoogleImages(query: string): Promise<string[]> {
-  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch&hl=ko&safe=off`;
+async function fetchBingImages(query: string): Promise<string[]> {
+  const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1&tsc=ImageBasicHover`;
   try {
     const res = await fetch(url, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Referer": "https://www.bing.com/",
       },
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return [];
     const html = await res.text();
 
-    // Google encodes original image URLs as `"ou":"https://..."` in the page JS
     const urls: string[] = [];
-    const re = /"ou":"(https?:[^"]+)"/g;
+
+    // Bing stores original URLs as `"murl":"https://..."` in inline JSON
+    const re = /"murl":"(https?:[^"]+)"/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) !== null && urls.length < 6) {
-      // Decode unicode escapes (\u003d → =, \u0026 → &)
-      const decoded = m[1]
-        .replace(/\\u003d/gi, "=")
-        .replace(/\\u0026/gi, "&")
-        .replace(/\\u003c/gi, "<")
-        .replace(/\\u003e/gi, ">")
-        .replace(/\\\//g, "/");
-      // Only accept direct image URLs
+      const decoded = decodeURIComponent(m[1]);
       if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(decoded)) {
         urls.push(decoded);
       }
     }
+
+    // Second pattern: mediaurl inside href attributes
+    if (urls.length === 0) {
+      const re2 = /mediaurl=([^&"]+)/g;
+      while ((m = re2.exec(html)) !== null && urls.length < 6) {
+        try {
+          const decoded = decodeURIComponent(m[1]);
+          if (decoded.startsWith("http") && /\.(jpe?g|png|webp|gif)/i.test(decoded)) {
+            urls.push(decoded);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
     return urls;
   } catch {
     return [];
   }
 }
 
-// ── Jikan (MyAnimeList) fallback ──────────────────────────────────────────────
+// ── Jikan (MyAnimeList) fallback — manga covers ───────────────────────────────
 
 interface JikanResponse {
   data: Array<{
@@ -66,10 +75,12 @@ async function fetchJikanImages(query: string): Promise<string[]> {
     if (!res.ok) return [];
     const data = (await res.json()) as JikanResponse;
     return (data.data ?? [])
-      .map(item =>
-        item.images?.webp?.large_image_url ||
-        item.images?.jpg?.large_image_url ||
-        item.images?.jpg?.image_url || ""
+      .map(
+        (item) =>
+          item.images?.webp?.large_image_url ||
+          item.images?.jpg?.large_image_url ||
+          item.images?.jpg?.image_url ||
+          "",
       )
       .filter(Boolean);
   } catch {
@@ -85,10 +96,10 @@ export async function GET(req: Request): Promise<Response> {
 
   if (!query) return Response.json({ urls: [] });
 
-  // Try Google Images first
-  let urls = await fetchGoogleImages(query);
+  // Try Bing first (good bot tolerance, broad coverage including K-dramas/movies)
+  let urls = await fetchBingImages(query);
 
-  // Fallback to Jikan if Google returns nothing
+  // Fallback to Jikan if Bing returns nothing (e.g. specific manga titles)
   if (urls.length === 0) {
     urls = await fetchJikanImages(query);
   }
