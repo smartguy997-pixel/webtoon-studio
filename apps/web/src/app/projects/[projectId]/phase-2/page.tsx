@@ -3523,23 +3523,35 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     stageResultsRef.current = newResults;
     setStageResults(newResults);
 
-    // 에셋 목록 재동기화
-    setEditableAssets((prev: SynopsisAssets) => {
-      const names = (arr: unknown, key: string): string[] =>
+    // 에셋 목록 — 전체 stageResults에서 재빌드 (merge 아닌 rebuild)
+    // 재분석 후 구버전 항목이 남지 않도록 확정된 스테이지 데이터 기준으로 완전 재구성
+    const rebuildAssets = (results: StageResult[]): SynopsisAssets => {
+      const ns = (arr: unknown, key: string): string[] =>
         Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
-      let chars = [...prev.characters];
-      let locs   = [...prev.locations];
-      if (stage.id === 1) {
-        chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
-        locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
-      } else if (stage.id === 2) {
-        chars = [...new Set([...chars, ...names(data.key_characters_brief, "name")])];
-        locs  = [...new Set([...locs,  ...names(data.key_locations_brief,  "name")])];
-      }
-      const next: SynopsisAssets = { characters: chars, locations: locs, props: prev.props };
-      localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
-      synopsisAssetsRef.current = next;
-      return next;
+      const s1d = results.find(r => r.stageId === 1)?.data;
+      const s2d = results.find(r => r.stageId === 2)?.data;
+      const s3d = results.find(r => r.stageId === 3)?.data;
+      const s4d = results.find(r => r.stageId === 4)?.data;
+      const s5d = results.find(r => r.stageId === 5)?.data;
+      return {
+        characters: [...new Set([
+          ...ns(s1d?.key_characters, "name"),
+          ...ns(s2d?.key_characters_brief, "name"),
+          ...ns(s3d?.characters, "name"),
+        ])],
+        locations: [...new Set([
+          ...ns(s1d?.key_locations, "name"),
+          ...ns(s2d?.key_locations_brief, "name"),
+          ...ns(s4d?.locations, "name"),
+        ])],
+        props: [...new Set([...ns(s5d?.props, "name")])],
+      };
+    };
+    const newAssets = rebuildAssets(newResults);
+    setEditableAssets(() => {
+      localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(newAssets));
+      synopsisAssetsRef.current = newAssets;
+      return newAssets;
     });
 
     // 이후 완료된 스테이지에 업데이트 공지 AI 생성
@@ -3742,40 +3754,95 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             </div>
 
             {isAssetsView && (() => {
-              // 스테이지별 상세 데이터 참조
-              const charData  = (stageResults.find((r: StageResult) => r.stageId === 3)?.data?.characters
-                              ?? stageResults.find((r: StageResult) => r.stageId === 1)?.data?.key_characters
-                              ?? []) as Record<string, string>[];
-              const locData   = (stageResults.find((r: StageResult) => r.stageId === 4)?.data?.locations
-                              ?? stageResults.find((r: StageResult) => r.stageId === 1)?.data?.key_locations
-                              ?? []) as Record<string, string>[];
-              const propData  = (stageResults.find((r: StageResult) => r.stageId === 5)?.data?.props ?? []) as Record<string, string>[];
+              // Stage 1+2+3 데이터 병합 (우선순위: Stage 3 > Stage 1 > Stage 2)
+              const s1 = stageResults.find((r: StageResult) => r.stageId === 1)?.data;
+              const s2 = stageResults.find((r: StageResult) => r.stageId === 2)?.data;
+              const s3 = stageResults.find((r: StageResult) => r.stageId === 3)?.data;
+              const s4 = stageResults.find((r: StageResult) => r.stageId === 4)?.data;
+              const s5 = stageResults.find((r: StageResult) => r.stageId === 5)?.data;
 
-              const AssetCard = ({ item, color }: { item: Record<string, string>; color: string }) => (
-                <div style={{ background: "#12121e", borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${color}`, marginBottom: 8 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", marginBottom: 6 }}>
-                    {item.name}
-                    {item.role && <span style={{ fontSize: 11, color, marginLeft: 8, fontWeight: 700 }}>{item.role}</span>}
-                    {item.type && <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>{item.type}</span>}
-                  </div>
-                  {item.face && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>얼굴</span>{item.face}</div>}
-                  {item.outfit && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>복장</span>{item.outfit}</div>}
-                  {item.personality && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>성격</span>{item.personality}</div>}
-                  {item.visual && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>시각</span>{item.visual}</div>}
-                  {item.atmosphere && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>분위기</span>{item.atmosphere}</div>}
-                  {item.function && <div style={{ fontSize: 11, color: "#9a9abf", marginBottom: 2 }}><span style={{ color: "#4a4a68", marginRight: 6 }}>기능</span>{item.function}</div>}
-                </div>
+              const mergeByName = (...arrays: Record<string,string>[][]): Record<string,string>[] => {
+                const seen = new Set<string>();
+                const result: Record<string,string>[] = [];
+                for (const arr of arrays) {
+                  for (const item of arr) {
+                    if (!item.name || seen.has(item.name)) continue;
+                    seen.add(item.name);
+                    // 같은 이름의 모든 소스 데이터 병합 (나중 배열이 우선)
+                    const merged = arrays.reduce((acc, src) => {
+                      const match = src.find(x => x.name === item.name);
+                      return match ? { ...acc, ...match } : acc;
+                    }, {} as Record<string,string>);
+                    result.push(merged);
+                  }
+                }
+                return result;
+              };
+
+              const charData = mergeByName(
+                (s2?.key_characters_brief as Record<string,string>[] | undefined) ?? [],
+                (s1?.key_characters as Record<string,string>[] | undefined) ?? [],
+                (s3?.characters as Record<string,string>[] | undefined) ?? [],
               );
+              const locData = mergeByName(
+                (s2?.key_locations_brief as Record<string,string>[] | undefined) ?? [],
+                (s1?.key_locations as Record<string,string>[] | undefined) ?? [],
+                (s4?.locations as Record<string,string>[] | undefined) ?? [],
+              );
+              const propData = (s5?.props as Record<string,string>[] | undefined) ?? [];
 
-              const Section = ({ label, color, items, names }: { label: string; color: string; items: Record<string,string>[]; names: string[] }) => {
-                // 상세 데이터가 있으면 카드, 없으면 이름만 태그로
-                const merged = names.map(n => items.find(it => it.name === n) ?? { name: n });
+              const AssetCard = ({ item, color }: { item: Record<string, string>; color: string }) => {
+                const hasDetail = !!(item.face || item.outfit || item.personality || item.visual || item.atmosphere || item.one_line || item.motivation || item.significance || item.description);
                 return (
-                  <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10 }}>{label} ({names.length})</div>
-                    {merged.length === 0
-                      ? <div style={{ fontSize: 12, color: "#3a3a52" }}>(없음)</div>
-                      : merged.map((it, i) => <div key={i}><AssetCard item={it} color={color} /></div>)
+                  <div style={{ background: "#12121e", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${color}22` }}>
+                    <div style={{ background: `linear-gradient(90deg, ${color}18, transparent)`, borderBottom: `1px solid ${color}20`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${color}25`, border: `1px solid ${color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color, flexShrink: 0 }}>
+                        {(item.name ?? "?").slice(0, 2)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9" }}>
+                          {item.name}
+                          {item.role && <span style={{ fontSize: 11, color, marginLeft: 8, fontWeight: 700, background: `${color}18`, padding: "1px 6px", borderRadius: 99 }}>{item.role}</span>}
+                          {item.type && <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>{item.type}</span>}
+                        </div>
+                        {(item.one_line ?? item.characteristics) && (
+                          <div style={{ fontSize: 11, color: "#9a9abf", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                            {item.one_line ?? item.characteristics}
+                          </div>
+                        )}
+                      </div>
+                      {!hasDetail && <span style={{ fontSize: 10, color: "#2a2a3d", flexShrink: 0 }}>기본 정보</span>}
+                    </div>
+                    {hasDetail && (
+                      <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column" as const, gap: 3 }}>
+                        {item.face && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>얼굴</span>{item.face}</div>}
+                        {item.outfit && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>복장</span>{item.outfit}</div>}
+                        {item.personality && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>성격</span>{item.personality}</div>}
+                        {item.motivation && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>동기</span>{item.motivation}</div>}
+                        {item.visual && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>시각</span>{item.visual}</div>}
+                        {item.atmosphere && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>분위기</span>{item.atmosphere}</div>}
+                        {item.significance && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>의미</span>{item.significance}</div>}
+                        {item.function && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>기능</span>{item.function}</div>}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              // editableAssets names와 상세 데이터 매핑 (이름 기준)
+              const Section = ({ label, color, items, names }: { label: string; color: string; items: Record<string,string>[]; names: string[] }) => {
+                // 이름 목록 = editableAssets names ∪ 상세 데이터 이름 (누락 없이)
+                const allNames = [...new Set([...names, ...items.map(it => it.name).filter(Boolean)])];
+                const resolved = allNames.map(n => items.find(it => it.name === n) ?? { name: n });
+                return (
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                      {label}
+                      <span style={{ background: `${color}20`, color, borderRadius: 99, padding: "1px 8px", fontSize: 10 }}>{resolved.length}</span>
+                    </div>
+                    {resolved.length === 0
+                      ? <div style={{ fontSize: 12, color: "#3a3a52", padding: "8px 0" }}>(없음)</div>
+                      : resolved.map((it, i) => <AssetCard key={i} item={it} color={color} />)
                     }
                   </div>
                 );
