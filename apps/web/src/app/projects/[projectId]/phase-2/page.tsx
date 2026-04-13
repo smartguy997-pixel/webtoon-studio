@@ -3514,19 +3514,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           </div>
         )}
 
-        {/* Confirmed stage results (above chat) */}
-        {stageResults.length > 0 && (
-          <div style={{ padding:"12px 16px 0" }}>
-            {stageResults.map((r: StageResult, idx: number) => (
-              <StageResultCard
-                key={r.stageId}
-                result={r}
-                debateMsgs={stageHistoryMsgs[idx] ?? []}
-              />
-            ))}
-          </div>
-        )}
-
         <div className={s.chatBody}>
           {msgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} onReply={debatePhase === "running" && m.agent !== "user" ? (msg) => {
             const ag = AGENTS[msg.agent];
