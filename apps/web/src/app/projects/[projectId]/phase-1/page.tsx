@@ -1395,6 +1395,7 @@ export default function Phase1Page() {
     let userTurnCount = 0;  // > 0 이면 "사용자 응답 모드"
     let wrapUpProposed = false;     // 프로듀서가 마무리 제안 중
     let wrapUpProposedAt = 0;       // 제안 시각 (ms)
+    let wrapUpCooldown = 0;         // 사용자 거부 후 N턴 동안 마무리 제안 금지
     const WRAP_UP_AFTER = 20;       // 에이전트 발언 N회 후 마무리 제안
     const WRAP_UP_AUTO_MS = 30_000; // 30초 무응답 → 자동 종료
     // 사용자 동의 패턴 (마무리 제안에 yes 한 것으로 간주)
@@ -1694,7 +1695,8 @@ export default function Phase1Page() {
         // 마무리 제안 중이면: 동의 → 종료, 그 외 → 계속 대화
         if (wrapUpProposed) {
           if (AGREE_RE.test(pendingMsg.trim())) break debateLoop;
-          wrapUpProposed = false; // 사용자가 더 할 말 있음 → 계속
+          wrapUpProposed = false;    // 사용자가 더 할 말 있음 → 계속
+          wrapUpCooldown = 12;       // 12턴 동안 마무리 재제안 금지
         }
         matchedCommand = matchCommand(pendingMsg);
         if (matchedCommand?.handler === "end") break debateLoop;
@@ -1736,12 +1738,13 @@ export default function Phase1Page() {
 
       // 4) 마무리 제안 시점 확인 (20턴 or 대화 수렴 감지)
       const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]") && l.trim()).length;
+      if (wrapUpCooldown > 0) wrapUpCooldown--;
       // 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
       const convergenceCheck = transcript.slice(-4).join(" ");
       const converging = agentTurnsSoFar >= 15 &&
         (convergenceCheck.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
 
-      if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
+      if (!wrapUpProposed && wrapUpCooldown === 0 && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
         wrapUpProposed = true;
         wrapUpProposedAt = Date.now();
         const wrapPrompt = `${baseContext}팀이 충분히 논의했어. 프로듀서로서 자연스럽게 마무리를 제안해줘. "이 정도면 충분히 얘기한 것 같은데, 보고서 작성할까요?" 느낌으로 1~2문장.`;
@@ -1760,20 +1763,24 @@ export default function Phase1Page() {
 
       // 6) 프롬프트 구성 — 직전 발언자·내용을 명시해서 실제 반응 유도
       const isFirst = transcript.length <= 1;
+      // 사용자가 마무리를 거부한 경우 에이전트에게 명시적으로 전달
+      const continueNote = wrapUpCooldown > 0
+        ? `⚠️ 사용자가 마무리를 거부하고 더 깊은 분석을 요청했음. 절대 마무리·보고서 작성·다음 단계 이동을 제안하지 말고 현재 주제를 더 깊이 파고들어.\n\n`
+        : "";
       let agentPrompt: string;
       if (isFirst) {
         agentPrompt = `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`;
       } else if (userTurnCount > 0) {
-        agentPrompt = `${agentCtx}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
+        agentPrompt = `${continueNote}${agentCtx}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
       } else {
         // 직전 발언자와 내용을 추출해 맥락 있는 반응 유도
         const prevMatch = lastLine.match(/^\[([^\]]+)\]:\s*([\s\S]+)/);
         const prevLabel = prevMatch ? prevMatch[1] : null;
         const prevContent = prevMatch ? prevMatch[2].slice(0, 100) : null;
         if (prevLabel && prevContent) {
-          agentPrompt = `${agentCtx}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
+          agentPrompt = `${continueNote}${agentCtx}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
         } else {
-          agentPrompt = `${agentCtx}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
+          agentPrompt = `${continueNote}${agentCtx}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
         }
       }
 
