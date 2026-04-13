@@ -1706,6 +1706,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   useEffect(() => { msgsRef.current = msgs; }, [msgs]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+  useEffect(() => {
+    if (debatePhase === "confirmed") {
+      setTimeout(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, 100);
+    }
+  }, [debatePhase]);
 
   useEffect(() => {
     if (!projectId || msgs.length === 0) return;
