@@ -1137,16 +1137,94 @@ function StageReportInChat({
   const c = stage.color;
   const { data } = result;
 
-  const field = (label: string, val: unknown) => {
-    if (!val || (Array.isArray(val) && (val as unknown[]).length === 0)) return null;
-    const text = Array.isArray(val) ? (val as unknown[]).join(" · ") : String(val);
+  // 다음 단계 버튼 레이블 — nextStageName이 없으면 stageId로 유추
+  const nextBtnLabel = nextStageName
+    ? `${nextStageName} 시작 →`
+    : result.stageId === 1 ? "시놉시스 시작 →"
+    : result.stageId === 2 ? "에셋 리스트 검토 →"
+    : result.stageId <= 4 ? "이미지 생성 →"
+    : "스타일 정의 →";
+
+  const str = (v: unknown): string => (v ? String(v) : "");
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v as unknown[] : []);
+
+  // 필드 한 줄
+  const Field = ({ label, val }: { label: string; val: unknown }) => {
+    const text = Array.isArray(val) ? (val as unknown[]).join(" · ") : str(val);
+    if (!text) return null;
     return (
-      <div style={{ display:"flex", gap:8, fontSize:12, lineHeight:1.65, marginBottom:5 }}>
-        <span style={{ minWidth:64, fontWeight:700, color:"#4a4a68", textTransform:"uppercase" as const, letterSpacing:"0.4px", fontSize:10, paddingTop:2, flexShrink:0 }}>{label}</span>
-        <span style={{ color:"#c8d0e0" }}>{text}</span>
+      <div style={{ display:"flex", gap:10, fontSize:13, lineHeight:1.7, marginBottom:6 }}>
+        <span style={{ minWidth:60, fontWeight:700, color:"#4a4a6a", fontSize:11, paddingTop:2, flexShrink:0, textTransform:"uppercase" as const, letterSpacing:"0.3px" }}>{label}</span>
+        <span style={{ color:"#d4dce8" }}>{text}</span>
       </div>
     );
   };
+
+  // 섹션 헤더
+  const SectionHeader = ({ icon, title }: { icon: string; title: string }) => (
+    <div style={{ display:"flex", alignItems:"center", gap:10, margin:"20px 0 12px" }}>
+      <span style={{ fontSize:13 }}>{icon}</span>
+      <span style={{ fontSize:11, fontWeight:800, color:c, letterSpacing:"0.8px", textTransform:"uppercase" as const }}>{title}</span>
+      <div style={{ flex:1, height:1, background:`${c}30` }} />
+    </div>
+  );
+
+  // ── 캐릭터 카드 ─────────────────────────────────────────────────────────────
+  const CharCard = ({ ch, cardColor }: { ch: Record<string,string>; cardColor: string }) => {
+    const initials = (ch.name ?? "?").slice(0, 2);
+    const roleLabel = ch.role ?? "";
+    const meta = [ch.gender, ch.age].filter(Boolean).join(" · ");
+    const body = [ch.height, ch.build].filter(Boolean).join(", ");
+    return (
+      <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:12, border:`1px solid ${cardColor}22` }}>
+        {/* 헤더 바 */}
+        <div style={{ background:`linear-gradient(90deg, ${cardColor}22, transparent)`, borderBottom:`1px solid ${cardColor}22`, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ width:40, height:40, borderRadius:"50%", background:`${cardColor}30`, border:`2px solid ${cardColor}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:cardColor, flexShrink:0 }}>{initials}</div>
+          <div>
+            <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9" }}>{ch.name}
+              {roleLabel && <span style={{ fontSize:11, fontWeight:700, color:cardColor, marginLeft:10, background:`${cardColor}20`, padding:"2px 8px", borderRadius:20 }}>{roleLabel}</span>}
+            </div>
+            {meta && <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{meta}</div>}
+          </div>
+        </div>
+        {/* 내용 */}
+        <div style={{ padding:"12px 16px", display:"flex", flexDirection:"column" as const, gap:2 }}>
+          <Field label="얼굴" val={ch.face} />
+          <Field label="체형/복장" val={[body, ch.outfit].filter(Boolean).join(" — ") || undefined} />
+          <Field label="성격" val={ch.personality} />
+          <Field label="동기" val={ch.motivation} />
+          <Field label="상처/비밀" val={ch.backstory} />
+          <Field label="말투" val={ch.speech} />
+          {ch.story_role && <Field label="서사 역할" val={ch.story_role} />}
+        </div>
+      </div>
+    );
+  };
+
+  // ── 장소 카드 ─────────────────────────────────────────────────────────────
+  const LocCard = ({ loc, cardColor }: { loc: Record<string,string>; cardColor: string }) => (
+    <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:12, border:`1px solid ${cardColor}22` }}>
+      <div style={{ background:`linear-gradient(90deg, ${cardColor}18, transparent)`, borderBottom:`1px solid ${cardColor}22`, padding:"12px 16px", display:"flex", alignItems:"center", gap:10 }}>
+        <div style={{ width:36, height:36, borderRadius:8, background:`${cardColor}20`, border:`1px solid ${cardColor}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>🏙</div>
+        <div>
+          <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9" }}>{loc.name}
+            {loc.type && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{loc.type}</span>}
+          </div>
+          {loc.significance && <div style={{ fontSize:12, color:`${cardColor}cc`, marginTop:2 }}>{loc.significance}</div>}
+        </div>
+      </div>
+      <div style={{ padding:"12px 16px" }}>
+        <Field label="시각" val={loc.visual} />
+        <Field label="조명" val={loc.lighting} />
+        <Field label="색채" val={loc.color_palette} />
+        <Field label="분위기" val={loc.atmosphere} />
+        <Field label="건축" val={loc.architecture} />
+        <Field label="소리" val={loc.sound} />
+        <Field label="주요 장면" val={loc.key_scenes} />
+        <Field label="상징" val={loc.symbolic_meaning} />
+      </div>
+    </div>
+  );
 
   // ── Stage별 내용 ─────────────────────────────────────────────────────────────
 
@@ -1154,217 +1232,158 @@ function StageReportInChat({
     switch (result.stageId) {
 
       case 1: { // 세계관
-        const chars = Array.isArray(data.key_characters) ? data.key_characters as Record<string,string>[] : [];
-        const locs  = Array.isArray(data.key_locations)  ? data.key_locations  as Record<string,string>[] : [];
+        const chars = arr(data.key_characters) as Record<string,string>[];
+        const locs  = arr(data.key_locations)  as Record<string,string>[];
+        const rules = arr(data.world_rules) as string[];
         return (
           <>
-            {/* 배경/분위기 */}
-            <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", marginBottom:12 }}>
-              {field("시대/배경", data.era)}
-              {field("분위기", data.atmosphere)}
-              {field("대립 구도", data.conflict_structure)}
-              {field("협력 구도", data.alliance_structure)}
-              {field("세계 규칙", data.world_rules)}
-              {field("특수 설정", data.special_elements)}
+            {/* 세계관 개요 */}
+            <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
+              <Field label="시대/배경" val={data.era} />
+              <Field label="분위기/톤" val={data.atmosphere} />
+              <Field label="대립 구도" val={data.conflict_structure} />
+              <Field label="협력 구도" val={data.alliance_structure} />
+              {rules.length > 0 && (
+                <div style={{ marginTop:8 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:"#4a4a6a", textTransform:"uppercase" as const, letterSpacing:"0.4px", marginBottom:6 }}>세계 규칙</div>
+                  {rules.map((r, i) => (
+                    <div key={i} style={{ display:"flex", gap:8, fontSize:13, color:"#d4dce8", lineHeight:1.65, marginBottom:4 }}>
+                      <span style={{ color:c, fontWeight:800, flexShrink:0 }}>·</span><span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!rules.length && <Field label="세계 규칙" val={data.world_rules} />}
             </div>
             {/* 핵심 인물 */}
             {chars.length > 0 && (
-              <div style={{ marginBottom:12 }}>
-                <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:8 }}>핵심 인물</div>
-                <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
-                  {chars.map((ch, i) => (
-                    <div key={i} style={{ background:"#12121e", borderRadius:10, padding:"12px 14px", borderLeft:`3px solid ${c}` }}>
-                      <div style={{ fontSize:13, fontWeight:800, color:"#f1f5f9", marginBottom:8 }}>
-                        {ch.name}
-                        <span style={{ fontSize:11, color:c, marginLeft:8, fontWeight:700 }}>{ch.role}</span>
-                        {(ch.age || ch.gender) && <span style={{ fontSize:11, color:"#64748b", marginLeft:6 }}>{[ch.age, ch.gender].filter(Boolean).join(" · ")}</span>}
-                      </div>
-                      {field("얼굴", ch.face)}
-                      {field("체형/복장", [ch.height, ch.build, ch.outfit].filter(Boolean).join(" · ") || undefined)}
-                      {field("성격", ch.personality)}
-                      {field("동기", ch.motivation)}
-                      {field("배경/상처", ch.backstory)}
-                      {field("말투", ch.speech)}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <>
+                <SectionHeader icon="👤" title={`핵심 인물 (${chars.length}명)`} />
+                {chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)}
+              </>
             )}
             {/* 주요 장소 */}
             {locs.length > 0 && (
-              <div style={{ marginBottom:4 }}>
-                <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:8 }}>주요 장소</div>
-                <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
-                  {locs.map((l, i) => (
-                    <div key={i} style={{ background:"#12121e", borderRadius:10, padding:"12px 14px", borderLeft:`3px solid ${c}80` }}>
-                      <div style={{ fontSize:13, fontWeight:800, color:"#f1f5f9", marginBottom:8 }}>
-                        {l.name}
-                        {l.type && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{l.type}</span>}
-                      </div>
-                      {field("시각", l.visual)}
-                      {field("조명/분위기", [l.lighting, l.atmosphere].filter(Boolean).join(" · ") || undefined)}
-                      {field("역할", l.significance)}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <>
+                <SectionHeader icon="🏙" title={`주요 장소 (${locs.length}곳)`} />
+                {locs.map((l, i) => <LocCard key={i} loc={l} cardColor={c} />)}
+              </>
             )}
-            {/* raw fallback */}
-            {data.raw_summary && (
-              <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{String(data.raw_summary)}</div>
-            )}
+            {data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>}
           </>
         );
       }
 
       case 2: { // 시놉시스
-        const charsBrief = Array.isArray(data.key_characters_brief) ? data.key_characters_brief as Record<string,string>[] : [];
-        const locsBrief  = Array.isArray(data.key_locations_brief)  ? data.key_locations_brief  as Record<string,string>[] : [];
+        const charsBrief = arr(data.key_characters_brief) as Record<string,string>[];
+        const locsBrief  = arr(data.key_locations_brief)  as Record<string,string>[];
         return (
           <>
             {/* 로그라인 */}
             {data.logline && (
-              <div style={{ background:`${c}12`, border:`1px solid ${c}30`, borderRadius:10, padding:"14px 18px", marginBottom:12 }}>
-                <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:6 }}>💡 로그라인</div>
-                <div style={{ fontSize:15, fontWeight:700, color:"#f1f5f9", lineHeight:1.6 }}>{String(data.logline)}</div>
+              <div style={{ background:`${c}12`, border:`1px solid ${c}40`, borderRadius:12, padding:"16px 20px", marginBottom:16 }}>
+                <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.8px", textTransform:"uppercase" as const, marginBottom:8 }}>💡 로그라인</div>
+                <div style={{ fontSize:16, fontWeight:700, color:"#f1f5f9", lineHeight:1.65 }}>{str(data.logline)}</div>
               </div>
             )}
-            {/* 전제/갈등/테마 */}
-            <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", marginBottom:12 }}>
-              {field("전제", data.premise)}
-              {field("핵심 갈등", data.conflict)}
-              {field("테마", data.theme)}
+            {/* 개요 */}
+            <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:16, border:`1px solid ${c}20` }}>
+              <Field label="전제" val={data.premise} />
+              <Field label="핵심 갈등" val={data.conflict} />
+              <Field label="테마" val={data.theme} />
             </div>
             {/* 기승전결 */}
             {(data.act1 || data.act2 || data.act3 || data.act4) && (
-              <div style={{ marginBottom:12 }}>
-                <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:8 }}>기승전결</div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                  {([["기(起)", data.act1], ["승(承)", data.act2], ["전(轉)", data.act3], ["결(結)", data.act4]] as [string, unknown][]).map(([label, val]) => val ? (
-                    <div key={label} style={{ background:"#12121e", borderRadius:8, padding:"10px 12px", borderTop:`2px solid ${c}60` }}>
-                      <div style={{ fontSize:10, fontWeight:800, color:c, marginBottom:5 }}>{label}</div>
-                      <div style={{ fontSize:12, color:"#c8d0e0", lineHeight:1.6 }}>{String(val)}</div>
+              <>
+                <SectionHeader icon="📖" title="기승전결" />
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:4 }}>
+                  {([["🌱 기(起)", data.act1], ["🌊 승(承)", data.act2], ["⚡ 전(轉)", data.act3], ["🎯 결(結)", data.act4]] as [string, unknown][]).map(([label, val]) => val ? (
+                    <div key={label} style={{ background:"#10101c", borderRadius:10, padding:"14px 14px", border:`1px solid ${c}25`, borderTop:`3px solid ${c}` }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:c, marginBottom:8 }}>{label}</div>
+                      <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.7 }}>{str(val)}</div>
                     </div>
                   ) : null)}
                 </div>
-              </div>
+              </>
             )}
             {/* 등장인물 + 장소 */}
-            {(charsBrief.length > 0 || locsBrief.length > 0) && (
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-                {charsBrief.length > 0 && (
-                  <div style={{ background:"#12121e", borderRadius:10, padding:"12px 14px" }}>
-                    <div style={{ fontSize:10, fontWeight:800, color:"#fb923c", letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:8 }}>등장인물</div>
-                    {charsBrief.map((ch, i) => (
-                      <div key={i} style={{ fontSize:12, color:"#c8d0e0", marginBottom:4 }}>
-                        <span style={{ color:"#f1f5f9", fontWeight:700 }}>{ch.name}</span>
-                        {ch.role && <span style={{ color:"#64748b", marginLeft:5 }}>({ch.role})</span>}
-                        {ch.one_line && <div style={{ fontSize:11, color:"#64748b", marginLeft:0, marginTop:1 }}>{ch.one_line}</div>}
-                      </div>
-                    ))}
+            {charsBrief.length > 0 && (
+              <>
+                <SectionHeader icon="👥" title={`등장인물 (${charsBrief.length}명)`} />
+                {charsBrief.map((ch, i) => (
+                  <div key={i} style={{ display:"flex", gap:12, padding:"10px 14px", background:"#10101c", borderRadius:10, marginBottom:8, border:`1px solid ${c}18` }}>
+                    <div style={{ width:32, height:32, borderRadius:"50%", background:"#fb923c22", border:"1px solid #fb923c40", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800, color:"#fb923c", flexShrink:0 }}>{(ch.name ?? "?").slice(0,2)}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{ch.name} <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({ch.role})</span></div>
+                      {ch.one_line && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{ch.one_line}</div>}
+                    </div>
                   </div>
-                )}
-                {locsBrief.length > 0 && (
-                  <div style={{ background:"#12121e", borderRadius:10, padding:"12px 14px" }}>
-                    <div style={{ fontSize:10, fontWeight:800, color:"#a78bfa", letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:8 }}>주요 장소</div>
-                    {locsBrief.map((l, i) => (
-                      <div key={i} style={{ fontSize:12, color:"#c8d0e0", marginBottom:4 }}>
-                        <span style={{ color:"#f1f5f9", fontWeight:700 }}>{l.name}</span>
-                        {l.role && <div style={{ fontSize:11, color:"#64748b", marginTop:1 }}>{l.role}</div>}
-                      </div>
-                    ))}
+                ))}
+              </>
+            )}
+            {locsBrief.length > 0 && (
+              <>
+                <SectionHeader icon="🗺" title={`주요 장소 (${locsBrief.length}곳)`} />
+                {locsBrief.map((l, i) => (
+                  <div key={i} style={{ padding:"10px 14px", background:"#10101c", borderRadius:10, marginBottom:8, border:`1px solid #a78bfa18` }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{l.name}</div>
+                    {l.role && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{l.role}</div>}
                   </div>
-                )}
-              </div>
+                ))}
+              </>
             )}
-            {data.raw_summary && (
-              <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{String(data.raw_summary)}</div>
-            )}
+            {data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>}
           </>
         );
       }
 
       case 3: { // 캐릭터 설정
-        const chars = Array.isArray(data.characters) ? data.characters as Record<string,string>[] : [];
+        const chars = arr(data.characters) as Record<string,string>[];
         return (
           <>
             {chars.length > 0
-              ? chars.map((ch, i) => (
-                <div key={i} style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", marginBottom:10, borderLeft:`3px solid ${c}` }}>
-                  <div style={{ fontSize:14, fontWeight:800, color:"#f1f5f9", marginBottom:10 }}>
-                    {ch.name}
-                    <span style={{ fontSize:12, color:c, marginLeft:10, fontWeight:700 }}>{ch.role}</span>
-                    {(ch.gender || ch.age) && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{[ch.gender, ch.age].filter(Boolean).join(" · ")}</span>}
-                  </div>
-                  {field("얼굴", ch.face)}
-                  {field("키/체형", [ch.height, ch.build, ch.weight].filter(Boolean).join(" · ") || undefined)}
-                  {field("복장", ch.outfit)}
-                  {field("성격", ch.personality)}
-                  {field("동기", ch.motivation)}
-                  {field("말투", ch.speech)}
-                  {field("세계관 역할", ch.story_role)}
-                </div>
-              ))
-              : data.raw_summary && (
-                <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{String(data.raw_summary)}</div>
-              )
+              ? chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)
+              : data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>
             }
           </>
         );
       }
 
       case 4: { // 장소 설정
-        const locs = Array.isArray(data.locations) ? data.locations as Record<string,string>[] : [];
+        const locs = arr(data.locations) as Record<string,string>[];
         return (
           <>
             {locs.length > 0
-              ? locs.map((loc, i) => (
-                <div key={i} style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", marginBottom:10, borderLeft:`3px solid ${c}` }}>
-                  <div style={{ fontSize:14, fontWeight:800, color:"#f1f5f9", marginBottom:10 }}>
-                    {loc.name}
-                    {loc.type && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{loc.type}</span>}
-                  </div>
-                  {field("시각", loc.visual)}
-                  {field("건축/구조", loc.architecture)}
-                  {field("조명", loc.lighting)}
-                  {field("색채", loc.color_palette)}
-                  {field("분위기", loc.atmosphere)}
-                  {field("소리", loc.sound)}
-                  {field("서사적 의미", loc.significance)}
-                  {field("주요 장면", loc.key_scenes)}
-                  {field("상징", loc.symbolic_meaning)}
-                </div>
-              ))
-              : data.raw_summary && (
-                <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{String(data.raw_summary)}</div>
-              )
+              ? locs.map((loc, i) => <LocCard key={i} loc={loc} cardColor={c} />)
+              : data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>
             }
           </>
         );
       }
 
       case 5: { // 소품·장비
-        const props = Array.isArray(data.props) ? data.props as Record<string,string>[] : [];
+        const props = arr(data.props) as Record<string,string>[];
         return (
           <>
             {props.length > 0
               ? props.map((p, i) => (
-                <div key={i} style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", marginBottom:10, borderLeft:`3px solid ${c}` }}>
-                  <div style={{ fontSize:14, fontWeight:800, color:"#f1f5f9", marginBottom:10 }}>
-                    {p.name}
-                    {p.type && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{p.type}</span>}
-                    {p.owner && <span style={{ fontSize:11, color:c, marginLeft:8 }}>· {p.owner}</span>}
+                <div key={i} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:12, border:`1px solid ${c}22` }}>
+                  <div style={{ background:`linear-gradient(90deg, ${c}18, transparent)`, borderBottom:`1px solid ${c}20`, padding:"12px 16px" }}>
+                    <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9" }}>{p.name}
+                      {p.type && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{p.type}</span>}
+                      {p.owner && <span style={{ fontSize:11, color:c, marginLeft:8 }}>· {p.owner}</span>}
+                    </div>
                   </div>
-                  {field("시각", p.visual)}
-                  {field("상태", p.condition)}
-                  {field("기능", p.function)}
-                  {field("이야기 역할", p.story_role)}
-                  {field("상징", p.symbolic_meaning)}
+                  <div style={{ padding:"12px 16px" }}>
+                    <Field label="시각" val={p.visual} />
+                    <Field label="상태" val={p.condition} />
+                    <Field label="기능" val={p.function} />
+                    <Field label="이야기 역할" val={p.story_role} />
+                    <Field label="상징" val={p.symbolic_meaning} />
+                  </div>
                 </div>
               ))
-              : data.raw_summary && (
-                <div style={{ background:"#12121e", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{String(data.raw_summary)}</div>
-              )
+              : data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>
             }
           </>
         );
@@ -1375,31 +1394,31 @@ function StageReportInChat({
   })();
 
   return (
-    <div style={{ margin:"20px 0 4px" }}>
-      {/* ── 완료 구분선 ── */}
-      <div style={{ display:"flex", alignItems:"center", gap:14, padding:"0 16px", marginBottom:18 }}>
-        <div style={{ flex:1, height:"1px", background:`linear-gradient(to right, transparent, ${c}50)` }} />
-        <div style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.8px", textTransform:"uppercase" as const, whiteSpace:"nowrap" as const }}>
-          ✓ {stage.name} 완료
+    <div style={{ margin:"24px 0 8px" }}>
+      {/* ── 완료 배너 ── */}
+      <div style={{ background:`linear-gradient(90deg, ${c}18, ${c}08, transparent)`, border:`1px solid ${c}30`, borderRadius:12, padding:"14px 20px", marginBottom:20, display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ width:36, height:36, borderRadius:10, background:`${c}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>✓</div>
+        <div>
+          <div style={{ fontSize:15, fontWeight:800, color:c }}>{stage.name} 완료</div>
+          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>토론 결과가 정리되었습니다. 내용을 확인하고 다음 단계로 진행하세요.</div>
         </div>
-        <div style={{ flex:1, height:"1px", background:`linear-gradient(to left, transparent, ${c}50)` }} />
       </div>
 
       {/* ── 내용 ── */}
-      <div style={{ padding:"0 16px" }}>
+      <div style={{ padding:"0 4px" }}>
         {content}
 
         {/* ── 액션 버튼 ── */}
-        <div style={{ display:"flex", gap:10, marginTop:18 }}>
+        <div style={{ display:"flex", gap:10, marginTop:20 }}>
           <button
             onClick={onContinueDebate}
-            style={{ flex:1, padding:"11px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b" }}>
+            style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b", transition:"border-color 0.15s" }}>
             ✎ 계속 토론
           </button>
           <button
             onClick={onNextStage}
-            style={{ flex:2, padding:"11px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}cc, ${c})`, border:"none", color:"#0d0d14" }}>
-            {nextStageName ? `${nextStageName} 시작 →` : "Phase 3 시작 →"}
+            style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
+            {nextBtnLabel}
           </button>
         </div>
       </div>
@@ -3264,7 +3283,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 stage={viewStageObj}
                 onNextStage={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
                 onContinueDebate={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
-                nextStageName={null}
+                nextStageName={stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null}
               />
             </div>
           </div>
@@ -3526,6 +3545,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             const latestResult = stageResults[stageResults.length - 1];
             const stageObj = STAGES.find(st => st.id === latestResult.stageId) ?? STAGES[currentStageIdx];
             const nextStageName = currentStageIdx + 1 < STAGES.length ? STAGES[currentStageIdx + 1].name : null;
+            // nextBtnLabel는 StageReportInChat 내부에서 stageId 기반으로 자동 보정됨
             return (
               <StageReportInChat
                 result={latestResult}
