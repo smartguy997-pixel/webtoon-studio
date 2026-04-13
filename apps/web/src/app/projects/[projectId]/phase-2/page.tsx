@@ -1224,17 +1224,18 @@ function StageReportInChat({
       return "📋";
     };
 
-    // ■ 기준 분할 — ■ 없으면 markdown ## 헤더 기준, 그것도 없으면 단락
-    const hasBullet = text.includes("■");
-    const hasMarkdown = !hasBullet && /(?:^|\n)#{1,3}\s/m.test(text);
-    const rawSections = hasBullet
-      ? text.split(/\n(?=■)/).map(s => s.trim()).filter(Boolean)
-      : hasMarkdown
-        ? text.split(/\n(?=#{1,3}\s)/).map(s => s.trim()).filter(Boolean)
-        : [text.trim()].filter(Boolean);
+    // 섹션 헤더 감지: ■ / ## / ### / ## ■ / • ### 등 혼합 패턴 모두 처리
+    // 패턴: 선택적 bullet(•·) + 선택적 ##/### + 선택적 ■
+    const HEADER_RE = /^(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|^(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t]/;
+    const hasAnyHeader = HEADER_RE.test(text) || /(?:^|\n)(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■/m.test(text);
 
-    // 실제로 섹션 헤더(■ 또는 ##)로 시작하는 항목만 유효 섹션
-    const validSections = rawSections.filter(s => s.startsWith("■") || /^#{1,3}\s/.test(s));
+    const rawSections = hasAnyHeader
+      ? text.split(/\n(?=(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t])/)
+          .map(s => s.trim()).filter(Boolean)
+      : [text.trim()].filter(Boolean);
+
+    // 실제로 섹션 헤더로 시작하는 항목만 유효 섹션
+    const validSections = rawSections.filter(s => HEADER_RE.test(s));
 
     if (validSections.length === 0) {
       // 섹션 없으면 단락 단위로 렌더
@@ -1257,7 +1258,10 @@ function StageReportInChat({
         {sections.map((section, idx) => {
           const lines = section.split('\n');
           const titleRaw = lines[0];
-          const title = clean(titleRaw.replace(/^■\s*/, "").replace(/^#{1,3}\s*/, ""));
+          const title = clean(titleRaw
+            .replace(/^[ \t]*[•·][ \t]*/, "")  // leading bullet
+            .replace(/^#{1,3}[ \t]*/, "")        // ## / ###
+            .replace(/^■[ \t]*/, ""));            // ■
           const bodyLines = lines.slice(1).filter(l => l.trim());
           const icon = getIcon(title);
 
@@ -4155,16 +4159,18 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           {debatePhase === "confirmed" && stageResults.length > 0 && imageSessionPhase === "idle" && (() => {
             const latestResult = stageResults[stageResults.length - 1];
             const stageObj = STAGES.find(st => st.id === latestResult.stageId) ?? STAGES[currentStageIdx];
-            const nextStageName = currentStageIdx + 1 < STAGES.length ? STAGES[currentStageIdx + 1].name : null;
-            // nextBtnLabel는 StageReportInChat 내부에서 stageId 기반으로 자동 보정됨
+            // latestResult.stageId 기준으로 완료된 스테이지 인덱스 계산 (currentStageIdx 오프셋 버그 방지)
+            const completedStageIdx = STAGES.findIndex(s => s.id === latestResult.stageId);
+            const resolvedIdx = completedStageIdx >= 0 ? completedStageIdx : currentStageIdx;
+            const nextStageName = resolvedIdx + 1 < STAGES.length ? STAGES[resolvedIdx + 1].name : null;
             return (
               <StageReportInChat
                 result={latestResult}
                 stage={stageObj}
-                onNextStage={() => handleNextStage(currentStageIdx)}
-                onContinueDebate={() => { void runDebate(currentStageIdx); }}
+                onNextStage={() => handleNextStage(resolvedIdx)}
+                onContinueDebate={() => { void runDebate(resolvedIdx); }}
                 nextStageName={nextStageName}
-                onReanalyze={() => handleReanalyze(currentStageIdx)}
+                onReanalyze={() => handleReanalyze(resolvedIdx)}
               />
             );
           })()}
