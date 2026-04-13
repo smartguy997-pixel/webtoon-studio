@@ -513,6 +513,7 @@ async function extractStageData(
       try {
         for await (const chunk of streamClaude({
           apiKey,
+          model: "claude-sonnet-4-6",
           systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
           messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate, synopsisContext) }],
           maxTokens: (stage.id === 3 || stage.id === 4) ? 4000 : 2000,
@@ -532,6 +533,7 @@ async function extractStageData(
       try {
         for await (const chunk of streamClaude({
           apiKey,
+          model: "claude-sonnet-4-6",
           systemPrompt: `웹툰 기획 전문가. 장르: ${genre}. 토론에서 합의된 내용을 다음 단계 작업자가 바로 활용할 수 있도록 빠짐없이, 구체적으로 정리합니다.`,
           messages: [{
             role: "user",
@@ -558,6 +560,7 @@ async function extractStageData(
     try {
       for await (const chunk of streamClaude({
         apiKey,
+        model: "claude-sonnet-4-6",
         systemPrompt: "웹툰 제작 바이블 완전성 검증 전문가. 누락된 항목만 JSON 배열로 출력.",
         messages: [{
           role: "user",
@@ -918,6 +921,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         try {
           for await (const chunk of streamClaude({
             apiKey: key,
+            model: "claude-sonnet-4-6",
             systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
             messages: [{
               role: "user",
@@ -940,6 +944,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       try {
         for await (const chunk of streamClaude({
           apiKey: key,
+          model: "claude-sonnet-4-6",
           systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current, p1DataRef.current),
           messages: [{ role: "user", content: userContent }],
           maxTokens: tokens,
@@ -1138,6 +1143,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       try {
         for await (const chunk of streamClaude({
           apiKey: key,
+          model: "claude-sonnet-4-6",
           systemPrompt: buildStyleAgentPrompt(genre, agentId, worldSum, synSum),
           messages: [{ role: "user", content: prompt }],
           maxTokens: 180,
@@ -1207,6 +1213,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         let extracted = "";
         for await (const chunk of streamClaude({
           apiKey,
+          model: "claude-sonnet-4-6",
           systemPrompt: "이미지 생성 프롬프트 전문가.",
           messages: [{
             role: "user",
@@ -1321,7 +1328,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let text = "";
     try {
       for await (const chunk of streamClaude({
-        apiKey: key, systemPrompt,
+        apiKey: key, model: "claude-sonnet-4-6", systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
         maxTokens, tools: [],
       })) {
@@ -1486,6 +1493,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     try {
       for await (const chunk of streamClaude({
         apiKey,
+        model: "claude-sonnet-4-6",
         systemPrompt: "이미지 생성 프롬프트 전문가. JSON만 출력.",
         messages: [{
           role: "user",
@@ -1638,6 +1646,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       try {
         for await (const chunk of streamClaude({
           apiKey: key,
+          model: "claude-sonnet-4-6",
           systemPrompt: `너는 웹툰 기획 팀의 ${AGENTS[agentId].label}야. ${AGENT_ROLE_DESC[agentId] ?? ""}`,
           messages: [{
             role: "user",
