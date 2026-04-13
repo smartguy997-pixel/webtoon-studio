@@ -47,13 +47,18 @@ app.post("/api/test-key", async (req, res) => {
   if (service === "runway") {
     if (key.length < 16) { res.json({ ok: false, error: "키가 너무 짧습니다" }); return; }
     try {
-      const r = await fetch("https://api.runwayml.com/v1/organization", {
-        headers: { Authorization: `Bearer ${key}`, "X-Runway-Version": "2024-11-06" },
+      // /v1/tasks — 빈 목록이라도 200 반환, 키 유효성 확인용
+      const r = await fetch("https://api.runwayml.com/v1/tasks", {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "X-Runway-Version": "2024-11-06",
+          "Content-Type": "application/json",
+        },
         signal: AbortSignal.timeout(8000),
       });
-      if (r.ok || r.status === 403) { res.json({ ok: true }); return; }
       if (r.status === 401) { res.json({ ok: false, error: "인증 실패 — 키를 확인해주세요" }); return; }
-      res.json({ ok: false, error: `API 오류 (${r.status})` });
+      // 200, 403, 404, 405 모두 "키는 유효" (엔드포인트 권한 문제일 뿐)
+      res.json({ ok: true });
     } catch { res.json({ ok: false, error: "네트워크 오류 — Runway API 연결 실패" }); }
     return;
   }

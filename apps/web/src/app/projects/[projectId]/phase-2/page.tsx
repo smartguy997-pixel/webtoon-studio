@@ -57,6 +57,51 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
     "짧고 핵심만. 길게 말하지 마.",
 };
 
+// ─── Phase 2 스테이지별 아젠다 ──────────────────────────────────────────────────
+// 각 스테이지마다 반드시 다뤄야 할 하위 주제들
+// Phase 1과 동일하게: 주제당 최소 MIN_TURNS_PER_TOPIC_P2 턴 이상 논의해야 완료
+
+const MIN_TURNS_PER_TOPIC_P2 = 7;
+
+const STAGE_AGENDA: Record<number, Array<{
+  id: string;
+  label: string;
+  keywords: RegExp;
+  nudge: string;
+}>> = {
+  1: [ // 세계관
+    { id: "era",       label: "시대·배경",    keywords: /시대|배경|세기|현대|미래|과거|공간|지역|나라|도시|문명|왕국|제국|행성/,   nudge: "이 세계의 시대적 배경과 공간적 설정을 더 구체적으로 얘기해보자. 실제로 보이는 것처럼." },
+    { id: "rules",     label: "세계 규칙",    keywords: /규칙|법칙|마법|능력|시스템|체계|작동|원리|금기|제약|힘|파워|기술|과학/,  nudge: "이 세계에서만 통하는 핵심 규칙이나 설정이 뭔지 깊이 파야 해. 구체적인 메커니즘까지." },
+    { id: "visual",    label: "비주얼·분위기", keywords: /분위기|색감|비주얼|미술|화풍|톤|무드|스타일|느낌|그림체|밝|어둡|색채/,  nudge: "이 세계의 시각적 분위기를 얘기해보자. 색감, 조명, 전체적인 톤이 어떤 느낌이어야 해?" },
+    { id: "special",   label: "독창적 설정",  keywords: /독창|특수|특별|독특|신기|이색|고유|차별|참신|새로운|독자적|유일/,      nudge: "다른 작품에 없는 이 세계만의 독창적인 설정이 뭔지 짚어보자. 핵심 차별점." },
+  ],
+  2: [ // 시놉시스
+    { id: "logline",   label: "로그라인·전제", keywords: /로그라인|전제|한 줄|요약|이야기|스토리|설정|소재|아이디어|기본/,       nudge: "이 이야기를 한 줄로 정의하면 뭐야? 로그라인과 전제를 명확하게 잡아보자." },
+    { id: "conflict",  label: "핵심 갈등",    keywords: /갈등|충돌|대립|싸움|적|빌런|문제|장애|위기|위협|악|적대|대결|전쟁/,   nudge: "핵심 갈등 구조를 깊이 파야 해. 무엇 대 무엇의 싸움인지, 왜 독자가 몰입하는지." },
+    { id: "structure", label: "서사 구조",    keywords: /구조|전개|3막|1막|2막|전환|반전|클라이막스|절정|복선|회수|아크|챕터/,  nudge: "100화 동안 이야기가 어떻게 전개되는지 서사 구조를 얘기해보자. 3막 어떻게 짤 건데?" },
+    { id: "resolution",label: "해결·결말",    keywords: /결말|해결|엔딩|마무리|결론|완결|끝|클로징|정리|귀결|성장|변화|결과/,  nudge: "이야기가 어떻게 끝나야 하는지, 주인공이 어떻게 변하는지 얘기해야 해." },
+  ],
+  3: [ // 캐릭터
+    { id: "hero",      label: "주인공",       keywords: /주인공|히어로|주역|주연|리드|protagonist|주캐/,                        nudge: "주인공을 더 깊이 파자. 얼굴·체형·복장·말투·동기·상처까지. 이미지 생성할 수 있을 정도로." },
+    { id: "villain",   label: "빌런·적대자",  keywords: /빌런|악당|적|반동|대립|antagonist|보스|라이벌|악역/,                   nudge: "빌런이나 주요 갈등 상대를 설계해보자. 외모·동기·힘·세계관에서의 위치까지." },
+    { id: "support",   label: "조력자·단역",  keywords: /조력|서브|단역|주변|캐릭터|등장인물|인물|캐스팅|팀|동료|친구|스승/,   nudge: "조력자들과 단역 인물들도 구체적으로 잡아야 해. 이름·역할·외형·이야기 기능." },
+    { id: "design",    label: "외형·시각 설계",keywords: /외모|외형|헤어|머리|눈|얼굴|키|체형|체중|복장|옷|패션|시각|디자인/, nudge: "캐릭터들의 시각적 설계를 정밀하게 잡자. 이미지로 바로 그릴 수 있을 만큼 구체적으로." },
+    { id: "relation",  label: "캐릭터 관계",  keywords: /관계|관계도|사이|갈등|우정|사랑|적대|가족|팀|연결|케미|구도/,        nudge: "인물들 사이의 관계 구도를 얘기해야 해. 누가 누구와 어떤 관계이고 어떻게 변하는지." },
+  ],
+  4: [ // 장소
+    { id: "mainloc",   label: "주요 배경",    keywords: /장소|배경|위치|공간|지역|동네|건물|도시|마을|숲|성|궁전|학교|회사/,   nudge: "주요 배경들을 하나씩 짚어보자. 이름·용도·이야기에서의 역할까지." },
+    { id: "visual_l",  label: "색채·조명",    keywords: /색채|색감|색|조명|빛|밝기|명암|톤|팔레트|컬러|시각적|비주얼/,        nudge: "각 장소의 색채 팔레트와 조명 특성을 얘기해보자. 그림으로 재현할 수 있게." },
+    { id: "arch",      label: "공간 구조",    keywords: /구조|건축|인테리어|레이아웃|공간|규모|크기|층|넓이|형태|구성/,        nudge: "장소들의 건축 구조나 공간 구성을 구체적으로 잡아야 해. 연출할 때 꼭 필요해." },
+    { id: "meaning",   label: "서사적 의미",  keywords: /의미|상징|역할|이야기|서사|사건|감정|기억|역사|중요|핵심|전환점/,    nudge: "각 장소가 이야기에서 어떤 서사적 의미를 갖는지 얘기해보자. 단순 배경 그 이상의 역할." },
+  ],
+  5: [ // 소품·장비
+    { id: "items",     label: "주요 소품",    keywords: /소품|아이템|물건|도구|장비|물품|용품|기물|오브제|prop/,               nudge: "이야기에서 핵심 역할을 하는 소품들을 뽑아보자. 이름·용도·시각적 특징." },
+    { id: "weapons",   label: "탈것·무기",    keywords: /무기|탈것|차량|비행|선박|총|칼|검|방패|갑옷|장비|군사/,              nudge: "탈것이나 무기류를 설계해보자. 외형·재질·상태·누가 쓰는지까지." },
+    { id: "visual_p",  label: "시각적 설계",  keywords: /외형|형태|색|재질|크기|상태|낡|새것|디테일|시각|묘사|그림|모양/,     nudge: "소품들의 시각적 설계를 세밀하게 잡자. 이미지 생성 프롬프트 수준으로 구체적으로." },
+    { id: "symbol",    label: "상징·의미",    keywords: /상징|의미|역할|중요|핵심|복선|주인공과의 관계|이야기|서사|감정/,      nudge: "이 소품들이 이야기에서 어떤 상징적 의미를 갖는지 얘기해보자." },
+  ],
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const STAGES = [
@@ -755,6 +800,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [currentStageIdx, setCurrentStageIdx] = useState(0); // index into STAGES
   const [stageResults, setStageResults] = useState<StageResult[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [coveredAgendaIds, setCoveredAgendaIds] = useState<string[]>([]); // 완료된 아젠다 항목
+  const [agendaTurnCounts, setAgendaTurnCounts] = useState<Record<string, number>>({}); // 항목별 누적 턴수
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
   const [viewingStageIdx, setViewingStageIdx] = useState<number | null>(null); // 열람 중인 이전 단계
 
@@ -913,9 +960,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let wrapUpProposed = false;
     let wrapUpProposedAt = 0;
     let naturalExit = false;
-    // 캐릭터(3)·장소(4)는 시각적 디테일이 많아서 더 긴 토론 필요
-    const WRAP_UP_AFTER = (stage.id === 3 || stage.id === 4) ? 18 : 14;
+    // 이 스테이지의 아젠다 항목 수 × 최소 턴 + 여유
+    const stageAgenda = STAGE_AGENDA[stage.id] ?? [];
+    const WRAP_UP_AFTER = stageAgenda.length * MIN_TURNS_PER_TOPIC_P2 + 10;
     const WRAP_UP_AUTO_MS = 30_000;
+    // 아젠다 추적 (스테이지마다 초기화)
+    const coveredAgenda = new Set<string>();
+    const agendaTurns: Record<string, number> = {};
+    let nudgeCooldown = 0;
+    // UI 초기화
+    setCoveredAgendaIds([]);
+    setAgendaTurnCounts({});
     const AGREE_RE = /^(그래|응|ㅇㅇ|좋아|해줘|시작|정리|맞아|그렇게|ㄱ|ok|오케|ㅇㅋ|확인|다음)/i;
 
     // 이어하기: 저장된 트랜스크립트 복원 / 새 시작: 빈 배열
@@ -1086,16 +1141,50 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
         if (userTurnCount > 0) userTurnCount--;
 
-        // 마무리 조건 체크
+        // ── 아젠다 키워드 감지 ──
         const recentLines = transcript.slice(-4).join(" ");
+        for (const item of stageAgenda) {
+          if (item.keywords.test(recentLines)) {
+            agendaTurns[item.id] = (agendaTurns[item.id] ?? 0) + 1;
+            if (!coveredAgenda.has(item.id) && (agendaTurns[item.id] ?? 0) >= MIN_TURNS_PER_TOPIC_P2) {
+              coveredAgenda.add(item.id);
+              setCoveredAgendaIds([...coveredAgenda]);
+            }
+            setAgendaTurnCounts({ ...agendaTurns });
+          }
+        }
+
+        // 3턴마다 — 가장 덜 다뤄진 미완료 주제를 프로듀서가 꺼냄
+        if (nudgeCooldown > 0) {
+          nudgeCooldown--;
+        } else if (agentTurnsSoFar > 0 && agentTurnsSoFar % 3 === 0) {
+          const uncovered = stageAgenda.filter(item => !coveredAgenda.has(item.id));
+          if (uncovered.length > 0) {
+            const pick = uncovered.sort(
+              (a, b) => (agendaTurns[a.id] ?? 0) - (agendaTurns[b.id] ?? 0)
+            )[0];
+            const currentTurns = agendaTurns[pick.id] ?? 0;
+            await runSingleAgent(
+              "producer",
+              `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데, 최소 ${MIN_TURNS_PER_TOPIC_P2}회 이상 심층 분석이 필요해. 구체적인 데이터와 사례를 들어 깊이 있게 이야기해줘.`,
+              120,
+            );
+            lastSpeaker = "producer";
+            nudgeCooldown = 2;
+            continue;
+          }
+        }
+
+        // 마무리 조건 체크 — 모든 아젠다 완료 or WRAP_UP_AFTER 턴 초과
+        const allCovered = stageAgenda.length > 0 && coveredAgenda.size >= stageAgenda.length;
         const converging = agentTurnsSoFar >= 8 &&
           (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2;
 
-        if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
+        if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging))) {
           wrapUpProposed = true;
           wrapUpProposedAt = Date.now();
           await runSingleAgent("producer",
-            `${historyText}[${stage.name}] 단계 토론이 충분히 됐어. 프로듀서로서 이 단계를 마무리하고 확인하자고 자연스럽게 제안해줘. 1~2문장.`,
+            `${historyText}[${stage.name}] 단계의 모든 주요 항목을 충분히 다뤘어. 프로듀서로서 이 단계를 마무리하고 확인하자고 자연스럽게 제안해줘. 1~2문장.`,
             80);
           lastSpeaker = "producer";
           continue;
@@ -2046,6 +2135,39 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           )}
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
+
+        {/* 아젠다 체크리스트 — 토론 중일 때만 표시 */}
+        {debatePhase === "running" && (() => {
+          const stageAgendaItems = STAGE_AGENDA[STAGES[currentStageIdx]?.id] ?? [];
+          return stageAgendaItems.length > 0 ? (
+            <div style={{
+              display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap", alignItems: "center",
+              background: "rgba(15,20,40,0.6)", borderBottom: "1px solid rgba(99,102,241,0.15)",
+            }}>
+              {stageAgendaItems.map((item) => {
+                const covered = coveredAgendaIds.includes(item.id);
+                const turns = agendaTurnCounts[item.id] ?? 0;
+                const progress = Math.min(turns, MIN_TURNS_PER_TOPIC_P2);
+                return (
+                  <div key={item.id} style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "2px 8px", borderRadius: 99, fontSize: 11,
+                    background: covered ? "rgba(99,102,241,0.25)" : turns > 0 ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${covered ? "rgba(99,102,241,0.4)" : "transparent"}`,
+                    color: covered ? "#a5b4fc" : turns > 0 ? "rgba(165,180,252,0.6)" : "rgba(255,255,255,0.3)",
+                    transition: "all 0.5s",
+                  }}>
+                    <span>{covered ? "✓" : "○"}</span>
+                    <span>{item.label}</span>
+                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>
+                      {progress}/{MIN_TURNS_PER_TOPIC_P2}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null;
+        })()}
 
         {apiError && (
           <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.3)", margin:"8px 16px", borderRadius:8, padding:"8px 14px", fontSize:13, color:"#f87171" }}>
