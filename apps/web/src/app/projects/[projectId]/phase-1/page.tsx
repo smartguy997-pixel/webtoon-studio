@@ -1281,12 +1281,27 @@ export default function Phase1Page() {
   const savedTranscriptRef = useRef<string[]>([]);
   const isComposingRef = useRef(false);
 
-  // rejectedWorks state → ref 동기화
-  useEffect(() => { rejectedWorksRef.current = rejectedWorks; }, [rejectedWorks]);
+  // rejectedWorks state → ref 동기화 + localStorage 영구 저장
+  useEffect(() => {
+    rejectedWorksRef.current = rejectedWorks;
+    if (rejectedWorks.length > 0) {
+      try { localStorage.setItem(`p1_rejected_${projectId}`, JSON.stringify(rejectedWorks)); } catch { /* ignore */ }
+    }
+  }, [rejectedWorks, projectId]);
 
   useEffect(() => {
     setMounted(true);
     if (!projectId) return;
+
+    // 0-a) 블랙리스트 복원
+    try {
+      const saved = localStorage.getItem(`p1_rejected_${projectId}`);
+      if (saved) {
+        const list = JSON.parse(saved) as string[];
+        setRejectedWorks(list);
+        rejectedWorksRef.current = list;
+      }
+    } catch { /* ignore */ }
 
     // 0) Restore saved conversation messages
     let hasSavedMsgs = false;
@@ -2055,6 +2070,8 @@ export default function Phase1Page() {
     localStorage.removeItem(`wts_phase1_${projectId}`);
     // 메모리(롤링 요약·토픽 요약) 완전 초기화 — 이전 작품 기억이 오염되지 않도록
     localStorage.removeItem(`p1_memory_${projectId}`);
+    // 블랙리스트도 초기화 — 새 분석은 이전 거부 목록과 무관
+    localStorage.removeItem(`p1_rejected_${projectId}`);
     if (db) {
       void import("firebase/firestore").then(({ doc: fsDoc, deleteDoc }) => {
         void deleteDoc(fsDoc(db!, "p1_memory", projectId)).catch(() => {});
