@@ -1216,6 +1216,7 @@ export default function Phase1Page() {
   const [isWritingReport, setIsWritingReport] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<AgendaId[]>([]); // 다뤄진 아젠다 항목 (UI 표시용)
+  const [statusMsg, setStatusMsg] = useState(""); // 진행 상태 안내 메시지
 
   // ── Refs ──
   const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -1639,6 +1640,7 @@ export default function Phase1Page() {
 
       // ① 롤링 누적 요약 (cascading)
       void (async () => {
+        setStatusMsg("이전 대화 요약 중...");
         let next = "";
         try {
           for await (const chunk of streamClaude({
@@ -1653,6 +1655,7 @@ export default function Phase1Page() {
           })) next += chunk;
         } catch { /* ignore */ }
         if (next.trim()) { rollingSummary = next.trim(); saveMemory(); }
+        setStatusMsg("");
       })();
 
       // ② 주제별 맥락 요약 (4개를 1번 API 호출로)
@@ -1908,6 +1911,7 @@ export default function Phase1Page() {
     await sleep(1500);
 
     setIsWritingReport(true);
+    setStatusMsg("기획 분석 보고서 작성 중...");
 
     const allDebateText = transcript.join("\n");
 
@@ -1940,6 +1944,7 @@ export default function Phase1Page() {
     }
 
     setIsWritingReport(false);
+    setStatusMsg("");
 
     if (!parsed) {
       console.error("[Phase1] 보고서 생성 실패. 원본 응답:", reportText.slice(0, 500));
@@ -2137,7 +2142,13 @@ export default function Phase1Page() {
               ))}
             </div>
           </div>
-          {debatePhase === "running" && <span className={styles.turnRunning}><ThinkingDots /></span>}
+          {statusMsg ? (
+            <span style={{ fontSize: 11, color: "#a5b4fc", display: "flex", alignItems: "center", gap: 6 }}>
+              <ThinkingDots />{statusMsg}
+            </span>
+          ) : debatePhase === "running" && (
+            <span className={styles.turnRunning}><ThinkingDots /></span>
+          )}
         </div>
 
         {/* Chat body */}
