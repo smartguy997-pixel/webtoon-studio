@@ -581,7 +581,7 @@ function ImageSearchCard({ query, delayMs = 0 }: { query: string; delayMs?: numb
       {/* 항상 Google 이미지 링크 표시 (이미지 없을 때는 더 크게) */}
       {!loading && (
         <a
-          href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query + " webtoon manhwa art")}`}
+          href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`}
           target="_blank"
           rel="noopener noreferrer"
           style={{

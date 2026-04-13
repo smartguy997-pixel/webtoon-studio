@@ -128,7 +128,7 @@ export async function fetchImagesWithClaude(
   query: string,
   apiKey: string,
 ): Promise<string[]> {
-  const userPrompt = `Find 4 direct image file URLs (ending in .jpg .jpeg .png .webp .gif) related to: "${query} webtoon manhwa korean comic art style reference"
+  const userPrompt = `Find 4 direct image file URLs (ending in .jpg .jpeg .png .webp .gif) related to: "${query}"
 
 Search art sites like artstation.com, deviantart.com, or similar.
 Return ONLY a raw JSON array — no markdown, no explanation:
@@ -151,7 +151,7 @@ Return ONLY a raw JSON array — no markdown, no explanation:
         content: [{
           type: "tool_result",
           tool_use_id: toolBlock.id,
-          content: `Web search results for "${query} webtoon manhwa art". Please extract 4 direct image file URLs from the search results and return them as a JSON array.`,
+          content: `Web search results for "${query}". Please extract 4 direct image file URLs from the search results and return them as a JSON array.`,
         }],
       });
       data = await callClaudeOnce(apiKey, messages, true);
