@@ -1561,6 +1561,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     // 스타일 키워드 자동 추출 (Claude)
     const apiKey = getAnthropicKey();
+    let finalStylePrompt = "";
     if (apiKey && transcript.length > 0) {
       try {
         let extracted = "";
@@ -1578,14 +1579,57 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           maxTokens: 150,
           tools: [],
         })) { extracted += chunk; }
-        const trimmed = extracted.trim();
-        if (trimmed) { setStyleInput(trimmed); setConceptStyle(trimmed); }
+        finalStylePrompt = extracted.trim();
+        if (finalStylePrompt) { setStyleInput(finalStylePrompt); setConceptStyle(finalStylePrompt); }
       } catch { /* ignore */ }
+    }
+
+    // ── 대화 마무리 후 자동 이미지 생성 ──
+    const autoRunwayKey = getRunwayKey();
+    if (apiKey) {
+      // producer 메시지로 "생성 중" 표시
+      const genMsgId = addMsg("producer", "🎨 스타일 테스트 이미지 생성 중...", true);
+      try {
+        const stylePrompt = finalStylePrompt || "Korean webtoon style";
+        const description = `${genre} 장르 웹툰 스타일 테스트 씬 — 세계관과 분위기를 보여주는 대표 컷`;
+        const res = await fetch(`${API_BASE}/api/assets/${projectId}/generate-concept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description,
+            style: stylePrompt,
+            type: "style_test",
+            anthropicApiKey: apiKey,
+            runwayApiKey: autoRunwayKey,
+          }),
+        });
+        if (res.ok) {
+          const { imageUrl: autoUrl } = await res.json() as { imageUrl: string };
+          if (autoUrl) {
+            updateMsg(genMsgId, "🎨 스타일 테스트 이미지가 생성됐어. 이 방향 괜찮아?", false);
+            // 이미지 메시지를 별도 표시
+            setMsgs((prev: Msg[]) => [...prev, {
+              id: `style_img_${Date.now()}`,
+              agent: "producer" as AgentId,
+              text: "",
+              imageUrl: autoUrl,
+              streaming: false,
+            }]);
+            setStyleTestImages((prev: string[]) => [...prev, autoUrl]);
+          } else {
+            setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== genMsgId));
+          }
+        } else {
+          setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== genMsgId));
+        }
+      } catch {
+        setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== genMsgId));
+      }
     }
 
     styleRunningRef.current = false;
     setStylePhase("reviewing");
-  }, [genre, addMsg, updateMsg]);
+  }, [genre, addMsg, updateMsg, projectId]);
 
   // ── Style: 테스트 이미지 생성 ──
   const generateStyleTestImage = useCallback(async () => {
@@ -2672,8 +2716,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 <button
                   onClick={() => void generateStyleTestImage()}
                   disabled={styleGenLoading || stylePhase === "generating"}
-                  style={{ flex:1, background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.3)", borderRadius:8, color:"#f59e0b", fontSize:13, fontWeight:700, padding:"9px 0", cursor:"pointer", opacity: styleGenLoading ? 0.5 : 1 }}>
-                  {stylePhase === "generating" ? "🎨 생성 중..." : "🎨 테스트 이미지 생성"}
+                  style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)", borderRadius:8, color:"#f59e0b", fontSize:12, fontWeight:600, padding:"8px 14px", cursor:"pointer", opacity: styleGenLoading ? 0.5 : 1, flexShrink:0 }}>
+                  {stylePhase === "generating" ? "생성 중..." : "↺ 다시 생성"}
                 </button>
                 <button
                   onClick={confirmStyle}
