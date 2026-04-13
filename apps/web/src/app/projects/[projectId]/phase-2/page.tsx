@@ -2310,7 +2310,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (stage.id === 2) {
       const worldCtx  = buildContext(2, stageResultsRef.current);
       const p1Context = p1DataRef.current ? buildPhase1Context(p1DataRef.current) : "";
-      const baseCtx   = [p1Context, worldCtx].filter(Boolean).join("\n\n").slice(0, 2000);
+      const baseCtx   = [p1Context, worldCtx].filter(Boolean).join("\n\n").slice(0, 4000);
 
       const histText = () => {
         if (transcript.length === 0) return "";
