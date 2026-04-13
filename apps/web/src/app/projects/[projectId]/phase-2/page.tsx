@@ -154,11 +154,11 @@ const STAGE_AGENDA: Record<number, Array<{
     { id: "dynamics",   label: "인물 관계·역학",      keywords: /인물|주인공|캐릭터|등장|사람|이름|과거사|계기|얽힌|목표|충돌|원하는|복수|용서|조력자|방해자|적|빌런|관계|역학|구도|동기|상처|역할|포지션|연결/,       nudge: "인물 관계의 역학이 아직 피상적이야. 인물들이 서로 얽히게 된 결정적 과거사, 각자가 원하는 것이 어떻게 충돌하는지, 그리고 주인공의 성장을 돕는 조력자와 가로막는 방해자의 포지션까지 명확히 설계해야 해." },
     { id: "theme",      label: "메시지·테마",          keywords: /테마|메시지|주제|하고 싶은 말|핵심|사랑|복수|가족|정의|성장|의미|작가|독자|감동|울림|방향|가치|철학|삶|죽음|희망|용기|진실/,                     nudge: "이 세계관이 궁극적으로 전하는 메시지가 무엇인지 얘기해야 해. 사랑·복수·가족애·정의 등 핵심 테마를 명확히 정의해야 모든 사건과 배경이 그 방향을 향해 달려갈 수 있어." },
   ],
-  2: [ // 시놉시스
-    { id: "logline",   label: "로그라인·전제", keywords: /로그라인|전제|한 줄|요약|이야기|스토리|설정|소재|아이디어|기본/,       nudge: "이 이야기를 한 줄로 정의하면 뭐야? 로그라인과 전제를 명확하게 잡아보자." },
-    { id: "conflict",  label: "핵심 갈등",    keywords: /갈등|충돌|대립|싸움|적|빌런|문제|장애|위기|위협|악|적대|대결|전쟁/,   nudge: "핵심 갈등 구조를 깊이 파야 해. 무엇 대 무엇의 싸움인지, 왜 독자가 몰입하는지." },
-    { id: "structure", label: "서사 구조",    keywords: /구조|전개|기승전결|전환|반전|클라이막스|절정|복선|회수|아크|챕터|발단|위기|절정|결말|막|단계/,  nudge: "이야기가 어떻게 전개되는지 서사 구조를 얘기해보자. 기승전결 4막으로 어떻게 흐르는지, 어디서 반전이 오는지." },
-    { id: "resolution",label: "해결·결말",    keywords: /결말|해결|엔딩|마무리|결론|완결|끝|클로징|정리|귀결|성장|변화|결과/,  nudge: "이야기가 어떻게 끝나야 하는지, 주인공이 어떻게 변하는지 얘기해야 해." },
+  2: [ // 시놉시스 — 4단계 구조화 워크플로우 (진행 표시용)
+    { id: "step_learning",  label: "① 세계관 학습",    keywords: /세계관|배경|설정|규칙|시대|공간|학습/,                                    nudge: "세계관 핵심 내용을 다시 한 번 짚어보자." },
+    { id: "step_persona",   label: "② 페르소나 추출",  keywords: /인물|주인공|페르소나|후보|결핍|권력|고통|캐릭터|유형/,                       nudge: "이 세계관에서 가장 고통받을 인물, 가장 큰 권력을 가질 인물을 뽑아야 해." },
+    { id: "step_logline",   label: "③ 로그라인 대결",  keywords: /로그라인|한 줄|아이러니|선택|제목|후크|hook/,                               nudge: "3명의 인물 후보로 서로 다른 느낌의 로그라인 5개를 써야 해." },
+    { id: "step_synopsis",  label: "④ 시놉시스 완성",  keywords: /기획의도|타겟|장르|인카네이션|트리거|기승전결|비판|보완|스토리아크|완성/,      nudge: "선택된 로그라인을 기반으로 전체 시놉시스를 완성해야 해." },
   ],
   3: [ // 캐릭터
     { id: "hero",      label: "주인공",       keywords: /주인공|히어로|주역|주연|리드|protagonist|주캐/,                        nudge: "주인공을 더 깊이 파자. 얼굴·체형·복장·말투·동기·상처까지. 이미지 생성할 수 있을 정도로." },
@@ -185,7 +185,7 @@ const STAGE_AGENDA: Record<number, Array<{
 
 const STAGES = [
   { id: 1 as const, name: "세계관",     topic: "세계관 — 드라마·웹툰·애니를 위한 세계 설계: 시대적 공기·사회적 압박·만약에 설정·인물 역학·테마",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"구체적 시대 배경 (연도·장소명·그 시대의 결핍이나 특징)","core_space":"핵심 공간 (주인공이 주로 머무는 곳의 디테일 — 캐릭터 처지를 대변)","daily_life":"생활감 (사람들이 먹고·입고·쓰는 유행어 등 현실적 디테일)","power_hierarchy":"계급과 권력 (누가 갑이고 누가 을인가 — 재벌/서민, 상사/부하 등)","social_norms":"사회적 통념 (이 세계에서 당연하게 여겨지는 가치관)","taboo":"금기 (넘어서는 안 되는 선 — 주인공이 이 선을 넘을 때 갈등 폭발)","what_if_rule":"만약에 설정 (현실과 딱 하나 다른 핵심 규칙 — 장르물이면 필수, 현실물이면 생략 가능)","what_if_cost":"규칙의 대가 (초능력·행운에 따르는 리스크와 제약)","what_if_who_knows":"비밀의 공유 (이 설정을 누가 알고 누가 모르는가 — 정보 불균형이 긴장감 만듦)","key_characters":[{"name":"이름","role":"주인공/빌런/조력자/방해자","position":"이야기에서의 포지션 (돕는자/막는자/중립)","age":"나이/나이대","gender":"성별","face":"얼굴 특징 (이목구비·인상·표정 습관)","height":"키","build":"체형","outfit":"복장","personality":"성격 (3가지 이상)","motivation":"동기와 목표 (무엇을 원하고 왜)","backstory":"과거사와 내면의 상처","speech":"말투","goal_conflict":"다른 인물과의 목표 충돌"}],"key_locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","significance":"이야기에서의 역할"}],"character_backstory":"인물들이 서로 얽히게 된 결정적 계기 (과거사 요약)","goal_conflicts":"목표의 충돌 구조 (A는 복수를 원하고 B는 용서를 원할 때 등)","theme":"핵심 테마·메시지 (모든 사건과 배경이 향하는 주제 — 사랑/복수/가족애/정의 등)"}' },
-  { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막·해결 방향·등장인물 요약·주요 장소 목록",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","act1":"기(起) — 도입·사건 발단","act2":"승(承) — 갈등 심화","act3":"전(轉) — 위기·반전","act4":"결(結) — 클라이맥스·해결 방향","key_characters_brief":[{"name":"이름","role":"역할","one_line":"한 줄 특징"}],"key_locations_brief":[{"name":"장소명","role":"이야기에서의 역할"}],"theme":"핵심 테마·메시지"}' },
+  { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — IP 전략가+수석 작가 관점: 로그라인·기획의도·세계관규칙·인카네이션·스토리아크·비판보완 + 에셋리스트",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 문장 — 아이러니하고 시선을 끄는 로그라인","production_intent":"기획 의도 — 이 작품이 지금 이 시대에 왜 필요한가","target_audience":"핵심 타겟층 (나이·성별·관심사)","genre":"최적 장르 + 서브장르","world_rules":["이 세계에서만 작동하는 사회 규칙 1","규칙 2","규칙 3"],"protagonist":{"name":"이름","pain_point":"결핍(Pain point) — 무엇이 빠져있는가","want":"목표(Want) — 무엇을 원하는가","need":"진짜 필요 — 자신도 모르는 진짜 문제","incarnation":"왜 이 세계관에서만 이 결핍이 의미 있는가","arc":"캐릭터 아크 — 시작에서 끝까지 어떻게 변하는가"},"trigger":"사건의 트리거 — 세계관 특수 규칙이 주인공 일상과 충돌하는 첫 번째 대사건","story_arc":{"setup":"발단 — 주인공의 일상과 사건의 도화선","development":"전개 — 갈등 심화와 세계관 비밀 노출 시작","crisis":"위기 — 모든 것이 잘못될 때","climax":"절정 — 가장 극적인 대결 또는 선택","resolution":"결말 — 카타르시스와 변화","twist":"반전 — 독자가 예상 못할 전환점"},"world_exclusivity":"이 세계관이 아니면 절대 불가능한 이유","critique":"진부한 요소 지적 + 어떻게 신선하게 만들 것인가","characters":[{"name":"이름","role":"역할(주인공/빌런/조력자 등)","appearance":"외형 묘사 (이미지 생성용 — 얼굴·키·체형·복장·헤어·특징)","personality":"성격 키워드 3가지 이상","relation":"주인공과의 관계"}],"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사 (이미지 생성용 — 건축·조명·색채·분위기·디테일)","significance":"이야기에서의 역할"}],"props":[{"name":"소품명","type":"유형","visual":"시각적 묘사 (이미지 생성용 — 색·형태·재질·크기·상태)","story_role":"이야기 역할","owner":"소유자"}],"key_scenes":[{"title":"장면 제목","location":"장소","characters":"등장 인물","action":"행동·상황 묘사","visual":"시각적 묘사 (이미지 생성용 — 구도·색감·조명·분위기)","emotion":"감정·분위기 키워드"}]}' },
   { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
   { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
   { id: 5 as const, name: "소품·장비",  topic: "소품·장비·도구 — 탈것·무기·특수 아이템·장비·일상용품 등 이야기에서 중요한 모든 물건의 시각적 설계",  tag: "PROPS", color: "#e879f9", schema: '{"props":[{"name":"소품명","type":"유형(탈것/무기/장비/아이템/일상용품)","visual":"시각적 묘사 (색상·형태·재질·크기)","condition":"상태 (낡음/새것/특별히 장식됨 등)","function":"기능/용도","story_role":"이야기에서의 역할","symbolic_meaning":"상징적 의미","owner":"주요 소유자/사용자"}]}' },
@@ -328,7 +328,7 @@ const STAGE_PROMPTS: Record<StageId, string> = {
 ③ 만약에 설정: 현실과 딱 하나 다른 핵심 규칙(장르물이면 필수). 그 능력/규칙에 따르는 대가와 리스크. 이 비밀을 누가 알고 누가 모르는가(정보 불균형이 긴장감을 만든다).
 ④ 인물 관계의 역학: 인물들이 서로 얽히게 된 결정적 과거사. 각자가 원하는 것이 어떻게 충돌하는가(A는 복수, B는 용서). 주인공의 성장을 돕는 조력자와 가로막는 방해자의 포지션.
 ⑤ 메시지와 테마: 이 세계관을 통해 하고 싶은 말. 사랑·복수·가족애·정의 등 핵심 테마.`,
-  2: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막 구조·해결 방향·등장인물 목록·주요 장소 목록. 이후 캐릭터/장소/소품 설계를 위해 시놉시스에 나온 모든 인물과 장소를 빠짐없이 언급해야 해.",
+  2: `시놉시스 완성 — IP 비즈니스 전략가 + 수석 작가 관점으로 다음 6가지를 완성해:\n① 로그라인: 한 문장, 아이러니하고 시선을 끄는 훅\n② 기획 의도: 이 작품이 지금 이 시대에 왜 필요한가\n③ 세계관 규칙: 이 세계에서만 작동하는 특별한 사회 규칙 3가지\n④ 인카네이션: 이 세계관에서만 의미 있는 결핍(Pain point)을 가진 주인공 정의\n⑤ 스토리 아크: 발단-전개-위기-절정-결말 + 반전 (세계관 비밀이 서서히 밝혀지는 구조)\n⑥ 비판과 보완: 진부한 요소 찾기 + 신선하게 만들 방법\n핵심 원칙: '이 세계관이 아니면 절대 불가능한 이야기'여야 한다.`,
   3: "등장인물 전체 목록 — 주인공·빌런·조력자·단역까지 이 이야기에 등장하는 모든 인물. 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 바로 쓸 수 있을 만큼 시각적으로 구체적으로. 시놉시스에 이름이 나온 인물은 한 명도 빠지면 안 돼.",
   4: "장소 전체 목록 — 1화라도 등장하는 모든 장소. 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로. 스쳐 지나가는 배경도 시각적 정체성이 있어야 해.",
   5: "소품·장비·도구 전체 목록 — 탈것·무기·특수 아이템·장비·일상용품·상징물. 이야기에서 단 한 번이라도 의미 있게 등장하는 모든 물건. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
@@ -384,27 +384,25 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
         ].filter(Boolean).join("\n");
       }
       case 2: {
-        const charsBrief = Array.isArray(data.key_characters_brief)
-          ? (data.key_characters_brief as Record<string, string>[]).map(c =>
-              `  ▸ ${c.name ?? "?"}${c.role ? ` (${c.role})` : ""}${c.one_line ? ` — ${c.one_line}` : ""}`
-            ).join("\n")
-          : "";
-        const locsBrief = Array.isArray(data.key_locations_brief)
-          ? (data.key_locations_brief as Record<string, string>[]).map(l =>
-              `  ▸ ${l.name ?? "?"}${l.role ? ` — ${l.role}` : ""}`
-            ).join("\n")
-          : "";
+        const protagonist = data.protagonist as Record<string,string> | null ?? null;
+        const storyArc    = data.story_arc    as Record<string,string> | null ?? null;
+        const chars  = Array.isArray(data.characters)  ? (data.characters  as Record<string,string>[]) : [];
+        const locs   = Array.isArray(data.locations)   ? (data.locations   as Record<string,string>[]) : [];
+        const scenes = Array.isArray(data.key_scenes)  ? (data.key_scenes  as Record<string,string>[]) : [];
         return [
-          data.logline         && `로그라인: ${data.logline}`,
-          data.premise         && `전제: ${data.premise}`,
-          data.conflict        && `핵심 갈등: ${data.conflict}`,
-          data.act1            && `기(起): ${data.act1}`,
-          data.act2            && `승(承): ${data.act2}`,
-          data.act3            && `전(轉): ${data.act3}`,
-          data.act4            && `결(結): ${data.act4}`,
-          charsBrief           && `등장인물:\n${charsBrief}`,
-          locsBrief            && `주요 장소:\n${locsBrief}`,
-          data.theme           && `테마: ${data.theme}`,
+          data.logline           && `로그라인: ${data.logline}`,
+          data.production_intent && `기획의도: ${data.production_intent}`,
+          data.target_audience   && `타겟: ${data.target_audience}`,
+          data.genre             && `장르: ${data.genre}`,
+          Array.isArray(data.world_rules) && `세계관 규칙: ${(data.world_rules as string[]).join(" / ")}`,
+          protagonist && `주인공(${protagonist.name ?? "?"}): 결핍=${protagonist.pain_point ?? ""} / 목표=${protagonist.want ?? ""}`,
+          protagonist?.incarnation && `인카네이션: ${protagonist.incarnation}`,
+          data.trigger           && `트리거: ${data.trigger}`,
+          storyArc && `스토리아크: 발단=${storyArc.setup ?? ""} / 절정=${storyArc.climax ?? ""} / 반전=${storyArc.twist ?? ""}`,
+          data.critique          && `비판·보완: ${data.critique}`,
+          chars.length  > 0 && `등장인물(${chars.length}명): ${chars.map(c => `${c.name}(${c.role})`).join(", ")}`,
+          locs.length   > 0 && `장소(${locs.length}곳): ${locs.map(l => l.name).join(", ")}`,
+          scenes.length > 0 && `핵심장면(${scenes.length}개): ${scenes.map(s => s.title).join(", ")}`,
         ].filter(Boolean).join("\n");
       }
       case 3:
@@ -506,10 +504,10 @@ function buildSingleAgentPrompt(
       const lines = synopsisAssets.characters.map((name, i) => {
         const s1ch = Array.isArray(s1Data?.key_characters)
           ? (s1Data!.key_characters as Record<string,string>[]).find(c => c.name === name) : null;
-        const s2ch = Array.isArray(s2Data?.key_characters_brief)
-          ? (s2Data!.key_characters_brief as Record<string,string>[]).find(c => c.name === name) : null;
+        const s2ch = Array.isArray(s2Data?.characters)
+          ? (s2Data!.characters as Record<string,string>[]).find(c => c.name === name) : null;
         const role = s1ch?.role ?? s2ch?.role ?? "";
-        const desc = s1ch?.one_line ?? s2ch?.characteristics ?? s1ch?.motivation ?? "";
+        const desc = s2ch?.appearance ?? s2ch?.relation ?? s1ch?.motivation ?? "";
         return `${i + 1}. ${name}${role ? ` — ${role}` : ""}${desc ? ` (${desc})` : ""}`;
       }).join("\n");
       assetChecklist = `\n[⚠️ 반드시 설계해야 할 캐릭터 목록 — 세계관·시놉시스에서 이미 확정된 인물들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 인물이야. 새로 만들지 말고 더 깊이 구체화해. 위 목록에 없는 인물이 등장했다면 추가로 다뤄.\n`;
@@ -517,10 +515,10 @@ function buildSingleAgentPrompt(
       const lines = synopsisAssets.locations.map((name, i) => {
         const s1loc = Array.isArray(s1Data?.key_locations)
           ? (s1Data!.key_locations as Record<string,string>[]).find(l => l.name === name) : null;
-        const s2loc = Array.isArray(s2Data?.key_locations_brief)
-          ? (s2Data!.key_locations_brief as Record<string,string>[]).find(l => l.name === name) : null;
+        const s2loc = Array.isArray(s2Data?.locations)
+          ? (s2Data!.locations as Record<string,string>[]).find(l => l.name === name) : null;
         const type = s1loc?.type ?? s2loc?.type ?? "";
-        const role = s1loc?.significance ?? s2loc?.role ?? s1loc?.description ?? "";
+        const role = s1loc?.significance ?? s2loc?.significance ?? s2loc?.visual ?? "";
         return `${i + 1}. ${name}${type ? ` — ${type}` : ""}${role ? ` (${role})` : ""}`;
       }).join("\n");
       assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록 — 세계관·시놉시스에서 이미 확정된 장소들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 장소야. 새로 만들지 말고 시각적으로 더 깊이 설계해. 위 목록에 없는 장소가 나왔다면 추가로 다뤄.\n`;
@@ -534,7 +532,7 @@ function buildSingleAgentPrompt(
   const productionMandate = isWorldbuildingStage
     ? `\n[⚠️ 드라마·웹툰·애니 세계관 설계 — 5개 프레임워크]\n이 토론은 제안→토론→합의 순서로 진행돼. 처음부터 확정하지 마 — 각자 방향을 제안하고 팀원들이 반응하면서 좁혀나가야 해.\n커버해야 할 5가지:\n1. 시대적·공간적 공기: 연도, 핵심 공간, 생활감\n2. 사회적 압박: 갑/을 구조, 통념, 금기\n3. 만약에 설정: 핵심 규칙 1가지, 대가, 정보 불균형\n4. 인물 역학: 과거사, 목표 충돌, 조력자/방해자\n5. 테마: 궁극적으로 전하는 메시지\n사용자가 개입하면 반드시 그 의견을 충분히 반영하고 논의를 이어가.\n`
     : isSynopsisStage
-    ? `\n[⚠️ 시놉시스 설계 — 4가지 항목]\n이 토론은 제안→토론→합의 순서로 진행돼. 처음부터 확정하지 마 — 각자 방향을 제안하고 팀원들이 반응하면서 좁혀나가야 해.\n커버해야 할 4가지:\n1. 로그라인·전제: 한 줄 요약, 이야기의 출발점\n2. 핵심 갈등: 내적/외적 갈등 구조, 독자가 몰입하는 이유\n3. 서사 구조: 기승전결 4막 흐름, 반전 포인트, 클라이막스\n4. 해결·결말: 주인공의 변화, 이야기가 남기는 여운\n사용자가 개입하면 반드시 그 의견을 충분히 반영하고 논의를 이어가.\n`
+    ? `\n[⚠️ IP 비즈니스 전략가 + 수석 작가 관점]\n너는 지금 이 플랫폼의 대표작이 될 시놉시스를 기획하고 있어.\n반드시 명심: "이 세계관이 아니면 절대 불가능한 이야기"를 만들어야 해.\n\n완성해야 할 6가지:\n1. 로그라인: 한 문장 — 아이러니하고 시선을 끄는 훅\n2. 기획 의도: 이 작품이 지금 이 시대에 왜 필요한가\n3. 세계관 규칙: 이 세계에서만 작동하는 특별한 사회 규칙 3가지\n4. 인카네이션: 이 세계관에서만 의미 있는 결핍(Pain point)을 가진 주인공\n5. 스토리 아크: 발단-전개-위기-절정-결말 + 반전\n6. 비판과 보완: 진부한 요소 + 신선하게 만들 방법\n\n이 토론은 제안→토론→합의 순서로 진행돼. 처음부터 확정하지 마.\n사용자가 개입하면 반드시 그 의견을 충분히 반영하고 논의를 이어가.\n`
     : "";
   const responseGuide = isWorldbuildingStage
     ? "- 한 번 발언할 때 3~4문장. 의견을 제안하고 이유를 설명해. 다른 팀원 의견에 동의·반박·질문을 섞어.\n- 확정 선언 금지. '~이 좋을 것 같아', '~는 어때?', '~보다 ~이 더 낫지 않을까?' 같은 제안 어조로.\n- 사용자가 말하면 그 내용을 먼저 받아 충분히 반응한 뒤 이어가."
@@ -675,36 +673,52 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
 
 서술형 문장으로 풍부하게 작성하세요. 추상적 표현 금지 — 모든 항목에 구체적인 이름·숫자·장소명을 사용하세요.`,
 
-  2: `다음 토론에서 합의된 시놉시스를 A4 용지 2~3장 분량으로 상세히 정리해주세요.
-이 문서는 이후 캐릭터·장소·소품 설계와 이미지 생성의 기반이 됩니다.
+  2: `다음 토론에서 합의된 시놉시스를 IP 제작 바이블 형식으로 정리해주세요.
+이 문서는 이후 캐릭터·장소·소품·이미지 생성의 기반이 됩니다.
 
-반드시 포함할 내용 (각 항목을 충분히 서술):
-■ 로그라인 (한 줄 핵심 요약)
+반드시 아래 순서로 ■ 기호를 사용하여 작성하세요:
 
-■ 이야기의 전제와 출발점
-  - 이야기가 시작되는 상황
-  - 주인공의 초기 상태와 일상
-  - 사건의 도화선이 되는 계기
+■ 로그라인
+  한 문장 — 아이러니하고 시선을 끄는 훅
 
-■ 등장인물 목록 (시놉시스에 이름이 나온 모든 인물)
-  - 이름, 역할, 한 줄 특징
-  - 주인공과의 관계
+■ 기획 의도
+  이 작품이 지금 이 시대에 왜 필요한가. 시대적 맥락과 독자에게 주는 의미.
 
-■ 주요 장소 목록 (이야기에 등장하는 모든 장소)
-  - 장소명, 이야기에서의 역할
+■ 세계관 규칙 3가지
+  이 이야기 속에서만 작동하는 특별한 사회 규칙. 각각 한 줄로.
 
-■ 핵심 갈등
-  - 내적 갈등 (주인공 내면)
-  - 외적 갈등 (주인공 vs 적대 세력/환경)
-  - 갈등이 고조되는 방식
+■ 인카네이션 — 주인공 정의
+  - 이름, 나이, 직업/처지
+  - Pain Point (결핍): 이 세계관 때문에 더 고통스러운 이유
+  - Want (목표): 무엇을 원하는가
+  - Need (진짜 필요): 자신도 모르는 진짜 문제
+  - 왜 이 세계관이 아니면 이 결핍이 의미 없는가
 
-■ 기승전결 4막 구조
-  - 기(起): 도입부와 사건 발단
-  - 승(承): 갈등 심화와 전개
-  - 전(轉): 위기와 반전
-  - 결(結): 클라이맥스와 해결 방향
+■ 사건의 트리거
+  세계관의 특수 규칙이 주인공 일상과 충돌하는 첫 번째 대사건. 구체적으로.
 
-■ 핵심 테마와 메시지
+■ 스토리 아크 (발단-전개-위기-절정-결말)
+  - 발단: 주인공의 일상 + 트리거 사건
+  - 전개: 갈등 심화, 세계관 비밀이 서서히 드러남
+  - 위기: 모든 것이 잘못될 때 (최저점)
+  - 절정: 가장 극적인 대결 또는 선택
+  - 결말: 카타르시스 + 주인공의 변화
+  - 반전: 독자가 예상 못할 전환점 (어디서 오는가)
+
+■ 비판과 보완
+  이 시놉시스에서 진부하거나 식상한 요소. 그것을 어떻게 신선하게 바꿀 것인가.
+
+■ 등장인물 리스트 (이미지 생성용)
+  각 인물마다: 이름 / 역할 / 외형 묘사 (얼굴·키·체형·복장·헤어·특징) / 성격 키워드 / 주인공과의 관계
+
+■ 장소 리스트 (이미지 생성용)
+  각 장소마다: 장소명 / 유형 / 시각적 묘사 (건축·조명·색채·분위기) / 이야기 역할
+
+■ 소품 리스트 (이미지 생성용)
+  각 소품마다: 이름 / 유형 / 시각적 묘사 (색·형태·재질·상태) / 이야기 역할
+
+■ 핵심장면 리스트 (이미지 생성용)
+  각 장면마다: 제목 / 장소 / 등장인물 / 행동·상황 / 시각적 묘사 (구도·색감·분위기) / 감정 키워드
 
 서술형 문장으로 풍부하게 작성하세요.`,
 
@@ -1009,25 +1023,25 @@ function StageResultCard({ result, debateMsgs }: { key?: StageId; result: StageR
           {data.act3 && row("전(轉)", data.act3)}
           {data.act4 && row("결(結)", data.act4)}
           {row("테마", data.theme)}
-          {Array.isArray(data.key_characters_brief) && (data.key_characters_brief as Record<string,string>[]).length > 0 && (
+          {Array.isArray(data.characters) && (data.characters as Record<string,string>[]).length > 0 && (
             <div style={{ marginTop:12, marginBottom:10 }}>
               <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:8, textTransform:"uppercase" as const, letterSpacing:"0.06em" }}>등장인물</div>
-              {(data.key_characters_brief as Record<string,string>[]).map((ch, i) => (
+              {(data.characters as Record<string,string>[]).map((ch, i) => (
                 <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
                   <span style={{ color:"#eeeef5", fontWeight:600 }}>{ch.name}</span>
                   {ch.role && <span style={{ color:"#7878a0", marginLeft:6 }}>({ch.role})</span>}
-                  {ch.one_line && <span style={{ color:"#64748b" }}> — {ch.one_line}</span>}
+                  {ch.appearance && <span style={{ color:"#64748b" }}> — {String(ch.appearance).slice(0,50)}</span>}
                 </div>
               ))}
             </div>
           )}
-          {Array.isArray(data.key_locations_brief) && (data.key_locations_brief as Record<string,string>[]).length > 0 && (
+          {Array.isArray(data.locations) && (data.locations as Record<string,string>[]).length > 0 && (
             <div style={{ marginTop:12, marginBottom:10 }}>
               <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:8, textTransform:"uppercase" as const, letterSpacing:"0.06em" }}>주요 장소</div>
-              {(data.key_locations_brief as Record<string,string>[]).map((l, i) => (
+              {(data.locations as Record<string,string>[]).map((l, i) => (
                 <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
                   <span style={{ color:"#eeeef5", fontWeight:600 }}>{l.name}</span>
-                  {l.role && <span style={{ color:"#64748b" }}> — {l.role}</span>}
+                  {l.significance && <span style={{ color:"#64748b" }}> — {l.significance}</span>}
                 </div>
               ))}
             </div>
@@ -1479,60 +1493,149 @@ function StageReportInChat({
         );
       }
 
-      case 2: { // 시놉시스
-        const charsBrief = arr(data.key_characters_brief) as Record<string,string>[];
-        const locsBrief  = arr(data.key_locations_brief)  as Record<string,string>[];
+      case 2: { // 시놉시스 — 새 스키마
+        const protagonist  = data.protagonist as Record<string,string> | null ?? null;
+        const storyArc     = data.story_arc   as Record<string,string> | null ?? null;
+        const worldRules   = Array.isArray(data.world_rules) ? (data.world_rules as string[]) : [];
+        const chars        = arr(data.characters)  as Record<string,string>[];
+        const locs         = arr(data.locations)   as Record<string,string>[];
+        const props2       = arr(data.props)        as Record<string,string>[];
+        const keyScenes    = arr(data.key_scenes)   as Record<string,string>[];
         return (
           <>
             {/* 로그라인 */}
             {data.logline && (
-              <div style={{ background:`${c}12`, border:`1px solid ${c}40`, borderRadius:12, padding:"16px 20px", marginBottom:16 }}>
+              <div style={{ background:`${c}12`, border:`1px solid ${c}40`, borderRadius:12, padding:"16px 20px", marginBottom:12 }}>
                 <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.8px", textTransform:"uppercase" as const, marginBottom:8 }}>💡 로그라인</div>
                 <div style={{ fontSize:16, fontWeight:700, color:"#f1f5f9", lineHeight:1.65 }}>{str(data.logline)}</div>
               </div>
             )}
-            {/* 개요 */}
-            <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:16, border:`1px solid ${c}20` }}>
-              <Field label="전제" val={data.premise} />
-              <Field label="핵심 갈등" val={data.conflict} />
-              <Field label="테마" val={data.theme} />
-            </div>
-            {/* 기승전결 */}
-            {(data.act1 || data.act2 || data.act3 || data.act4) && (
+            {/* 기획의도 + 타겟·장르 */}
+            {(data.production_intent || data.target_audience || data.genre) && (
+              <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:12, border:`1px solid ${c}20` }}>
+                <Field label="기획 의도" val={data.production_intent} />
+                <Field label="타겟" val={data.target_audience} />
+                <Field label="장르" val={data.genre} />
+              </div>
+            )}
+            {/* 세계관 규칙 3가지 */}
+            {worldRules.length > 0 && (
               <>
-                <SectionHeader icon="📖" title="기승전결" />
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:4 }}>
-                  {([["🌱 기(起)", data.act1], ["🌊 승(承)", data.act2], ["⚡ 전(轉)", data.act3], ["🎯 결(結)", data.act4]] as [string, unknown][]).map(([label, val]) => val ? (
-                    <div key={label} style={{ background:"#10101c", borderRadius:10, padding:"14px 14px", border:`1px solid ${c}25`, borderTop:`3px solid ${c}` }}>
-                      <div style={{ fontSize:11, fontWeight:800, color:c, marginBottom:8 }}>{label}</div>
-                      <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.7 }}>{str(val)}</div>
+                <SectionHeader icon="📜" title="세계관 규칙 3가지" />
+                <div style={{ background:"#10101c", borderRadius:12, padding:"14px 16px", marginBottom:12, border:`1px solid ${c}20` }}>
+                  {worldRules.map((rule, i) => (
+                    <div key={i} style={{ display:"flex", gap:10, padding:"6px 0", borderBottom: i < worldRules.length-1 ? "1px solid #1e1e2a" : "none" }}>
+                      <span style={{ fontSize:11, fontWeight:800, color:c, minWidth:20 }}>{i+1}.</span>
+                      <span style={{ fontSize:13, color:"#d4dce8", lineHeight:1.65 }}>{rule}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {/* 인카네이션 — 주인공 */}
+            {protagonist && (
+              <>
+                <SectionHeader icon="🎭" title={`인카네이션 — ${protagonist.name ?? "주인공"}`} />
+                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:12, border:`1px solid ${c}20` }}>
+                  <Field label="Pain Point" val={protagonist.pain_point} />
+                  <Field label="Want (목표)" val={protagonist.want} />
+                  <Field label="Need (진짜 필요)" val={protagonist.need} />
+                  <Field label="인카네이션 이유" val={protagonist.incarnation} />
+                  <Field label="캐릭터 아크" val={protagonist.arc} />
+                </div>
+              </>
+            )}
+            {/* 사건의 트리거 */}
+            {data.trigger && (
+              <>
+                <SectionHeader icon="⚡" title="사건의 트리거" />
+                <div style={{ background:`${c}08`, borderRadius:12, padding:"14px 16px", marginBottom:12, border:`1px solid ${c}25` }}>
+                  <div style={{ fontSize:13, color:"#e2e8f0", lineHeight:1.75 }}>{str(data.trigger)}</div>
+                </div>
+              </>
+            )}
+            {/* 스토리 아크 */}
+            {storyArc && (
+              <>
+                <SectionHeader icon="📖" title="스토리 아크" />
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+                  {([
+                    ["🌱 발단", storyArc.setup],
+                    ["🌊 전개", storyArc.development],
+                    ["🔥 위기", storyArc.crisis],
+                    ["⚔️ 절정", storyArc.climax],
+                    ["🎯 결말", storyArc.resolution],
+                    ["🔀 반전", storyArc.twist],
+                  ] as [string,string][]).map(([label, val]) => val ? (
+                    <div key={label} style={{ background:"#10101c", borderRadius:10, padding:"12px 14px", border:`1px solid ${c}22`, borderTop:`3px solid ${c}` }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:c, marginBottom:6 }}>{label}</div>
+                      <div style={{ fontSize:12, color:"#d4dce8", lineHeight:1.65 }}>{val}</div>
                     </div>
                   ) : null)}
                 </div>
               </>
             )}
-            {/* 등장인물 + 장소 */}
-            {charsBrief.length > 0 && (
+            {/* 비판과 보완 */}
+            {data.critique && (
               <>
-                <SectionHeader icon="👥" title={`등장인물 (${charsBrief.length}명)`} />
-                {charsBrief.map((ch, i) => (
+                <SectionHeader icon="🔍" title="비판과 보완" />
+                <div style={{ background:"rgba(248,113,113,0.05)", borderRadius:12, padding:"14px 16px", marginBottom:12, border:"1px solid rgba(248,113,113,0.2)" }}>
+                  <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.75 }}>{str(data.critique)}</div>
+                </div>
+              </>
+            )}
+            {/* 등장인물 리스트 */}
+            {chars.length > 0 && (
+              <>
+                <SectionHeader icon="👥" title={`등장인물 리스트 (${chars.length}명)`} />
+                {chars.map((ch, i) => (
                   <div key={i} style={{ display:"flex", gap:12, padding:"10px 14px", background:"#10101c", borderRadius:10, marginBottom:8, border:`1px solid ${c}18` }}>
                     <div style={{ width:32, height:32, borderRadius:"50%", background:"#fb923c22", border:"1px solid #fb923c40", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800, color:"#fb923c", flexShrink:0 }}>{(ch.name ?? "?").slice(0,2)}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{ch.name} <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({ch.role})</span></div>
-                      {ch.one_line && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{ch.one_line}</div>}
+                      {ch.appearance && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{ch.appearance}</div>}
+                      {ch.relation && <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>↔ {ch.relation}</div>}
                     </div>
                   </div>
                 ))}
               </>
             )}
-            {locsBrief.length > 0 && (
+            {/* 장소 리스트 */}
+            {locs.length > 0 && (
               <>
-                <SectionHeader icon="🗺" title={`주요 장소 (${locsBrief.length}곳)`} />
-                {locsBrief.map((l, i) => (
+                <SectionHeader icon="🗺" title={`장소 리스트 (${locs.length}곳)`} />
+                {locs.map((l, i) => (
                   <div key={i} style={{ padding:"10px 14px", background:"#10101c", borderRadius:10, marginBottom:8, border:`1px solid #a78bfa18` }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{l.name}</div>
-                    {l.role && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{l.role}</div>}
+                    <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{l.name} {l.type && <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({l.type})</span>}</div>
+                    {l.visual && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{l.visual}</div>}
+                    {l.significance && <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>역할: {l.significance}</div>}
+                  </div>
+                ))}
+              </>
+            )}
+            {/* 소품 리스트 */}
+            {props2.length > 0 && (
+              <>
+                <SectionHeader icon="🎒" title={`소품 리스트 (${props2.length}개)`} />
+                {props2.map((p, i) => (
+                  <div key={i} style={{ padding:"10px 14px", background:"#10101c", borderRadius:10, marginBottom:8, border:`1px solid #e879f918` }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{p.name} {p.type && <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({p.type})</span>}</div>
+                    {p.visual && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{p.visual}</div>}
+                    {p.story_role && <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>역할: {p.story_role}</div>}
+                  </div>
+                ))}
+              </>
+            )}
+            {/* 핵심장면 리스트 */}
+            {keyScenes.length > 0 && (
+              <>
+                <SectionHeader icon="🎬" title={`핵심장면 리스트 (${keyScenes.length}장면)`} />
+                {keyScenes.map((sc, i) => (
+                  <div key={i} style={{ padding:"12px 14px", background:"#10101c", borderRadius:10, marginBottom:8, border:`1px solid #fbbf2418` }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:"#fbbf24", marginBottom:4 }}>{sc.title}</div>
+                    <div style={{ fontSize:12, color:"#9a9abf" }}>{sc.location} {sc.characters && `· ${sc.characters}`}</div>
+                    {sc.visual && <div style={{ fontSize:12, color:"#d4dce8", marginTop:4, lineHeight:1.6 }}>{sc.visual}</div>}
+                    {sc.emotion && <div style={{ fontSize:11, color:"#64748b", marginTop:3 }}>분위기: {sc.emotion}</div>}
                   </div>
                 ))}
               </>
@@ -1983,12 +2086,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const chars = [...new Set([
         ...prev.characters,
         ...names(s1d?.key_characters, "name"),
-        ...names(s2d?.key_characters_brief, "name"),
+        ...names(s2d?.characters, "name"),
       ])];
       const locs = [...new Set([
         ...prev.locations,
         ...names(s1d?.key_locations, "name"),
-        ...names(s2d?.key_locations_brief, "name"),
+        ...names(s2d?.locations, "name"),
       ])];
       const merged: SynopsisAssets = { characters: chars, locations: locs, props: prev.props };
       synopsisAssetsRef.current = merged;
@@ -2352,8 +2455,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
             locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
           } else if (stage.id === 2) {
-            chars = [...new Set([...chars, ...names(data.key_characters_brief, "name")])];
-            locs  = [...new Set([...locs,  ...names(data.key_locations_brief,  "name")])];
+            chars = [...new Set([...chars, ...names(data.characters, "name")])];
+            locs  = [...new Set([...locs,  ...names(data.locations,  "name")])];
+            props = [...new Set([...props, ...names(data.props,      "name")])];
           } else if (stage.id === 3) {
             chars = [...new Set([...chars, ...names(data.characters, "name")])];
           } else if (stage.id === 4) {
@@ -3519,8 +3623,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
         locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
       } else if (stage.id === 2) {
-        chars = [...new Set([...chars, ...names(data.key_characters_brief, "name")])];
-        locs  = [...new Set([...locs,  ...names(data.key_locations_brief,  "name")])];
+        chars = [...new Set([...chars, ...names(data.characters, "name")])];
+        locs  = [...new Set([...locs,  ...names(data.locations,  "name")])];
+        props = [...new Set([...props, ...names(data.props,      "name")])];
       } else if (stage.id === 3) {
         chars = [...new Set([...chars, ...names(data.characters, "name")])];
       } else if (stage.id === 4) {
@@ -3664,12 +3769,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       return {
         characters: [...new Set([
           ...ns(s1d?.key_characters, "name"),
-          ...ns(s2d?.key_characters_brief, "name"),
+          ...ns(s2d?.characters, "name"),
           ...ns(s3d?.characters, "name"),
         ])],
         locations: [...new Set([
           ...ns(s1d?.key_locations, "name"),
-          ...ns(s2d?.key_locations_brief, "name"),
+          ...ns(s2d?.locations, "name"),
           ...ns(s4d?.locations, "name"),
         ])],
         props: [...new Set([...ns(s5d?.props, "name")])],
@@ -3908,12 +4013,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               };
 
               const charData = mergeByName(
-                (s2?.key_characters_brief as Record<string,string>[] | undefined) ?? [],
+                (s2?.characters as Record<string,string>[] | undefined) ?? [],
                 (s1?.key_characters as Record<string,string>[] | undefined) ?? [],
                 (s3?.characters as Record<string,string>[] | undefined) ?? [],
               );
               const locData = mergeByName(
-                (s2?.key_locations_brief as Record<string,string>[] | undefined) ?? [],
+                (s2?.locations as Record<string,string>[] | undefined) ?? [],
                 (s1?.key_locations as Record<string,string>[] | undefined) ?? [],
                 (s4?.locations as Record<string,string>[] | undefined) ?? [],
               );
