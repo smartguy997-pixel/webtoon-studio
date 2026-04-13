@@ -200,7 +200,13 @@ ${concept}
 - 독자가 느끼는 감정선·분위기가 비슷한 작품
 
 장르만 같고 내용이 전혀 다른 작품은 절대 언급하지 마.
-실제로 존재하는 웹툰/만화만 추천해. 없으면 없다고 해.
+실제로 존재하는 웹툰/만화만 언급해. 없으면 없다고 해.
+
+[작품 언급 엄격 규칙 — 반드시 지켜]
+• 제목을 100% 확신할 수 없으면 절대 언급하지 마. 추측·지어내기 금지.
+• "~같은 작품", "~류의 작품"처럼 실제 제목 없이 설명해도 돼.
+• 잘못 언급했으면 즉시 "제가 잘못 알고 있었어요"라고 인정하고 넘어가.
+• 모른다면 솔직하게 "비슷한 구조의 작품이 명확히 떠오르지 않는다"고 해.
 
 팀이 같이 하는 건 이거야:
 - 위 기준에 맞는 유사작품들 분석해서 이 기획이 시장에서 될 것 같은지 판단
@@ -521,29 +527,24 @@ function ImageSearchCard({ query, delayMs = 0 }: { query: string; delayMs?: numb
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const apiKey = getAnthropicKey();
-    if (!apiKey) {
-      setError("Anthropic API 키가 없습니다.");
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
-    // 순서대로 하나씩 — delayMs만큼 기다렸다가 서치 시작
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (cancelled) return;
-      fetchImagesWithClaude(query, apiKey)
-        .then(urls => {
-          if (cancelled) return;
-          setImages(urls);
+      try {
+        const res = await fetch(`/api/image-search?q=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error("image-search API failed");
+        const data = (await res.json()) as { urls: string[] };
+        if (!cancelled) {
+          setImages(data.urls ?? []);
           setLoading(false);
-        })
-        .catch((e: Error) => {
-          if (cancelled) return;
-          setError(e.message);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError((e as Error).message);
           setLoading(false);
-        });
+        }
+      }
     }, delayMs);
 
     return () => { cancelled = true; clearTimeout(timer); };
