@@ -1222,11 +1222,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (abortRef.current) break;
         }
 
-        // 사용자 메시지 처리
+        // 사용자 메시지 처리 (UI는 입력 핸들러에서 이미 표시됨 — addMsg 호출 안 함)
         const pendingMsg = pendingUserMsgRef.current;
         if (pendingMsg) {
           pendingUserMsgRef.current = null;
-          addMsg("user", pendingMsg, false);
           transcript.push(`[사용자]: ${pendingMsg}`);
           convRef.current = transcript;
           lastUserMsg = pendingMsg;
