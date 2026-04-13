@@ -880,8 +880,8 @@ function StreamCursor() {
   return <span style={{ display: "inline-block", width: 2, height: 13, background: "#7c6cfc", marginLeft: 2, verticalAlign: "middle", borderRadius: 1, animation: "blink 0.9s step-start infinite" }} />;
 }
 
-function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: StageId; result: StageResult; onViewDebate?: () => void; isViewingDebate?: boolean }) {
-  const [modalTab, setModalTab] = useState<"data" | "context" | null>(null);
+function StageResultCard({ result, debateMsgs }: { key?: StageId; result: StageResult; debateMsgs?: Msg[] }) {
+  const [modalTab, setModalTab] = useState<"data" | "context" | "debate" | null>(null);
   const stage = STAGES.find(s => s.id === result.stageId)!;
   const { data } = result;
   const c = stage.color;
@@ -1039,10 +1039,10 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
               📋 전달
             </button>
           )}
-          {onViewDebate && (
+          {debateMsgs && debateMsgs.length > 0 && (
             <button
-              onClick={onViewDebate}
-              style={{ fontSize:11, fontWeight:600, color: isViewingDebate ? c : "#7878a0", background: isViewingDebate ? `${c}18` : "transparent", border:`1px solid ${isViewingDebate ? c : "#2a2a3d"}`, borderRadius:5, padding:"3px 9px", cursor:"pointer" }}>
+              onClick={() => setModalTab("debate")}
+              style={{ fontSize:11, fontWeight:600, color:"#7878a0", background:"transparent", border:"1px solid #2a2a3d", borderRadius:5, padding:"3px 9px", cursor:"pointer" }}>
               💬 토론
             </button>
           )}
@@ -1077,18 +1077,18 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
                 <span style={{ fontSize:13, fontWeight:800, color:c, letterSpacing:"0.3px" }}>✓ {stage.name}</span>
                 {/* 탭 */}
                 <div style={{ display:"flex", gap:4, marginLeft:4 }}>
-                  <button
-                    onClick={() => setModalTab("data")}
-                    style={{ fontSize:11, fontWeight:700, color: modalTab === "data" ? c : "#4a4a6a", background: modalTab === "data" ? `${c}18` : "transparent", border:`1px solid ${modalTab === "data" ? c : "#2a2a3d"}`, borderRadius:5, padding:"2px 9px", cursor:"pointer" }}>
-                    결과
-                  </button>
-                  {result.summary && (
-                    <button
-                      onClick={() => setModalTab("context")}
-                      style={{ fontSize:11, fontWeight:700, color: modalTab === "context" ? c : "#4a4a6a", background: modalTab === "context" ? `${c}18` : "transparent", border:`1px solid ${modalTab === "context" ? c : "#2a2a3d"}`, borderRadius:5, padding:"2px 9px", cursor:"pointer" }}>
-                      에이전트 전달 내용
-                    </button>
-                  )}
+                  {(["data", "context", "debate"] as const).map(tab => {
+                    if (tab === "context" && !result.summary) return null;
+                    if (tab === "debate" && (!debateMsgs || debateMsgs.length === 0)) return null;
+                    const labels = { data:"결과", context:"전달 내용", debate:"토론 기록" };
+                    const active = modalTab === tab;
+                    return (
+                      <button key={tab} onClick={() => setModalTab(tab)}
+                        style={{ fontSize:11, fontWeight:700, color: active ? c : "#4a4a6a", background: active ? `${c}18` : "transparent", border:`1px solid ${active ? c : "#2a2a3d"}`, borderRadius:5, padding:"2px 9px", cursor:"pointer" }}>
+                        {labels[tab]}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <button
@@ -1104,6 +1104,11 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
                 <pre style={{ fontSize:12, color:`${c}cc`, lineHeight:1.8, whiteSpace:"pre-wrap" as const, margin:0, fontFamily:"inherit" }}>
                   {result.summary}
                 </pre>
+              )}
+              {modalTab === "debate" && debateMsgs && (
+                debateMsgs.length === 0
+                  ? <div style={{ fontSize:13, color:"#4a4a6a" }}>저장된 토론 내용이 없습니다.</div>
+                  : debateMsgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)
               )}
             </div>
           </div>
@@ -1225,7 +1230,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [replyTo, setReplyTo] = useState<{ msg: Msg; agentLabel: string; preview: string } | null>(null); // reply-to
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
-  const [viewingStageIdx, setViewingStageIdx] = useState<number | null>(null); // 열람 중인 이전 단계
 
   // ── 에셋 리스트 단계 State (Stage 2 완료 후 스타일 전 삽입) ──
   type AssetListPhase = "idle" | "reviewing" | "confirmed";
@@ -3124,25 +3128,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         {stageResults.length > 0 && (
           <div style={{ padding:"12px 16px 0" }}>
             {stageResults.map((r: StageResult, idx: number) => (
-              <div key={r.stageId}>
-                <StageResultCard
-                  result={r}
-                  onViewDebate={() => setViewingStageIdx(viewingStageIdx === idx ? null : idx)}
-                  isViewingDebate={viewingStageIdx === idx}
-                />
-                {/* 토론 내용 인라인 뷰어 */}
-                {viewingStageIdx === idx && (
-                  <div style={{ background:"#0e0e1a", border:"1px solid #2a2a3d", borderRadius:10, padding:"12px 16px", marginBottom:8, maxHeight:400, overflowY:"auto" as const }}>
-                    <div style={{ fontSize:11, fontWeight:700, color:"#4a4a6a", marginBottom:10, letterSpacing:"0.05em" }}>
-                      {STAGES[idx].name} 토론 기록
-                    </div>
-                    {(stageHistoryMsgs[idx] ?? []).length === 0
-                      ? <div style={{ fontSize:13, color:"#4a4a6a" }}>저장된 토론 내용이 없습니다.</div>
-                      : (stageHistoryMsgs[idx] ?? []).map((m: Msg) => <MsgBubble key={m.id} msg={m} />)
-                    }
-                  </div>
-                )}
-              </div>
+              <StageResultCard
+                key={r.stageId}
+                result={r}
+                debateMsgs={stageHistoryMsgs[idx] ?? []}
+              />
             ))}
           </div>
         )}
