@@ -461,9 +461,62 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
 function buildContext(stageId: StageId, prevResults: StageResult[]): string {
   const relevant = prevResults.filter(r => r.stageId < stageId);
   if (!relevant.length) return "";
+
   return relevant.map(r => {
     const stage = STAGES.find(s => s.id === r.stageId)!;
-    return `[${stage.name} 확정]\n${r.summary}`;
+    let extra = "";
+
+    // Stage 3/4/5 진입 시 — 시놉시스 JSON 구조 데이터를 보충 (summary 텍스트 보완)
+    if (stageId >= 3 && r.stageId === 2) {
+      const d = r.data;
+      const parts: string[] = [];
+
+      if (d.logline)          parts.push(`로그라인: ${String(d.logline)}`);
+      if (Array.isArray(d.world_rules) && (d.world_rules as string[]).length)
+        parts.push(`세계관 규칙:\n${(d.world_rules as string[]).map((rule, i) => `  ${i + 1}. ${rule}`).join("\n")}`);
+
+      const prot = d.protagonist as Record<string,string> | undefined;
+      if (prot?.name) {
+        parts.push([
+          `주인공 — ${prot.name}`,
+          prot.pain_point  ? `  결핍: ${prot.pain_point}` : "",
+          prot.want        ? `  목표: ${prot.want}` : "",
+          prot.incarnation ? `  인카네이션: ${prot.incarnation}` : "",
+          prot.arc         ? `  아크: ${prot.arc}` : "",
+        ].filter(Boolean).join("\n"));
+      }
+
+      if (d.trigger) parts.push(`사건의 트리거: ${String(d.trigger)}`);
+
+      const arc = d.story_arc as Record<string,string> | undefined;
+      if (arc) {
+        parts.push([
+          "스토리 아크:",
+          arc.setup       ? `  발단: ${arc.setup}` : "",
+          arc.development ? `  전개: ${arc.development}` : "",
+          arc.crisis      ? `  위기: ${arc.crisis}` : "",
+          arc.climax      ? `  절정: ${arc.climax}` : "",
+          arc.resolution  ? `  결말: ${arc.resolution}` : "",
+          arc.twist       ? `  반전: ${arc.twist}` : "",
+        ].filter(Boolean).join("\n"));
+      }
+
+      if (parts.length) extra = `\n[시놉시스 핵심 구조]\n${parts.join("\n\n")}`;
+    }
+
+    // Stage 4/5 진입 시 — 세계관 핵심 설정도 보충
+    if (stageId >= 4 && r.stageId === 1) {
+      const d = r.data;
+      const parts: string[] = [];
+      if (d.era)            parts.push(`시대/배경: ${String(d.era)}`);
+      if (d.core_space)     parts.push(`핵심 공간: ${String(d.core_space)}`);
+      if (d.what_if_rule)   parts.push(`만약에 설정: ${String(d.what_if_rule)}`);
+      if (d.social_norms)   parts.push(`사회적 통념: ${String(d.social_norms)}`);
+      if (d.theme)          parts.push(`테마: ${String(d.theme)}`);
+      if (parts.length) extra = `\n[세계관 핵심 구조]\n${parts.join("\n")}`;
+    }
+
+    return `[${stage.name} 확정]\n${r.summary}${extra}`;
   }).join("\n\n");
 }
 
@@ -497,33 +550,77 @@ function buildSingleAgentPrompt(
   const s1Data = prevResults.find(r => r.stageId === 1)?.data;
   const s2Data = prevResults.find(r => r.stageId === 2)?.data;
 
-  // 에셋 목록 — 세계관·시놉시스에서 확정된 항목, 설명 포함
+  // 에셋 목록 — 세계관·시놉시스에서 확정된 항목, 시각 묘사 포함
   let assetChecklist = "";
   if (synopsisAssets) {
+    const s2chars   = Array.isArray(s2Data?.characters)  ? (s2Data!.characters  as Record<string,string>[]) : [];
+    const s2locs    = Array.isArray(s2Data?.locations)   ? (s2Data!.locations   as Record<string,string>[]) : [];
+    const s2props   = Array.isArray(s2Data?.props)       ? (s2Data!.props       as Record<string,string>[]) : [];
+    const s1chars   = Array.isArray(s1Data?.key_characters) ? (s1Data!.key_characters as Record<string,string>[]) : [];
+    const s1locs    = Array.isArray(s1Data?.key_locations)  ? (s1Data!.key_locations  as Record<string,string>[]) : [];
+
     if (stageId === 3 && synopsisAssets.characters.length > 0) {
+      // 주인공 인카네이션 별도 강조
+      const prot = s2Data?.protagonist as Record<string,string> | undefined;
+      const protSection = prot ? [
+        `[📌 주인공 — 시놉시스 확정 설정]`,
+        prot.name        ? `이름: ${prot.name}` : "",
+        prot.pain_point  ? `결핍(Pain Point): ${prot.pain_point}` : "",
+        prot.want        ? `목표(Want): ${prot.want}` : "",
+        prot.need        ? `진짜 필요(Need): ${prot.need}` : "",
+        prot.incarnation ? `인카네이션: ${prot.incarnation}` : "",
+        prot.arc         ? `캐릭터 아크: ${prot.arc}` : "",
+      ].filter(Boolean).join("\n") + "\n" : "";
+
       const lines = synopsisAssets.characters.map((name, i) => {
-        const s1ch = Array.isArray(s1Data?.key_characters)
-          ? (s1Data!.key_characters as Record<string,string>[]).find(c => c.name === name) : null;
-        const s2ch = Array.isArray(s2Data?.characters)
-          ? (s2Data!.characters as Record<string,string>[]).find(c => c.name === name) : null;
-        const role = s1ch?.role ?? s2ch?.role ?? "";
-        const desc = s2ch?.appearance ?? s2ch?.relation ?? s1ch?.motivation ?? "";
-        return `${i + 1}. ${name}${role ? ` — ${role}` : ""}${desc ? ` (${desc})` : ""}`;
+        const s1ch = s1chars.find(c => c.name === name);
+        const s2ch = s2chars.find(c => c.name === name);
+        const role = s2ch?.role ?? s1ch?.role ?? "";
+        const desc = [
+          (s2ch?.appearance ?? s1ch?.face) ? `외형: ${s2ch?.appearance ?? s1ch?.face}` : "",
+          (s2ch?.personality ?? s1ch?.personality) ? `성격: ${s2ch?.personality ?? s1ch?.personality}` : "",
+          s2ch?.relation ? `관계: ${s2ch.relation}` : "",
+          (!s2ch && s1ch?.motivation) ? `동기: ${s1ch.motivation}` : "",
+          (!s2ch && s1ch?.backstory)  ? `배경: ${s1ch.backstory}` : "",
+        ].filter(Boolean).join(" / ");
+        return `${i + 1}. **${name}**${role ? ` — ${role}` : ""}${desc ? `\n   ${desc}` : ""}`;
       }).join("\n");
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 캐릭터 목록 — 세계관·시놉시스에서 이미 확정된 인물들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 인물이야. 새로 만들지 말고 더 깊이 구체화해. 위 목록에 없는 인물이 등장했다면 추가로 다뤄.\n`;
+
+      assetChecklist = `\n${protSection}[⚠️ 반드시 설계해야 할 캐릭터 목록]\n${lines}\n` +
+        `시놉시스·세계관에서 확정된 인물들이야. 위 외형·성격 기반으로 이미지 생성에 바로 쓸 수 있는 수준까지 구체화해.\n` +
+        `얼굴·키·체형·복장·헤어·표정 습관·말투까지 빠짐없이. 위 목록에 없는 인물이 필요하다면 추가로 설계해.\n`;
+
     } else if (stageId === 4 && synopsisAssets.locations.length > 0) {
       const lines = synopsisAssets.locations.map((name, i) => {
-        const s1loc = Array.isArray(s1Data?.key_locations)
-          ? (s1Data!.key_locations as Record<string,string>[]).find(l => l.name === name) : null;
-        const s2loc = Array.isArray(s2Data?.locations)
-          ? (s2Data!.locations as Record<string,string>[]).find(l => l.name === name) : null;
-        const type = s1loc?.type ?? s2loc?.type ?? "";
-        const role = s1loc?.significance ?? s2loc?.significance ?? s2loc?.visual ?? "";
-        return `${i + 1}. ${name}${type ? ` — ${type}` : ""}${role ? ` (${role})` : ""}`;
+        const s1loc = s1locs.find(l => l.name === name);
+        const s2loc = s2locs.find(l => l.name === name);
+        const type  = s2loc?.type ?? s1loc?.type ?? "";
+        const desc  = [
+          (s2loc?.visual ?? s1loc?.visual) ? `시각: ${s2loc?.visual ?? s1loc?.visual}` : "",
+          (s2loc?.significance ?? s1loc?.significance) ? `역할: ${s2loc?.significance ?? s1loc?.significance}` : "",
+        ].filter(Boolean).join(" / ");
+        return `${i + 1}. **${name}**${type ? ` — ${type}` : ""}${desc ? `\n   ${desc}` : ""}`;
       }).join("\n");
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록 — 세계관·시놉시스에서 이미 확정된 장소들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 장소야. 새로 만들지 말고 시각적으로 더 깊이 설계해. 위 목록에 없는 장소가 나왔다면 추가로 다뤄.\n`;
+
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록]\n${lines}\n` +
+        `시놉시스·세계관에서 확정된 장소들이야. 위 시각 묘사를 기반으로 이미지 생성 가능 수준까지 설계해.\n` +
+        `건축 구조·조명·색채 팔레트·분위기·냄새·소리까지. 위 목록에 없는 장소가 필요하다면 추가로 설계해.\n`;
+
     } else if (stageId === 5 && synopsisAssets.props.length > 0) {
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 소품 목록 — 세계관·시놉시스에서 이미 확정된 소품들]\n${synopsisAssets.props.map((n, i) => `${i + 1}. ${n}`).join("\n")}\n이들은 이전 단계에서 확정된 소품이야. 각각을 충분히 깊이 다뤄야 해. 위 목록에 없는 소품이 나왔다면 추가로 다뤄.\n`;
+      const lines = synopsisAssets.props.map((name, i) => {
+        const prop = s2props.find(p => p.name === name);
+        const desc = [
+          prop?.type       ? `유형: ${prop.type}` : "",
+          prop?.visual     ? `시각: ${prop.visual}` : "",
+          prop?.story_role ? `역할: ${prop.story_role}` : "",
+          prop?.owner      ? `소유자: ${prop.owner}` : "",
+        ].filter(Boolean).join(" / ");
+        return `${i + 1}. **${name}**${desc ? `\n   ${desc}` : ""}`;
+      }).join("\n");
+
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 소품 목록]\n${lines}\n` +
+        `시놉시스에서 확정된 소품들이야. 위 시각 묘사를 기반으로 이미지 생성 가능 수준까지 설계해.\n` +
+        `형태·색상·재질·크기·상태·눈에 띄는 디테일까지. 위 목록에 없는 소품이 필요하다면 추가로 설계해.\n`;
     }
   }
 
