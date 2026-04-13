@@ -2116,8 +2116,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       });
     }
 
-    // 롤링 요약 + 사용자 컨텍스트 상태
+    // 롤링 요약 + 결정사항 추적 + 사용자 컨텍스트 상태
     let conversationSummary = "";
+    let stageDecisions: { agreed: string[]; rejected: string[]; pending: string[] } = {
+      agreed: [], rejected: [], pending: [],
+    };
     let turnsSinceLastSummary = 0;
     let lastUserMsg = "";
     let userTurnCount = 0;
@@ -2182,16 +2185,67 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           for await (const chunk of streamClaude({
             apiKey: key,
             model: "claude-sonnet-4-6",
-            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
+            systemPrompt: "웹툰 기획 토론 기록 전문가. 빠짐없이 정확하게 정리해. 마크다운 금지.",
             messages: [{
               role: "user",
-              content: `${conversationSummary ? `이전 요약: ${conversationSummary}\n\n` : ""}최근 대화:\n${transcript.slice(-5).join("\n")}\n\n합쳐서 2문장 이내 요약. 핵심 합의사항·의견 포함. 마크다운 금지.`,
+              content: [
+                conversationSummary ? `[이전 요약]\n${conversationSummary}\n\n` : "",
+                `[최근 대화]\n${transcript.slice(-8).join("\n")}\n\n`,
+                `위 내용을 합쳐서 토론 진행 상황 요약문을 작성해줘.\n`,
+                `다음 순서로:\n`,
+                `1. 현재 논의 중인 핵심 주제와 방향 (2~3문장)\n`,
+                `2. 팀이 탐색한 주요 아이디어·선택지·의견들 (2~3문장)\n`,
+                `3. 사용자가 언급한 내용이나 선호도 (있다면, 1~2문장)\n`,
+                `총 5~8문장. 구체적인 설정값(연도, 이름, 규칙 등)은 반드시 포함.`,
+              ].filter(Boolean).join(""),
             }],
-            maxTokens: 120,
+            maxTokens: 400,
             tools: [],
           })) next += chunk;
         } catch { /* ignore */ }
         if (next.trim()) conversationSummary = next.trim();
+      })();
+    };
+
+    const refreshDecisions = () => {
+      if (transcript.length < 5) return;
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key) return;
+      void (async () => {
+        let raw = "";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            model: "claude-sonnet-4-6",
+            systemPrompt: "웹툰 기획 토론 분석가. JSON만 출력. 설명 없이.",
+            messages: [{
+              role: "user",
+              content: [
+                stageDecisions.agreed.length > 0
+                  ? `[이미 합의된 내용 — 중복 추출 금지]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}\n\n`
+                  : "",
+                `[토론 내용]\n${transcript.slice(-10).join("\n")}\n\n`,
+                `위 토론에서 새롭게 확인된 합의·거부·미결 항목을 추출해줘.\n`,
+                `출력 형식 (JSON만, 설명 없이):\n`,
+                `{"agreed":["합의 항목 (구체적 설정값 포함)"],"rejected":["팀/사용자가 거부한 방향"],"pending":["아직 결정 안 된 중요 쟁점"]}\n`,
+                `각 항목은 한 줄 이내. 없으면 빈 배열.`,
+              ].filter(Boolean).join(""),
+            }],
+            maxTokens: 300,
+            tools: [],
+          })) raw += chunk;
+        } catch { /* ignore */ }
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            const parsed = JSON.parse(m[0]) as { agreed?: string[]; rejected?: string[]; pending?: string[] };
+            stageDecisions = {
+              agreed:   [...new Set([...stageDecisions.agreed,   ...(parsed.agreed   ?? [])])],
+              rejected: [...new Set([...stageDecisions.rejected, ...(parsed.rejected ?? [])])],
+              pending:  parsed.pending ?? stageDecisions.pending,
+            };
+          } catch { /* ignore */ }
+        }
       })();
     };
 
@@ -2258,10 +2312,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const p1Context = p1DataRef.current ? buildPhase1Context(p1DataRef.current) : "";
       const baseCtx   = [p1Context, worldCtx].filter(Boolean).join("\n\n").slice(0, 2000);
 
-      const histText = () =>
-        transcript.length === 0
-          ? ""
-          : `[지금까지 대화]\n${transcript.slice(-4).join("\n")}\n\n`;
+      const histText = () => {
+        if (transcript.length === 0) return "";
+        const dec = [
+          stageDecisions.agreed.length   > 0 ? `[✅ 합의된 내용]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.rejected.length > 0 ? `[❌ 거부된 방향]\n${stageDecisions.rejected.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.pending.length  > 0 ? `[⏳ 미결 쟁점]\n${stageDecisions.pending.map(d => `• ${d}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n");
+        return conversationSummary
+          ? `[토론 요약]\n${conversationSummary}\n\n${dec ? `${dec}\n\n` : ""}[직전 대화]\n${transcript.slice(-3).join("\n")}\n\n`
+          : `[지금까지 대화]\n${transcript.slice(-5).join("\n")}\n\n`;
+      };
 
       try {
         // ─ Step 1: 세계관 학습 (3턴) ─────────────────────────────────────────
@@ -2310,6 +2371,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             pendingUserMsgRef.current = null;
             transcript.push(`[사용자]: ${pendingMsg}`);
             convRef.current = transcript;
+            refreshSummary();
+            refreshDecisions();
             await runSingleAgent("scenario",
               `${histText()}사용자가 방금 "${pendingMsg}" 라고 했어. 이 의견을 반영해서 페르소나 논의를 이어가줘. 2~3문장.`,
               250);
@@ -2507,6 +2570,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           lastUserMsg = pendingMsg;
           userTurnCount = 4;
           refreshSummary();
+          refreshDecisions();
           turnsSinceLastSummary = 0;
           if (wrapUpProposed) {
             if (AGREE_RE.test(pendingMsg.trim())) { naturalExit = true; break debateLoop; }
@@ -2516,15 +2580,20 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (matchedCmd?.handler === "end") { naturalExit = true; break debateLoop; }
         }
 
-        // 주기적 요약 갱신
+        // 주기적 요약 + 결정사항 갱신 (5턴마다)
         turnsSinceLastSummary++;
-        if (turnsSinceLastSummary >= 5) { refreshSummary(); turnsSinceLastSummary = 0; }
+        if (turnsSinceLastSummary >= 5) { refreshSummary(); refreshDecisions(); turnsSinceLastSummary = 0; }
 
         // 히스토리 텍스트 구성
         const lastLine = transcript.filter(l => !l.startsWith("[사용자]")).slice(-1)[0] ?? "";
+        const decisionsBlock = [
+          stageDecisions.agreed.length   > 0 ? `[✅ 합의된 내용]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.rejected.length > 0 ? `[❌ 거부된 방향]\n${stageDecisions.rejected.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.pending.length  > 0 ? `[⏳ 미결 쟁점]\n${stageDecisions.pending.map(d => `• ${d}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n");
         const historyText = conversationSummary
-          ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
-          : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
+          ? `[토론 요약]\n${conversationSummary}\n\n${decisionsBlock ? `${decisionsBlock}\n\n` : ""}${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
+          : `[대화 내용]\n${transcript.slice(-5).join("\n")}\n\n`;
         if (userTurnCount > 0) userTurnCount--;
 
         // ── 명령 핸들러 — 사용자 명령에 즉시 반응 ──
