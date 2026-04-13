@@ -40,50 +40,53 @@ const AGENT_SPEAKING_ORDER_P1: AgentId[] = [
 ];
 
 // ─── Phase 1 토론 아젠다 ────────────────────────────────────────────────────────
+// 순서 없음 — 자연스럽게 대화하다 안 다룬 주제가 있으면 프로듀서가 슬쩍 꺼냄
 const AGENDA_P1 = [
   {
-    label: "유사작품 시장성 분석",
-    minTurns: 4,
-    leadAgents: ["researcher", "strategist"] as AgentId[],
-    intro: "첫 번째 주제는 유사작품들의 시장성이야. 실제 조회수·댓글·플랫폼 성과 데이터 중심으로 분석해줘.",
+    id: "market" as const,
+    label: "유사작품 시장성",
+    keywords: /시장|조회수|플랫폼 성과|독자수|흥행|성공 사례|시장성|매출|구독/,
+    nudge: "그런데 유사작품들의 실제 시장 성과 얘기는 아직 덜 된 것 같은데, 조회수나 플랫폼 반응 데이터 얘기해줄 수 있어?",
   },
   {
+    id: "comparison" as const,
     label: "유사작품 특징 비교",
-    minTurns: 4,
-    leadAgents: ["researcher", "strategist"] as AgentId[],
-    intro: "두 번째 주제로 넘어가자. 유사작품들의 스토리·캐릭터·연출 특징을 우리 기획과 비교해서 얘기해줘.",
+    keywords: /비교|차이|유사작품|레퍼런스|참고작|비슷한|대비|스토리 구조|연출 방식/,
+    nudge: "유사작품들이랑 우리 기획을 직접 비교해서 얘기해주면 좋겠는데, 스토리·캐릭터·연출 측면에서 어떻게 달라?",
   },
   {
-    label: "우리 작품의 강점",
-    minTurns: 3,
-    leadAgents: ["strategist", "scenario"] as AgentId[],
-    intro: "세 번째 주제야. 유사작품 대비 우리 기획만의 차별화된 강점이 뭔지 구체적으로 파악해보자.",
+    id: "strengths" as const,
+    label: "우리 작품 강점",
+    keywords: /강점|차별화|독특|장점|경쟁력|우리만의|특징|매력|훅/,
+    nudge: "우리 기획만의 강점이나 차별화 포인트는 뭔지 얘기해볼까? 다른 작품 대비 뭐가 제일 눈에 띄어?",
   },
   {
-    label: "우리 작품의 약점",
-    minTurns: 3,
-    leadAgents: ["strategist", "researcher"] as AgentId[],
-    intro: "네 번째로 약점 얘기해보자. 솔직하게 — 시장에서 실패할 수 있는 리스크가 뭔지.",
+    id: "weaknesses" as const,
+    label: "우리 작품 약점",
+    keywords: /약점|리스크|위험|단점|한계|문제|부족|클리셰|실패|걱정/,
+    nudge: "솔직하게 약점이나 리스크 얘기도 해야 할 것 같은데, 시장에서 이 기획이 실패할 수 있는 요인이 뭐가 있을까?",
   },
   {
+    id: "improvements" as const,
     label: "보강해야 할 점",
-    minTurns: 3,
-    leadAgents: ["producer", "strategist"] as AgentId[],
-    intro: "다섯 번째, 약점을 어떻게 보완할지야. Phase 2 전에 반드시 결정해야 할 것들 중심으로.",
+    keywords: /보강|개선|보완|수정|발전|Phase 2|해결|업그레이드|강화/,
+    nudge: "약점을 어떻게 보완할지도 짚어봐야 할 것 같아. Phase 2 전에 반드시 결정해야 할 것들이 뭔지.",
   },
   {
+    id: "audience" as const,
     label: "주 독자층 예측",
-    minTurns: 3,
-    leadAgents: ["strategist", "character"] as AgentId[],
-    intro: "여섯 번째, 주 독자층 분석이야. 연령·성별·소비 패턴·플랫폼 선호도까지 구체적으로 예측해줘.",
+    keywords: /독자층|타깃|연령|성별|소비 패턴|10대|20대|30대|여성 독자|남성 독자|팬덤/,
+    nudge: "주 독자층에 대한 얘기가 빠진 것 같은데, 연령·성별·소비 패턴 측면에서 어떤 독자를 공략하는 게 좋을까?",
   },
   {
-    label: "그림 화풍 분석",
-    minTurns: 3,
-    leadAgents: ["character", "script"] as AgentId[],
-    intro: "마지막 주제야. 이 기획에 맞는 그림체·색감·연출 스타일을 유사작품 레퍼런스와 함께 분석해줘.",
+    id: "artstyle" as const,
+    label: "그림 화풍",
+    keywords: /그림체|화풍|스타일|색감|연출|비주얼|그림|컷|패널|작화/,
+    nudge: "그림 화풍 얘기도 해야 할 것 같아. 이 기획에 맞는 그림체나 연출 스타일이 어떤 방향이면 좋을지.",
   },
 ] as const;
+
+type AgendaId = typeof AGENDA_P1[number]["id"];
 
 // API 키 할당 (에이전트 인덱스 → 키 인덱스) - API를 돌아가며 사용
 function getApiKeyIndexForAgent(agentIndex: number): number {
@@ -1212,7 +1215,7 @@ export default function Phase1Page() {
   const [turnCount, setTurnCount] = useState(0);
   const [isWritingReport, setIsWritingReport] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [currentAgendaIdx, setCurrentAgendaIdx] = useState(0); // 현재 아젠다 인덱스 (UI 표시용)
+  const [coveredAgendaIds, setCoveredAgendaIds] = useState<AgendaId[]>([]); // 다뤄진 아젠다 항목 (UI 표시용)
 
   // ── Refs ──
   const chatBodyRef = useRef<HTMLDivElement>(null);
@@ -1418,7 +1421,7 @@ export default function Phase1Page() {
 
     // ── REAL API MODE ──
     setDebatePhase("running");
-    setCurrentAgendaIdx(0);
+    setCoveredAgendaIds([]);
 
     // 명령 패턴은 debate-config.ts의 USER_COMMAND_PATTERNS에서 관리
     const matchCommand = (msg: string) =>
@@ -1446,10 +1449,10 @@ export default function Phase1Page() {
     let wrapUpCooldown = 0;         // 사용자 거부 후 N턴 동안 마무리 제안 금지
     const WRAP_UP_AFTER = 20;       // 에이전트 발언 N회 후 마무리 제안 (아젠다 전체 완료 후 적용)
     const WRAP_UP_AUTO_MS = 30_000; // 30초 무응답 → 자동 종료
-    // ── 아젠다 추적 ──
-    let agendaIdx = 0;    // 현재 아젠다 항목 인덱스
-    let agendaTurns = 0;  // 현재 아젠다 항목에서 진행된 에이전트 발언 수
-    setCurrentAgendaIdx(0);
+    // ── 아젠다 추적 (순서 없음 — 키워드 감지 기반) ──
+    const coveredAgenda = new Set<AgendaId>(); // 자연스럽게 다뤄진 주제들
+    let nudgeCooldown = 0; // 프로듀서가 주제 꺼낸 후 N턴 대기
+    setCoveredAgendaIds([]);
     // 사용자 동의 패턴 (마무리 제안에 yes 한 것으로 간주)
     const AGREE_RE = /^(그래|응|ㅇㅇ|좋아|해줘|시작|정리|맞아|그렇게|ㄱ|ok|오케|ㅇㅋ)/i;
 
@@ -1796,7 +1799,7 @@ export default function Phase1Page() {
       const converging = agentTurnsSoFar >= 15 &&
         (convergenceCheck.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
 
-      const allAgendaDone = agendaIdx >= AGENDA_P1.length - 1 && agendaTurns >= AGENDA_P1[AGENDA_P1.length - 1].minTurns;
+      const allAgendaDone = coveredAgenda.size >= AGENDA_P1.length;
       if (!wrapUpProposed && wrapUpCooldown === 0 && allAgendaDone && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
         wrapUpProposed = true;
         wrapUpProposedAt = Date.now();
@@ -1820,23 +1823,20 @@ export default function Phase1Page() {
       const continueNote = wrapUpCooldown > 0
         ? `⚠️ 사용자가 마무리를 거부하고 더 깊은 분석을 요청했음. 절대 마무리·보고서 작성·다음 단계 이동을 제안하지 말고 현재 주제를 더 깊이 파고들어.\n\n`
         : "";
-      // 현재 아젠다 주제를 에이전트에게 명시
-      const currentAgenda = AGENDA_P1[agendaIdx];
-      const agendaNote = `[현재 토론 주제: ${currentAgenda.label}]\n이 주제에 집중해서 발언해줘.\n\n`;
       let agentPrompt: string;
       if (isFirst) {
-        agentPrompt = `${agendaNote}리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`;
+        agentPrompt = `리서치 시작해줘. 기획: 장르 ${g} | 플랫폼 ${platLabel} | ${ep}화 | 개요: ${c.slice(0, 120)}. 유사한 웹툰 한 편 소개하고 배울 점 짧게 말해줘.`;
       } else if (userTurnCount > 0) {
-        agentPrompt = `${continueNote}${agendaNote}${agentCtx}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
+        agentPrompt = `${continueNote}${agentCtx}사용자가 "${lastUserMsg.slice(0, 80)}"라고 했어. 이 의견에 대해 네 전문 분야에서 구체적으로 반응해줘. 2~3문장.`;
       } else {
         // 직전 발언자와 내용을 추출해 맥락 있는 반응 유도
         const prevMatch = lastLine.match(/^\[([^\]]+)\]:\s*([\s\S]+)/);
         const prevLabel = prevMatch ? prevMatch[1] : null;
         const prevContent = prevMatch ? prevMatch[2].slice(0, 100) : null;
         if (prevLabel && prevContent) {
-          agentPrompt = `${continueNote}${agendaNote}${agentCtx}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
+          agentPrompt = `${continueNote}${agentCtx}방금 ${prevLabel}이(가) "${prevContent.trim()}"라고 했어. 이 내용에 동의·반론·보완 중 하나를 골라 네 전문 분야에서 2~3문장으로 응답해줘.`;
         } else {
-          agentPrompt = `${continueNote}${agendaNote}${agentCtx}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
+          agentPrompt = `${continueNote}${agentCtx}앞 대화에서 네 전문 분야와 관련된 부분을 짚어서 의견을 더해줘. 2~3문장.`;
         }
       }
 
@@ -1857,21 +1857,28 @@ export default function Phase1Page() {
         if (userTurnCount === 0) lastUserMsg = "";
       }
 
-      // ── 아젠다 진행 체크 ──
-      agendaTurns++;
-      const agenda = AGENDA_P1[agendaIdx];
-      const isLastAgenda = agendaIdx >= AGENDA_P1.length - 1;
-      if (agendaTurns >= agenda.minTurns && !isLastAgenda && wrapUpCooldown === 0) {
-        // 다음 아젠다로 전환 — 프로듀서가 선언
-        agendaIdx++;
-        agendaTurns = 0;
-        setCurrentAgendaIdx(agendaIdx);
-        const next = AGENDA_P1[agendaIdx];
-        const transitionPrompt = `팀 전체에게: ${next.intro} (아젠다 ${agendaIdx + 1}/${AGENDA_P1.length}: ${next.label}) 짧게 1문장으로 전환 선언만 해줘.`;
-        await runSingleAgent("producer", transitionPrompt, 60);
-        lastSpeaker = "producer";
-        recentSpeakers = (["producer" as AgentId, ...recentSpeakers] as AgentId[]).slice(0, 3);
-        continue;
+      // ── 아젠다 키워드 감지 (최근 대화에서 자연스럽게 다룬 주제 체크) ──
+      const recentText = transcript.slice(-4).join(" ");
+      for (const item of AGENDA_P1) {
+        if (!coveredAgenda.has(item.id) && item.keywords.test(recentText)) {
+          coveredAgenda.add(item.id);
+          setCoveredAgendaIds([...coveredAgenda]); // UI 체크리스트 업데이트
+        }
+      }
+      // 아직 안 다룬 주제가 있고 5턴마다 프로듀서가 슬쩍 꺼냄
+      if (nudgeCooldown > 0) {
+        nudgeCooldown--;
+      } else if (agentTurnsSoFar > 0 && agentTurnsSoFar % 5 === 0) {
+        const uncovered = AGENDA_P1.filter(item => !coveredAgenda.has(item.id));
+        if (uncovered.length > 0) {
+          // 아직 안 다룬 것 중 하나를 랜덤으로 꺼냄
+          const pick = uncovered[Math.floor(Math.random() * uncovered.length)];
+          await runSingleAgent("producer", pick.nudge + " 짧게 한마디만.", 60);
+          lastSpeaker = "producer";
+          recentSpeakers = (["producer" as AgentId, ...recentSpeakers] as AgentId[]).slice(0, 3);
+          nudgeCooldown = 4; // 4턴 대기 후 다시 체크
+          continue;
+        }
       }
 
       // 8) 20턴마다 롤링 요약 + 주제별 요약 갱신 (백그라운드, 비차단)
@@ -2093,26 +2100,24 @@ export default function Phase1Page() {
           </button>
         </div>
 
-        {/* 아젠다 진행 패널 */}
+        {/* 아젠다 체크리스트 — 다뤄진 주제 실시간 표시 */}
         {(debatePhase === "running" || debatePhase === "done") && (
           <div style={{
             display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap",
             background: "rgba(15,20,40,0.6)", borderBottom: "1px solid rgba(99,102,241,0.15)",
           }}>
-            {AGENDA_P1.map((item, i) => {
-              const done = debatePhase === "done" || i < currentAgendaIdx;
-              const active = i === currentAgendaIdx && debatePhase === "running";
+            {AGENDA_P1.map((item) => {
+              const covered = debatePhase === "done" || coveredAgendaIds.includes(item.id);
               return (
-                <div key={i} style={{
+                <div key={item.id} style={{
                   display: "flex", alignItems: "center", gap: 4,
                   padding: "2px 8px", borderRadius: 99, fontSize: 11,
-                  background: done ? "rgba(99,102,241,0.25)" : active ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.04)",
-                  border: active ? "1px solid rgba(99,102,241,0.6)" : "1px solid transparent",
-                  color: done ? "#a5b4fc" : active ? "#c7d2fe" : "rgba(255,255,255,0.35)",
-                  fontWeight: active ? 600 : 400,
-                  transition: "all 0.3s",
+                  background: covered ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.04)",
+                  border: "1px solid transparent",
+                  color: covered ? "#a5b4fc" : "rgba(255,255,255,0.3)",
+                  transition: "all 0.5s",
                 }}>
-                  <span>{done ? "✓" : active ? "●" : `${i + 1}`}</span>
+                  <span>{covered ? "✓" : "○"}</span>
                   <span>{item.label}</span>
                 </div>
               );
