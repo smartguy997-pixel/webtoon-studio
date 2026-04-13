@@ -1592,12 +1592,27 @@ export default function Phase1Page() {
     let windowBuffer: string[] = [];  // 현재 윈도우 발언 버퍼
 
     // ── 메모리 복원: Firestore 우선, localStorage 폴백 ──
-    const MEMORY_KEY = `p1_memory_${projectId}`;
-    const TURNS_COL  = `p1_turns_${projectId}`;   // Firestore 컬렉션명
-    const MEMORY_DOC = () => db ? doc(db, "p1_memory", projectId) : null;
+    const MEMORY_KEY  = `p1_memory_${projectId}`;
+    const FRESH_KEY   = `p1_fresh_start_${projectId}`;
+    const TURNS_COL   = `p1_turns_${projectId}`;   // Firestore 컬렉션명
+    const MEMORY_DOC  = () => db ? doc(db, "p1_memory", projectId) : null;
 
-    // Firestore에서 메모리 로드
-    if (db) {
+    // 새로 분석 플래그 확인 — 있으면 메모리 전체 건너뜀 (개요만으로 시작)
+    const isFreshStart = localStorage.getItem(FRESH_KEY) === "1";
+    if (isFreshStart) {
+      localStorage.removeItem(FRESH_KEY);
+      localStorage.removeItem(MEMORY_KEY);
+      // Firestore 삭제도 재시도 (비동기 경쟁 조건 해소)
+      if (db) {
+        void import("firebase/firestore").then(({ doc: fsDoc, deleteDoc }) => {
+          void deleteDoc(fsDoc(db!, "p1_memory", projectId)).catch(() => {});
+        });
+      }
+      // rollingSummary / topicXxx 전부 빈 채로 유지 — 개요만으로 토론 시작
+    }
+
+    // Firestore에서 메모리 로드 (계속 토론 시만)
+    if (!isFreshStart && db) {
       try {
         const snap = await getDoc(doc(db, "p1_memory", projectId));
         if (snap.exists()) {
@@ -1616,8 +1631,8 @@ export default function Phase1Page() {
         }
       } catch { /* Firestore unavailable → fallback */ }
     }
-    // Firestore에 없으면 localStorage 폴백
-    if (!rollingSummary) {
+    // Firestore에 없으면 localStorage 폴백 (계속 토론 시만)
+    if (!isFreshStart && !rollingSummary) {
       try {
         const saved = localStorage.getItem(MEMORY_KEY);
         if (saved) {
@@ -2070,6 +2085,8 @@ export default function Phase1Page() {
     localStorage.removeItem(`wts_phase1_${projectId}`);
     // 메모리(롤링 요약·토픽 요약) 완전 초기화 — 이전 작품 기억이 오염되지 않도록
     localStorage.removeItem(`p1_memory_${projectId}`);
+    // fresh start 플래그 — runDebate가 Firestore/localStorage 메모리 로딩을 건너뜀
+    localStorage.setItem(`p1_fresh_start_${projectId}`, "1");
     // 블랙리스트도 초기화 — 새 분석은 이전 거부 목록과 무관
     localStorage.removeItem(`p1_rejected_${projectId}`);
     if (db) {
