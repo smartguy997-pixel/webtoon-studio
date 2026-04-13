@@ -215,6 +215,8 @@ ${concept}
 장르만 같고 내용이 전혀 다른 작품은 언급하지 마.
 제목을 100% 확신하는 실존 작품만 언급해. 불확실하면 언급하지 말고, 모르면 솔직하게 말해.
 
+⚠️ 한국 웹툰 제목은 특히 주의: 네이버웹툰·카카오웹툰·레진코믹스 등에서 실제 연재·완결된 것이 확실한 경우에만 언급해. 확신이 없으면 차라리 잘 알려진 일본 만화, 한국 영화·드라마를 언급해.
+
 팀이 같이 하는 건 이거야:
 - 유사작품(웹툰·영화·드라마 등) 분석으로 이 기획의 시장 가능성 판단
 - 기획의 약한 부분 미리 잡아두기 (Phase 2에서 보완)
@@ -1558,6 +1560,7 @@ export default function Phase1Page() {
         try {
           for await (const chunk of streamClaude({
             apiKey: key,
+            model: "claude-sonnet-4-6",
             systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep, rejectedWorksRef.current),
             messages: msgs,
             maxTokens: tokens,
