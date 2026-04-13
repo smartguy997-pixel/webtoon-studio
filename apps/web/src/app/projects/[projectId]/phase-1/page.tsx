@@ -2106,8 +2106,8 @@ export default function Phase1Page() {
     localStorage.removeItem(`p1_memory_${projectId}`);
     // fresh start 플래그 — runDebate가 Firestore/localStorage 메모리 로딩을 건너뜀
     localStorage.setItem(`p1_fresh_start_${projectId}`, "1");
-    // 블랙리스트도 초기화 — 새 분석은 이전 거부 목록과 무관
-    localStorage.removeItem(`p1_rejected_${projectId}`);
+    // 블랙리스트는 유지 — 프로젝트 수준 지식 (프로젝트 삭제 시에만 제거)
+    // "구해줘 홈즈는 이 기획과 관련없다"는 새 분석을 해도 여전히 사실
     if (db) {
       void import("firebase/firestore").then(({ doc: fsDoc, deleteDoc }) => {
         void deleteDoc(fsDoc(db!, "p1_memory", projectId)).catch(() => {});
@@ -2117,8 +2117,7 @@ export default function Phase1Page() {
     setSavedAt(null);
     setMsgs([]);
     setResult(null);
-    setRejectedWorks([]);
-    rejectedWorksRef.current = [];
+    // rejectedWorks는 유지 (프로젝트 수준 지식 — 프로젝트 삭제 시에만 제거)
     setStage("form");
     setDebatePhase("idle");
   }, [projectId]);
@@ -2246,10 +2245,10 @@ export default function Phase1Page() {
           </button>
         </div>
 
-        {/* 아젠다 체크리스트 — 다뤄진 주제 실시간 표시 */}
+        {/* 아젠다 체크리스트 + 블랙리스트 태그 */}
         {(debatePhase === "running" || debatePhase === "done") && (
           <div style={{
-            display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap",
+            display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap", alignItems: "center",
             background: "rgba(15,20,40,0.6)", borderBottom: "1px solid rgba(99,102,241,0.15)",
           }}>
             {AGENDA_P1.map((item) => {
@@ -2268,6 +2267,18 @@ export default function Phase1Page() {
                 </div>
               );
             })}
+            {rejectedWorks.length > 0 && (
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, color: "rgba(248,113,113,0.6)" }}>차단:</span>
+                {rejectedWorks.map((w) => (
+                  <span key={w} style={{
+                    fontSize: 10, padding: "1px 7px", borderRadius: 99,
+                    background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)",
+                    color: "#f87171",
+                  }}>🚫 {w}</span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
