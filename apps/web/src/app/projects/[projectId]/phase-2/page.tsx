@@ -41,7 +41,7 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
     "얼굴 생김새, 키와 체형, 헤어, 패션까지 구체적으로 얘기해. " +
     "내면의 상처와 성격이 외모와 말투에 어떻게 드러나는지 연결해줘.",
   scenario:
-    "서사 구조 전문가. 이야기가 100화 동안 독자를 어떻게 끌고 가는지 설계해. " +
+    "서사 구조 전문가. 이야기가 장기 시리즈 동안 독자를 어떻게 끌고 가는지 설계해. " +
     "복선이 어디서 심겨서 어디서 회수되는지, 감정 곡선이 어떻게 흐르는지 구체적으로.",
   script:
     "연출·비주얼 감독. 영화나 애니메이션 감독처럼 생각해. " +
@@ -59,9 +59,15 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
 
 // ─── Phase 2 스테이지별 아젠다 ──────────────────────────────────────────────────
 // 각 스테이지마다 반드시 다뤄야 할 하위 주제들
-// Phase 1과 동일하게: 주제당 최소 MIN_TURNS_PER_TOPIC_P2 턴 이상 논의해야 완료
-
-const MIN_TURNS_PER_TOPIC_P2 = 7;
+// 스테이지별 주제당 최소 턴 수 — 세계관(1)은 깊이가 중요해서 더 많이
+const MIN_TURNS_BY_STAGE: Record<number, number> = {
+  1: 15, // 세계관 — A4 분량 깊이 필요
+  2: 10, // 시놉시스
+  3: 8,  // 캐릭터
+  4: 8,  // 장소
+  5: 7,  // 소품
+};
+const MIN_TURNS_PER_TOPIC_P2 = 7; // fallback (UI 표시용)
 
 const STAGE_AGENDA: Record<number, Array<{
   id: string;
@@ -70,16 +76,16 @@ const STAGE_AGENDA: Record<number, Array<{
   nudge: string;
 }>> = {
   1: [ // 세계관 — 시놉시스 작성의 기초: 시대배경 + 핵심 인물 + 대립협력 구도
-    { id: "era",       label: "시대·배경",     keywords: /시대|배경|세기|현대|미래|과거|공간|지역|나라|도시|문명|왕국|제국|행성|시절|연대|세계/,  nudge: "이 세계의 시대적 배경을 구체적으로 잡자. 언제, 어디인지. 독자가 발을 딛는 순간 느끼는 공기까지." },
-    { id: "characters",label: "핵심 인물",     keywords: /인물|주인공|캐릭터|등장|누구|사람|존재|주역|주요 인물|핵심 인물|이름|설정/,         nudge: "이 세계의 핵심 인물들을 잡아야 해. 주인공은 누구고, 빌런은 누구고, 어떤 사람들이 이야기를 끌고 가는지." },
-    { id: "conflict",  label: "대립·갈등 구도", keywords: /대립|갈등|싸움|충돌|적|적대|원수|반목|긴장|위협|전쟁|분쟁|투쟁|대결|맞서/,          nudge: "누가 누구와 왜 대립하는지 구도를 잡아야 해. 이 세계의 핵심 갈등 축이 뭔지." },
-    { id: "alliance",  label: "협력·관계 구도", keywords: /협력|동맹|우정|팀|같은 편|연대|협조|관계|유대|연결|파트너|동료|지원|신뢰/,          nudge: "협력 구도도 중요해. 누가 같은 편이고, 어떤 이유로 손잡는지. 대립과 협력이 교차하는 구조." },
-    { id: "rules",     label: "세계 규칙",     keywords: /규칙|법칙|마법|능력|시스템|체계|작동|원리|금기|제약|힘|파워|기술|과학|설정의 법/,  nudge: "이 세계만의 핵심 규칙이나 설정을 정리하자. 인물들이 움직이는 세계의 논리." },
+    { id: "era",       label: "시대·배경",     keywords: /시대|배경|세기|현대|미래|과거|공간|지역|나라|도시|문명|왕국|제국|행성|시절|연대|세계|동네|거리|분위기|공기|냄새|질감|지형|역사/,  nudge: "시대·배경이 아직 얕아. 이 공간만의 구체적인 이름, 지형, 역사적 맥락, 그리고 독자가 발을 딛는 순간 느끼는 공기와 질감까지 파고들어야 해. 예를 들어 왜 이 동네인지, 어떤 역사가 이 공간을 만들었는지." },
+    { id: "characters",label: "핵심 인물",     keywords: /인물|주인공|캐릭터|등장|누구|사람|존재|주역|주요 인물|핵심 인물|이름|설정|직업|나이|출신|과거|성격|동기|욕망|상처/,         nudge: "핵심 인물들이 아직 피상적이야. 주인공·빌런·핵심 조력자 각각의 이름·직업·나이·출신 배경·내면의 상처·욕망·숨기는 것까지. 왜 이 인물이 이 이야기에서 이 역할을 맡아야 하는지 설득력이 있어야 해." },
+    { id: "conflict",  label: "대립·갈등 구도", keywords: /대립|갈등|싸움|충돌|적|적대|원수|반목|긴장|위협|전쟁|분쟁|투쟁|대결|맞서|이유|왜|원인|뿌리|역학/,          nudge: "대립 구도가 아직 표면적이야. 누가 누구와 왜 대립하는지, 그 갈등의 뿌리는 어디서 왔는지, 세력 간 역학 관계가 어떻게 형성됐는지 구체적으로 파야 해. 단순 선악 구도 이상의 복잡성이 있어야 해." },
+    { id: "alliance",  label: "협력·관계 구도", keywords: /협력|동맹|우정|팀|같은 편|연대|협조|관계|유대|연결|파트너|동료|지원|신뢰|손잡|함께|거래|이해관계/,          nudge: "협력 구도가 아직 부족해. 누가 왜 손잡는지, 이해관계는 어떻게 얽히는지, 신뢰와 배신의 가능성은 어디 있는지. 대립과 협력이 교차하는 복합적 관계망을 설계해야 해." },
+    { id: "rules",     label: "세계 규칙",     keywords: /규칙|법칙|마법|능력|시스템|체계|작동|원리|금기|제약|힘|파워|기술|과학|설정의 법|구조|질서|사회|권력|비밀/,  nudge: "세계 규칙이 아직 충분하지 않아. 이 세계의 권력 구조, 숨겨진 비밀, 일반인이 모르는 규칙들, 그리고 주인공이 맞닥뜨릴 제약과 금기까지 구체적으로 설계해야 해." },
   ],
   2: [ // 시놉시스
     { id: "logline",   label: "로그라인·전제", keywords: /로그라인|전제|한 줄|요약|이야기|스토리|설정|소재|아이디어|기본/,       nudge: "이 이야기를 한 줄로 정의하면 뭐야? 로그라인과 전제를 명확하게 잡아보자." },
     { id: "conflict",  label: "핵심 갈등",    keywords: /갈등|충돌|대립|싸움|적|빌런|문제|장애|위기|위협|악|적대|대결|전쟁/,   nudge: "핵심 갈등 구조를 깊이 파야 해. 무엇 대 무엇의 싸움인지, 왜 독자가 몰입하는지." },
-    { id: "structure", label: "서사 구조",    keywords: /구조|전개|3막|1막|2막|전환|반전|클라이막스|절정|복선|회수|아크|챕터/,  nudge: "100화 동안 이야기가 어떻게 전개되는지 서사 구조를 얘기해보자. 3막 어떻게 짤 건데?" },
+    { id: "structure", label: "서사 구조",    keywords: /구조|전개|기승전결|전환|반전|클라이막스|절정|복선|회수|아크|챕터|발단|위기|절정|결말|막|단계/,  nudge: "이야기가 어떻게 전개되는지 서사 구조를 얘기해보자. 기승전결 4막으로 어떻게 흐르는지, 어디서 반전이 오는지." },
     { id: "resolution",label: "해결·결말",    keywords: /결말|해결|엔딩|마무리|결론|완결|끝|클로징|정리|귀결|성장|변화|결과/,  nudge: "이야기가 어떻게 끝나야 하는지, 주인공이 어떻게 변하는지 얘기해야 해." },
   ],
   3: [ // 캐릭터
@@ -244,8 +250,8 @@ function buildPhase1Context(p1: P1Data): string {
 // ─── Prompt builders (단계별 독립 API 호출 + 이전 결과 컨텍스트) ──────────────
 
 const STAGE_PROMPTS: Record<StageId, string> = {
-  1: "세계관 — 시놉시스를 쓸 수 있는 기초를 만드는 단계. 반드시 다음 순서로 깊이 다뤄야 해:\n① 시대·배경: 언제 어디서 일어나는 이야기인지\n② 핵심 인물: 이 세계에서 중요한 인물들이 누구인지 (주인공, 빌런, 주요 조력자)\n③ 대립 구도: 누가 누구와 왜 대립하는지 — 이 세계의 갈등 축\n④ 협력 구도: 누가 같은 편이고 왜 손잡는지\n⑤ 세계 규칙: 인물들이 움직이는 세계의 논리와 제약\n비주얼·연출 얘기는 이 단계에서 하지 마. 그건 나중 단계야.",
-  2: "시놉시스 — 로그라인·전제·핵심 갈등·3막 구조·해결 방향. 나중에 100화 로드맵을 짤 수 있을 만큼 구체적으로.",
+  1: "세계관 — 시놉시스를 쓸 수 있는 기초를 만드는 단계. 반드시 다음 순서로 충분히 깊이 다뤄야 해 (각 주제별로 A4 반 장 분량 이상):\n① 시대·배경: 언제 어디서 일어나는 이야기인지. 구체적인 공간 이름, 역사적 맥락, 그 공간만의 냄새와 질감까지\n② 핵심 인물: 이름·직업·나이·출신·내면의 상처·욕망·숨기는 것까지. 왜 이 인물인지 설득력 있게\n③ 대립 구도: 누가 누구와 왜 대립하는지. 갈등의 뿌리, 세력 간 역학, 단순 선악 이상의 복잡성\n④ 협력 구도: 누가 왜 손잡는지. 이해관계, 신뢰/배신 가능성, 복합적 관계망\n⑤ 세계 규칙: 권력 구조, 숨겨진 비밀, 일반인이 모르는 법칙, 주인공이 맞닥뜨릴 제약\n비주얼·연출 얘기는 이 단계에서 하지 마. 그건 나중 단계야.",
+  2: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막 구조·해결 방향. 장기 연재 로드맵을 짤 수 있을 만큼 구체적으로.",
   3: "등장인물 전체 목록 — 주인공·빌런·조력자·단역까지 이 이야기에 등장하는 모든 인물. 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 바로 쓸 수 있을 만큼 시각적으로 구체적으로. 시놉시스에 이름이 나온 인물은 한 명도 빠지면 안 돼.",
   4: "장소 전체 목록 — 1화라도 등장하는 모든 장소. 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로. 스쳐 지나가는 배경도 시각적 정체성이 있어야 해.",
   5: "소품·장비·도구 전체 목록 — 탈것·무기·특수 아이템·장비·일상용품·상징물. 이야기에서 단 한 번이라도 의미 있게 등장하는 모든 물건. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
@@ -356,14 +362,22 @@ function buildSingleAgentPrompt(
     ? `\n[🚫 절대 사용 금지 — 사용자가 거부한 이름·설정·방향]\n${blockedItems.map(w => `• ${w}`).join("\n")}\n이 항목들은 절대 언급·제안·인용하지 마. 어떤 맥락에서도 쓰지 마.\n`
     : "";
 
+  const isWorldbuildingStage = stageId === 1;
+  const productionMandate = isWorldbuildingStage
+    ? `\n[⚠️ 이건 제작 바이블 — 모호함 금지]\n이 토론 결과는 실제 웹툰 제작에 쓰이는 세계관 문서야. "어떤 인물" "어느 공간" 같은 추상적 표현은 쓸모가 없어. 이름, 직업, 나이, 구체적 장소명, 역사적 맥락, 관계의 이유를 못 박아야 해. 모호하게 말하면 제작 못 해.\n`
+    : "";
+  const responseGuide = isWorldbuildingStage
+    ? "- 한 번 발언할 때 3~5문장. 구체적인 고유명사(이름·장소·직업·나이)를 반드시 포함해.\n- 추상적·모호한 표현 금지. '어떤 인물' 대신 실제 이름, '어딘가' 대신 실제 장소명."
+    : "- 딱 1~2문장. 짧을수록 좋아.";
+
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
 ${blockSection}성격: ${roleDesc}
 장르: ${genre}
-${p1Context ? `\n[Phase 1 분석 결과 — 우리 작품의 방향]\n${p1Context}\n` : ""}${context ? `\n[우리 팀이 함께 만든 세계 — 이미 알고 있는 내용]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
+${p1Context ? `\n[Phase 1 분석 결과 — 우리 작품의 방향]\n${p1Context}\n` : ""}${context ? `\n[우리 팀이 함께 만든 세계 — 이미 알고 있는 내용]\n${context}\n` : ""}${productionMandate}지금 주제: ${STAGE_PROMPTS[stageId]}
 
 [대화 방식]
 - 앞 사람 말 받아서 자연스럽게 이어가.
-- 딱 1~2문장. 짧을수록 좋아.
+${responseGuide}
 - ㅋㅋ ㅎㅎ 같은 자연스러운 표현 써도 돼.
 - 이미 나온 얘기 반복하지 마.
 - 대사만. 이름이나 접두어 붙이지 마.
@@ -492,10 +506,11 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
   - 외적 갈등 (주인공 vs 적대 세력/환경)
   - 갈등이 고조되는 방식
 
-■ 이야기의 3막 구조
-  - 1막: 도입부와 사건 발단
-  - 2막: 갈등 심화와 위기
-  - 3막: 클라이맥스와 해결 방향
+■ 이야기의 기승전결 4막 구조
+  - 기(起): 도입부와 사건 발단
+  - 승(承): 갈등 심화와 전개
+  - 전(轉): 위기와 반전
+  - 결(結): 클라이맥스와 해결 방향
 
 ■ 핵심 테마와 메시지
   - 이 이야기가 독자에게 전달할 주제
@@ -1073,7 +1088,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let naturalExit = false;
     // 이 스테이지의 아젠다 항목 수 × 최소 턴 + 여유
     const stageAgenda = STAGE_AGENDA[stage.id] ?? [];
-    const WRAP_UP_AFTER = stageAgenda.length * MIN_TURNS_PER_TOPIC_P2 + 10;
+    const minTurnsForStage = MIN_TURNS_BY_STAGE[stage.id] ?? MIN_TURNS_PER_TOPIC_P2;
+    const WRAP_UP_AFTER = stageAgenda.length * minTurnsForStage + (stage.id === 1 ? 20 : 10);
     const WRAP_UP_AUTO_MS = 30_000;
     // 아젠다 추적 (스테이지마다 초기화)
     const coveredAgenda = new Set<string>();
@@ -1256,7 +1272,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         for (const item of stageAgenda) {
           if (item.keywords.test(recentLines)) {
             agendaTurns[item.id] = (agendaTurns[item.id] ?? 0) + 1;
-            if (!coveredAgenda.has(item.id) && (agendaTurns[item.id] ?? 0) >= MIN_TURNS_PER_TOPIC_P2) {
+            if (!coveredAgenda.has(item.id) && (agendaTurns[item.id] ?? 0) >= minTurnsForStage) {
               coveredAgenda.add(item.id);
               setCoveredAgendaIds([...coveredAgenda]);
             }
@@ -1276,8 +1292,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             const currentTurns = agendaTurns[pick.id] ?? 0;
             await runSingleAgent(
               "producer",
-              `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데, 최소 ${MIN_TURNS_PER_TOPIC_P2}회 이상 심층 분석이 필요해. 구체적인 데이터와 사례를 들어 깊이 있게 이야기해줘.`,
-              200,
+              `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데, 최소 ${minTurnsForStage}회 이상 충분히 다뤄야 해. 구체적인 이름, 배경, 관계, 이유를 들어 깊이 있게 이야기해줘.`,
+              stage.id === 1 ? 400 : 200,
             );
             lastSpeaker = "producer";
             nudgeCooldown = 2;
@@ -1305,12 +1321,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         const nextAgent = isFirst ? "worldbuilder" : pickNextSpeaker(lastLine, lastSpeaker);
 
         const agentPrompt = isFirst
-          ? `"${stage.topic}" 주제로 첫 의견을 자연스럽게 말해줘. 짧고 구어체로.`
+          ? stage.id === 1
+            ? `"${stage.topic}" 주제의 첫 발언을 해줘. 지금 우리가 만드는 작품의 시대·배경부터 구체적으로 잡아줘. 추상적이면 안 돼 — 실제 제작에 쓸 정보여야 해.`
+            : `"${stage.topic}" 주제로 첫 의견을 자연스럽게 말해줘. 짧고 구어체로.`
           : userTurnCount > 0
             ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
-            : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
+            : stage.id === 1
+              ? `${historyText}앞 대화 받아서 구체적인 디테일을 추가해줘. 이름, 장소, 관계, 이유 — 제작 문서에 쓸 수 있는 정보로.`
+              : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
-        await runSingleAgent(nextAgent, agentPrompt, 500);
+        await runSingleAgent(nextAgent, agentPrompt, stage.id === 1 ? 700 : 500);
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
@@ -2248,7 +2268,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         {/* 아젠다 체크리스트 + 블랙리스트 — 토론 중일 때만 표시 */}
         {debatePhase === "running" && (() => {
-          const stageAgendaItems = STAGE_AGENDA[STAGES[currentStageIdx]?.id] ?? [];
+          const currentStageId = STAGES[currentStageIdx]?.id;
+          const stageAgendaItems = STAGE_AGENDA[currentStageId] ?? [];
+          const minTurnsUI = MIN_TURNS_BY_STAGE[currentStageId] ?? MIN_TURNS_PER_TOPIC_P2;
           return (
             <div style={{
               display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap", alignItems: "center",
@@ -2257,7 +2279,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               {stageAgendaItems.map((item) => {
                 const covered = coveredAgendaIds.includes(item.id);
                 const turns = agendaTurnCounts[item.id] ?? 0;
-                const progress = Math.min(turns, MIN_TURNS_PER_TOPIC_P2);
+                const progress = Math.min(turns, minTurnsUI);
                 return (
                   <div key={item.id} style={{
                     display: "flex", alignItems: "center", gap: 4,
@@ -2270,7 +2292,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                     <span>{covered ? "✓" : "○"}</span>
                     <span>{item.label}</span>
                     <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>
-                      {progress}/{MIN_TURNS_PER_TOPIC_P2}
+                      {progress}/{minTurnsUI}
                     </span>
                   </div>
                 );

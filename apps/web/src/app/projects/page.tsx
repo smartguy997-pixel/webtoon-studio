@@ -19,7 +19,7 @@ interface Project {
   createdAt: string;
 }
 
-const PHASE_LABELS = ["기획 분석", "세계관/에셋", "100화 로드맵", "30컷 대본", "이미지 생성"];
+const PHASE_LABELS = ["기획 분석", "세계관/에셋", "시리즈 로드맵", "컷 대본", "이미지 생성"];
 const PHASE_ROUTES = ["phase-1", "phase-2", "phase-3", "phase-4", "phase-5"];
 const GENRES = [
   "판타지", "로맨스", "액션", "SF", "스릴러", "일상/힐링",
@@ -160,34 +160,45 @@ function NewProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   );
 }
 
-/** Read Phase 1 result from localStorage and update project fields */
+/** Read progress from localStorage and determine current phase */
 function syncProjectProgress(project: Project): Project {
   try {
+    const updated = { ...project };
+
+    // Phase 1 feasibility score
     const p1 = JSON.parse(localStorage.getItem(`wts_phase1_${project.id}`) ?? "null");
     if (p1?.data) {
       const score = p1.data.feasibility_score ?? p1.data.score;
-      const updated = { ...project };
       if (score !== undefined) updated.feasibilityScore = Number(score);
-      // Advance phase if Phase 2 done
-      if (localStorage.getItem(`wts_phase2_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 2) as Phase;
-      if (localStorage.getItem(`wts_phase3_done_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 3) as Phase;
-      // Count Phase 4 done episodes
-      let epCount = 0;
-      for (let i = 1; i <= 100; i++) {
-        if (localStorage.getItem(`wts_phase4_ep_${project.id}_${i}`)) epCount++;
-      }
-      if (epCount > 0) {
-        updated.currentPhase = Math.max(updated.currentPhase, 4) as Phase;
-        updated.episodeProgress = epCount;
-      }
-      // Count Phase 5 done episodes
-      let p5count = 0;
-      for (let i = 1; i <= 100; i++) {
-        if (localStorage.getItem(`wts_phase5_ep_${project.id}_${i}`)) p5count++;
-      }
-      if (p5count > 0) updated.currentPhase = Math.max(updated.currentPhase, 5) as Phase;
-      return updated;
     }
+
+    // Phase 2: in-progress (Stage 1 started) or done
+    const p2InProgress =
+      !!localStorage.getItem(`p2_conv_0_${project.id}`) ||
+      !!localStorage.getItem(`p2_msgs_0_${project.id}`) ||
+      !!localStorage.getItem(`wts_phase2_${project.id}`);
+    if (p2InProgress) updated.currentPhase = Math.max(updated.currentPhase, 2) as Phase;
+
+    if (localStorage.getItem(`wts_phase3_done_${project.id}`)) updated.currentPhase = Math.max(updated.currentPhase, 3) as Phase;
+
+    // Count Phase 4 done episodes
+    let epCount = 0;
+    for (let i = 1; i <= 100; i++) {
+      if (localStorage.getItem(`wts_phase4_ep_${project.id}_${i}`)) epCount++;
+    }
+    if (epCount > 0) {
+      updated.currentPhase = Math.max(updated.currentPhase, 4) as Phase;
+      updated.episodeProgress = epCount;
+    }
+
+    // Count Phase 5 done episodes
+    let p5count = 0;
+    for (let i = 1; i <= 100; i++) {
+      if (localStorage.getItem(`wts_phase5_ep_${project.id}_${i}`)) p5count++;
+    }
+    if (p5count > 0) updated.currentPhase = Math.max(updated.currentPhase, 5) as Phase;
+
+    return updated;
   } catch { /* ignore */ }
   return project;
 }
