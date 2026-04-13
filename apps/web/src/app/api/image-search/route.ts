@@ -109,6 +109,36 @@ async function fetchJikanImages(query: string): Promise<string[]> {
   }
 }
 
+// ── URL validator — HEAD request, 3 s timeout ────────────────────────────────
+
+async function isReachable(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      headers: { "User-Agent": UA, "Accept": "image/*" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return false;
+    const ct = res.headers.get("Content-Type") ?? "";
+    return ct.startsWith("image/");
+  } catch {
+    return false;
+  }
+}
+
+async function pickValid(candidates: string[], need = 4): Promise<string[]> {
+  // Check up to 10 candidates in parallel batches of 5
+  const valid: string[] = [];
+  for (let i = 0; i < candidates.length && valid.length < need; i += 5) {
+    const batch = candidates.slice(i, i + 5);
+    const results = await Promise.all(batch.map((u) => isReachable(u).then((ok) => (ok ? u : null))));
+    for (const u of results) {
+      if (u && valid.length < need) valid.push(u);
+    }
+  }
+  return valid;
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function GET(req: Request): Promise<Response> {
@@ -116,15 +146,22 @@ export async function GET(req: Request): Promise<Response> {
   const query = (searchParams.get("q") ?? "").trim();
   if (!query) return Response.json({ urls: [] });
 
-  // Try sources in order until we get results
-  let urls = await fetchGoogleImages(query);
-  if (urls.length === 0) urls = await fetchDDGImages(query);
-  if (urls.length === 0) urls = await fetchJikanImages(query);
+  // Gather candidates from all sources
+  let candidates = await fetchGoogleImages(query);          // up to 8
+  if (candidates.length < 4) {
+    const ddg = await fetchDDGImages(query);
+    candidates = [...candidates, ...ddg];
+  }
+  if (candidates.length < 4) {
+    const jikan = await fetchJikanImages(query);
+    candidates = [...candidates, ...jikan];
+  }
+
+  // Keep only reachable images (parallel HEAD checks)
+  const valid = await pickValid(candidates, 4);
 
   // Wrap in image proxy — browser never touches the origin directly
-  const proxied = urls
-    .slice(0, 4)
-    .map((u) => `/api/image-proxy?url=${encodeURIComponent(u)}`);
+  const proxied = valid.map((u) => `/api/image-proxy?url=${encodeURIComponent(u)}`);
 
   return Response.json({ urls: proxied });
 }
