@@ -4934,90 +4934,181 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           )}
 
           {/* ── 에셋 리스트 검토 단계 UI ── */}
-          {imageSessionPhase === "idle" && assetListPhase === "reviewing" && (
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #1e1e2a", overflowY: "auto", maxHeight: "60vh" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 10 }}>
-                📋 에셋 리스트 확인 — 빠진 항목이 있으면 추가하세요
-              </div>
+          {imageSessionPhase === "idle" && assetListPhase === "reviewing" && (() => {
+            // Stage 1·2 JSON에서 상세 정보 룩업
+            const s1d = stageResults.find((r: StageResult) => r.stageId === 1)?.data;
+            const s2d = stageResults.find((r: StageResult) => r.stageId === 2)?.data;
+            const s1chars = Array.isArray(s1d?.key_characters) ? (s1d!.key_characters as Record<string,string>[]) : [];
+            const s2chars = Array.isArray(s2d?.characters)     ? (s2d!.characters     as Record<string,string>[]) : [];
+            const s1locs  = Array.isArray(s1d?.key_locations)  ? (s1d!.key_locations  as Record<string,string>[]) : [];
+            const s2locs  = Array.isArray(s2d?.locations)      ? (s2d!.locations      as Record<string,string>[]) : [];
+            const s2props = Array.isArray(s2d?.props)          ? (s2d!.props          as Record<string,string>[]) : [];
+            const prot    = s2d?.protagonist as Record<string,string> | undefined;
 
-              {/* 캐릭터 섹션 */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>캐릭터</div>
-                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
-                  {editableAssets.characters.map((name, i) => (
-                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#fb923c" }}>
-                      {name}
-                      <button onClick={() => setEditableAssets(a => ({ ...a, characters: a.characters.filter((_, j) => j !== i) }))}
-                        style={{ background: "none", border: "none", color: "#fb923c", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input value={newCharInput} onChange={e => setNewCharInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }}
-                    placeholder="+ 캐릭터 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
-                  <button onClick={() => { if (newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }}
-                    style={{ background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 6, color: "#fb923c", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
-                </div>
-              </div>
+            const confirmAssets = () => {
+              const confirmed = { ...editableAssets };
+              synopsisAssetsRef.current = confirmed;
+              localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(confirmed));
+              setAssetListPhase("confirmed");
+              setStylePhase("debating");
+              void runStyleDebate();
+            };
 
-              {/* 장소 섹션 */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>장소</div>
-                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
-                  {editableAssets.locations.map((name, i) => (
-                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#a78bfa" }}>
-                      {name}
-                      <button onClick={() => setEditableAssets(a => ({ ...a, locations: a.locations.filter((_, j) => j !== i) }))}
-                        style={{ background: "none", border: "none", color: "#a78bfa", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input value={newLocInput} onChange={e => setNewLocInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }}
-                    placeholder="+ 장소 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
-                  <button onClick={() => { if (newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }}
-                    style={{ background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 6, color: "#a78bfa", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
-                </div>
+            // 공통 섹션 헤더
+            const SectionHeader = ({ label, color, count }: { label: string; color: string; count: number }) => (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, marginTop: 16 }}>
+                <div style={{ width: 3, height: 14, background: color, borderRadius: 2 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{label}</span>
+                <span style={{ fontSize: 10, color: "#3a3a52", fontWeight: 600 }}>{count}개</span>
               </div>
+            );
 
-              {/* 소품·장비 섹션 */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>소품·장비</div>
-                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
-                  {editableAssets.props.map((name, i) => (
-                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(232,121,249,0.1)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#e879f9" }}>
-                      {name}
-                      <button onClick={() => setEditableAssets(a => ({ ...a, props: a.props.filter((_, j) => j !== i) }))}
-                        style={{ background: "none", border: "none", color: "#e879f9", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input value={newPropInput} onChange={e => setNewPropInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }}
-                    placeholder="+ 소품·장비 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
-                  <button onClick={() => { if (newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }}
-                    style={{ background: "rgba(232,121,249,0.1)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 6, color: "#e879f9", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
-                </div>
+            // 추가 입력 행
+            const AddRow = ({ value, onChange, onAdd, placeholder, color }: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string; color: string }) => (
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input value={value} onChange={e => onChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && value.trim()) onAdd(); }}
+                  placeholder={placeholder}
+                  style={{ flex: 1, background: "#0e0e1a", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 9px", outline: "none" }} />
+                <button onClick={onAdd}
+                  style={{ background: `${color}15`, border: `1px solid ${color}40`, borderRadius: 6, color, fontSize: 11, fontWeight: 700, padding: "5px 12px", cursor: "pointer" }}>+ 추가</button>
               </div>
+            );
 
-              {/* 확정 버튼 */}
-              <button
-                onClick={() => {
-                  const confirmed = { ...editableAssets };
-                  synopsisAssetsRef.current = confirmed;
-                  localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(confirmed));
-                  setAssetListPhase("confirmed");
-                  setStylePhase("debating");
-                  void runStyleDebate();
-                }}
-                style={{ width: "100%", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "10px 0", cursor: "pointer", marginTop: 4 }}>
-                ✓ 확정 → 스타일 정의로
-              </button>
-            </div>
-          )}
+            return (
+              <div style={{ padding: "14px 16px 16px", borderTop: "1px solid #1e1e2a", overflowY: "auto", maxHeight: "65vh" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+                  📋 에셋 리스트 확인
+                </div>
+                <div style={{ fontSize: 11, color: "#3a3a52", marginBottom: 2 }}>
+                  빠진 항목 추가 또는 불필요한 항목 삭제 후 확정하세요. 이 목록이 캐릭터·장소·소품 설계 단계의 기준이 됩니다.
+                </div>
+
+                {/* ── 캐릭터 ── */}
+                <SectionHeader label="캐릭터" color="#fb923c" count={editableAssets.characters.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {editableAssets.characters.map((name, i) => {
+                    const s2c = s2chars.find(c => c.name === name);
+                    const s1c = s1chars.find(c => c.name === name);
+                    const isProtag = prot?.name === name;
+                    const role       = s2c?.role ?? s1c?.role ?? "";
+                    const appearance = s2c?.appearance ?? s1c?.face ?? "";
+                    const personality= s2c?.personality ?? s1c?.personality ?? "";
+                    const relation   = s2c?.relation ?? "";
+                    return (
+                      <div key={i} style={{
+                        background: isProtag ? "rgba(251,146,60,0.08)" : "rgba(255,255,255,0.025)",
+                        border: `1px solid ${isProtag ? "rgba(251,146,60,0.35)" : "rgba(251,146,60,0.12)"}`,
+                        borderRadius: 10, padding: "10px 12px",
+                        display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start",
+                      }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#fb923c" }}>{name}</span>
+                            {isProtag && <span style={{ fontSize: 9, fontWeight: 700, color: "#fb923c", background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 4, padding: "1px 5px" }}>주인공</span>}
+                            {role && !isProtag && <span style={{ fontSize: 11, color: "#64748b" }}>{role}</span>}
+                          </div>
+                          {isProtag && prot && (
+                            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginBottom: 3 }}>
+                              {prot.pain_point && <span style={{ color: "#f87171" }}>결핍: {prot.pain_point}</span>}
+                              {prot.want && <span style={{ color: "#60a5fa", marginLeft: 8 }}>목표: {prot.want}</span>}
+                            </div>
+                          )}
+                          {appearance && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>외형 </span>{appearance}</div>}
+                          {personality && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>성격 </span>{personality}</div>}
+                          {relation && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>관계 </span>{relation}</div>}
+                          {!appearance && !personality && !relation && !isProtag && (
+                            <div style={{ fontSize: 11, color: "#3a3a52", fontStyle: "italic" }}>세부 정보 없음 — 캐릭터 설계 단계에서 구체화됩니다</div>
+                          )}
+                        </div>
+                        <button onClick={() => setEditableAssets(a => ({ ...a, characters: a.characters.filter((_, j) => j !== i) }))}
+                          style={{ background: "none", border: "none", color: "#3a3a52", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, marginTop: 2 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <AddRow value={newCharInput} onChange={setNewCharInput} placeholder="+ 캐릭터 이름 추가 (Enter)" color="#fb923c"
+                  onAdd={() => { if (newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }} />
+
+                {/* ── 장소 ── */}
+                <SectionHeader label="장소" color="#a78bfa" count={editableAssets.locations.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {editableAssets.locations.map((name, i) => {
+                    const s2l = s2locs.find(l => l.name === name);
+                    const s1l = s1locs.find(l => l.name === name);
+                    const type         = s2l?.type ?? s1l?.type ?? "";
+                    const visual       = s2l?.visual ?? s1l?.visual ?? "";
+                    const significance = s2l?.significance ?? s1l?.significance ?? "";
+                    return (
+                      <div key={i} style={{
+                        background: "rgba(255,255,255,0.025)", border: "1px solid rgba(167,139,250,0.12)",
+                        borderRadius: 10, padding: "10px 12px",
+                        display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start",
+                      }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa" }}>{name}</span>
+                            {type && <span style={{ fontSize: 11, color: "#64748b" }}>{type}</span>}
+                          </div>
+                          {visual && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>시각 </span>{visual}</div>}
+                          {significance && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>역할 </span>{significance}</div>}
+                          {!visual && !significance && (
+                            <div style={{ fontSize: 11, color: "#3a3a52", fontStyle: "italic" }}>세부 정보 없음 — 장소 설계 단계에서 구체화됩니다</div>
+                          )}
+                        </div>
+                        <button onClick={() => setEditableAssets(a => ({ ...a, locations: a.locations.filter((_, j) => j !== i) }))}
+                          style={{ background: "none", border: "none", color: "#3a3a52", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, marginTop: 2 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <AddRow value={newLocInput} onChange={setNewLocInput} placeholder="+ 장소명 추가 (Enter)" color="#a78bfa"
+                  onAdd={() => { if (newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }} />
+
+                {/* ── 소품·장비 ── */}
+                <SectionHeader label="소품·장비" color="#e879f9" count={editableAssets.props.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {editableAssets.props.map((name, i) => {
+                    const prop = s2props.find(p => p.name === name);
+                    const type       = prop?.type ?? "";
+                    const visual     = prop?.visual ?? "";
+                    const story_role = prop?.story_role ?? "";
+                    const owner      = prop?.owner ?? "";
+                    return (
+                      <div key={i} style={{
+                        background: "rgba(255,255,255,0.025)", border: "1px solid rgba(232,121,249,0.12)",
+                        borderRadius: 10, padding: "10px 12px",
+                        display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start",
+                      }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#e879f9" }}>{name}</span>
+                            {type && <span style={{ fontSize: 11, color: "#64748b" }}>{type}</span>}
+                            {owner && <span style={{ fontSize: 10, color: "#4a4a68" }}>— {owner}</span>}
+                          </div>
+                          {visual && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>시각 </span>{visual}</div>}
+                          {story_role && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>역할 </span>{story_role}</div>}
+                          {!visual && !story_role && (
+                            <div style={{ fontSize: 11, color: "#3a3a52", fontStyle: "italic" }}>세부 정보 없음 — 소품 설계 단계에서 구체화됩니다</div>
+                          )}
+                        </div>
+                        <button onClick={() => setEditableAssets(a => ({ ...a, props: a.props.filter((_, j) => j !== i) }))}
+                          style={{ background: "none", border: "none", color: "#3a3a52", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, marginTop: 2 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <AddRow value={newPropInput} onChange={setNewPropInput} placeholder="+ 소품·장비 추가 (Enter)" color="#e879f9"
+                  onAdd={() => { if (newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }} />
+
+                {/* 확정 버튼 */}
+                <button onClick={confirmAssets}
+                  style={{ width: "100%", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "11px 0", cursor: "pointer", marginTop: 16 }}>
+                  ✓ 확정 → 스타일 정의로
+                </button>
+              </div>
+            );
+          })()}
 
           {/* 이미지/스타일/에셋 리스트 단계 활성 중엔 아래 일반 바텀바 숨김 */}
           {imageSessionPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") || assetListPhase === "reviewing" ? null : (<>
