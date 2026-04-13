@@ -1173,6 +1173,94 @@ function StageReportInChat({
   const str = (v: unknown): string => (v ? String(v) : "");
   const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v as unknown[] : []);
 
+  // ── 내러티브 요약 → 섹션 카드 렌더러 ──────────────────────────────────────────
+  const renderNarrativeSummary = (text: string) => {
+    const clean = (s: string) => s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^\s*[-·•]\s*/, "").trim();
+    const SECTION_ICONS: [string, string][] = [
+      ["시대", "🌍"], ["배경", "🌍"], ["세계", "🌍"],
+      ["인물", "👤"], ["캐릭터", "👤"], ["등장인물", "👥"],
+      ["장소", "🏙"], ["공간", "🏙"],
+      ["갈등", "⚔️"], ["대립", "⚔️"], ["협력", "🤝"], ["연대", "🤝"],
+      ["규칙", "📜"], ["법칙", "📜"],
+      ["로그라인", "💡"], ["요약", "📝"],
+      ["플롯", "📖"], ["전개", "📖"], ["기승전결", "📖"], ["시놉시스", "📖"],
+      ["테마", "🎭"], ["주제", "🎭"],
+      ["스타일", "🎨"], ["화풍", "🎨"], ["역할", "🎯"],
+    ];
+    const getIcon = (title: string) => {
+      for (const [kw, icon] of SECTION_ICONS) if (title.includes(kw)) return icon;
+      return "📋";
+    };
+
+    // ■ 기준 분할
+    const sections = text.split(/\n(?=■)/).map(s => s.trim()).filter(Boolean);
+
+    if (sections.length <= 1) {
+      // 섹션 없으면 단락 단위로 렌더
+      return (
+        <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", border:`1px solid ${c}20` }}>
+          {text.split(/\n{2,}/).map((para, i) => (
+            <p key={i} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, marginBottom:10 }}>
+              {clean(para)}
+            </p>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
+        {sections.map((section, idx) => {
+          const lines = section.split('\n');
+          const title = clean(lines[0].replace(/^■\s*/, ""));
+          const bodyLines = lines.slice(1).filter(l => l.trim());
+          const icon = getIcon(title);
+
+          // 본문 내 **이름** 마커로 소항목 분리 (인물/장소 이름)
+          const groups: Array<{ name?: string; lines: string[] }> = [];
+          let cur: { name?: string; lines: string[] } = { lines: [] };
+          for (const line of bodyLines) {
+            const t = line.trim();
+            if (!t) continue;
+            const boldMatch = t.match(/^\*\*([^*]+)\*\*/);
+            if (boldMatch) {
+              if (cur.lines.length || cur.name) groups.push(cur);
+              cur = { name: boldMatch[1].trim(), lines: [] };
+            } else {
+              cur.lines.push(clean(t));
+            }
+          }
+          if (cur.lines.length || cur.name) groups.push(cur);
+
+          return (
+            <div key={idx} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", border:`1px solid ${c}20` }}>
+              <div style={{ background:`linear-gradient(90deg, ${c}15, transparent)`, borderBottom:`1px solid ${c}20`, padding:"10px 16px", display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:14 }}>{icon}</span>
+                <span style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.4px", textTransform:"uppercase" as const }}>{title}</span>
+              </div>
+              <div style={{ padding:"12px 16px" }}>
+                {groups.map((g, gi) => (
+                  <div key={gi} style={{ marginBottom: g.name ? 14 : 0 }}>
+                    {g.name && (
+                      <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", padding:"4px 0 6px", borderBottom:`1px solid #1e1e2a`, marginBottom:6 }}>
+                        {g.name}
+                      </div>
+                    )}
+                    {g.lines.map((item, ii) => (
+                      <div key={ii} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.75, marginBottom:3, paddingLeft: g.name ? 6 : 0 }}>
+                        {item.startsWith("•") || item.startsWith("-") ? item : `• ${item}`}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   // 필드 한 줄
   const Field = ({ label, val }: { label: string; val: unknown }) => {
     const text = Array.isArray(val) ? (val as unknown[]).join(" · ") : str(val);
@@ -1294,7 +1382,7 @@ function StageReportInChat({
                 {locs.map((l, i) => <LocCard key={i} loc={l} cardColor={c} />)}
               </>
             )}
-            {data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>}
+            {data.raw_summary && renderNarrativeSummary(str(data.raw_summary))}
           </>
         );
       }
@@ -1357,7 +1445,7 @@ function StageReportInChat({
                 ))}
               </>
             )}
-            {data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>}
+            {data.raw_summary && renderNarrativeSummary(str(data.raw_summary))}
           </>
         );
       }
