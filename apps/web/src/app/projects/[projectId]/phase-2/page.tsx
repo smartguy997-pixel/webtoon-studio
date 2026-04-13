@@ -92,10 +92,14 @@ interface ImageConcept {
 // Phase 1 → Phase 2 인계 데이터 타입 (최소한만)
 interface P1Data {
   concept?: string;
+  summary?: string;          // Phase 1 종합 요약
+  final_report?: string;     // Phase 1 최종 보고서 (긴 텍스트)
   worldbuilding_notes?: Array<{ issue: string; suggestion: string; priority: string }>;
-  similar_works?: Array<{ title: string; lesson: string }>;
+  similar_works?: Array<{ title: string; lesson: string; platform?: string; similarity?: string }>;
   strengths?: string[];
   weaknesses?: string[];
+  improvements?: string[];   // 보강해야 할 점 (Phase 1 → Phase 2 액션 항목)
+  genre_analysis?: { genre?: string; trend?: string; audience?: string; key_success?: string };
 }
 
 // Msg는 현재 단계 채팅 메시지만 담음 (단계 구분선/결과카드는 별도 렌더)
@@ -125,27 +129,53 @@ function parseBlock<T>(text: string, tag: string): T | null {
 function buildPhase1Context(p1: P1Data): string {
   const parts: string[] = [];
 
+  // 기획 개요 — 전체 개념 전달 (잘리면 Phase 2 방향이 달라짐)
   if (p1.concept) {
-    parts.push(`[기획 개요]\n${p1.concept.slice(0, 150)}`);
+    parts.push(`[기획 개요 — 이 기획의 핵심. Phase 2는 이 방향을 그대로 발전시켜야 함]\n${p1.concept.slice(0, 600)}`);
   }
 
+  // Phase 1 종합 요약 (AI가 정리한 핵심 인사이트)
+  if (p1.summary) {
+    parts.push(`[Phase 1 분석 요약]\n${p1.summary.slice(0, 400)}`);
+  }
+
+  // 장르·트렌드·타깃 독자 — 세계관/인물 설계에 직접 영향
+  if (p1.genre_analysis) {
+    const g = p1.genre_analysis;
+    const lines = [
+      g.genre && `장르: ${g.genre}`,
+      g.trend && `트렌드: ${g.trend}`,
+      g.audience && `타깃 독자: ${g.audience}`,
+      g.key_success && `성공 요소: ${g.key_success}`,
+    ].filter(Boolean);
+    if (lines.length) parts.push(`[장르·시장 분석]\n${lines.join("\n")}`);
+  }
+
+  // 세계관 보완사항 — Phase 2에서 반드시 반영해야 할 항목
   if (p1.worldbuilding_notes?.length) {
     const order = { high: 0, medium: 1, low: 2 };
     const sorted = [...p1.worldbuilding_notes]
-      .sort((a, b) => (order[a.priority as keyof typeof order] ?? 2) - (order[b.priority as keyof typeof order] ?? 2))
-      .slice(0, 3);
-    parts.push(`[Phase 1→2 인계 사항 — 반드시 반영]\n${sorted.map(n => `· ${n.issue}: ${n.suggestion}`).join("\n")}`);
+      .sort((a, b) => (order[a.priority as keyof typeof order] ?? 2) - (order[b.priority as keyof typeof order] ?? 2));
+    parts.push(`[Phase 1→2 인계 사항 — 반드시 Phase 2에서 반영]\n${sorted.map(n => `· [${n.priority.toUpperCase()}] ${n.issue}: ${n.suggestion}`).join("\n")}`);
   }
 
-  const lines = [
-    ...(p1.strengths?.slice(0, 2).map(s => `+ ${s}`) ?? []),
-    ...(p1.weaknesses?.slice(0, 2).map(w => `- ${w}`) ?? []),
+  // 강점/약점 + 보강 방향
+  const swLines = [
+    ...(p1.strengths?.map(s => `+ ${s}`) ?? []),
+    ...(p1.weaknesses?.map(w => `- ${w}`) ?? []),
   ];
-  if (lines.length) parts.push(`[기획 강점/약점]\n${lines.join("\n")}`);
+  if (swLines.length) parts.push(`[기획 강점 / 약점]\n${swLines.join("\n")}`);
 
+  if (p1.improvements?.length) {
+    parts.push(`[보강해야 할 점 — Phase 2에서 해결]\n${p1.improvements.map(i => `· ${i}`).join("\n")}`);
+  }
+
+  // 유사 작품 — 레퍼런스 학습용
   if (p1.similar_works?.length) {
-    const works = p1.similar_works.slice(0, 2).map(w => `· ${w.title}: ${w.lesson}`).join("\n");
-    parts.push(`[참고 유사 작품]\n${works}`);
+    const works = p1.similar_works
+      .map(w => `· ${w.title}${w.platform ? ` (${w.platform})` : ""}: ${w.lesson}`)
+      .join("\n");
+    parts.push(`[참고 유사 작품 — 이 작품들의 장점을 우리 세계관·인물에 녹여내야 함]\n${works}`);
   }
 
   return parts.join("\n\n");
@@ -782,10 +812,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       if (p1?.data) {
         p1DataRef.current = {
           concept:             p1.data.concept,
+          summary:             p1.data.summary,
+          final_report:        p1.data.final_report,
           worldbuilding_notes: p1.data.worldbuilding_notes,
           similar_works:       p1.data.similar_works,
           strengths:           p1.data.strengths,
           weaknesses:          p1.data.weaknesses,
+          improvements:        p1.data.improvements,
+          genre_analysis:      p1.data.genre_analysis,
         };
       }
 
