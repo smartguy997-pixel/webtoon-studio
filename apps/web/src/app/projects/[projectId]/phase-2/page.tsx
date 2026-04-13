@@ -159,7 +159,16 @@ interface Msg {
   text: string;
   streaming: boolean;
   imageUrl?: string;
+  replyQuote?: { agentLabel: string; preview: string }; // reply-to 인용
 }
+
+// 모델 선택
+const DEBATE_MODELS_P2 = [
+  { value: "claude-haiku-4-5-20251001", label: "Haiku", desc: "빠름 · 저비용" },
+  { value: "claude-sonnet-4-6",         label: "Sonnet", desc: "균형 · 권장" },
+  { value: "claude-opus-4-6",           label: "Opus",   desc: "최고품질 · 고비용" },
+] as const;
+type DebateModelP2 = typeof DEBATE_MODELS_P2[number]["value"];
 
 type DebatePhase = "idle" | "running" | "confirming" | "confirmed" | "done" | "paused";
 
@@ -335,14 +344,19 @@ function buildSingleAgentPrompt(
   agentId: AgentId,
   prevResults: StageResult[],
   p1Data?: P1Data | null,
+  blockedItems: string[] = [],
 ): string {
   const agentLabel = AGENTS[agentId].label;
   const roleDesc = AGENT_ROLE_DESC[agentId] ?? "";
   const context = buildContext(stageId, prevResults);
   const p1Context = p1Data ? buildPhase1Context(p1Data) : "";
 
+  const blockSection = blockedItems.length > 0
+    ? `\n[🚫 절대 사용 금지 — 사용자가 거부한 이름·설정·방향]\n${blockedItems.map(w => `• ${w}`).join("\n")}\n이 항목들은 절대 언급·제안·인용하지 마. 어떤 맥락에서도 쓰지 마.\n`
+    : "";
+
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
-성격: ${roleDesc}
+${blockSection}성격: ${roleDesc}
 장르: ${genre}
 ${p1Context ? `\n[Phase 1 분석 결과 — 우리 작품의 방향]\n${p1Context}\n` : ""}${context ? `\n[우리 팀이 함께 만든 세계 — 이미 알고 있는 내용]\n${context}\n` : ""}지금 주제: ${STAGE_PROMPTS[stageId]}
 
@@ -353,7 +367,13 @@ ${p1Context ? `\n[Phase 1 분석 결과 — 우리 작품의 방향]\n${p1Contex
 - 이미 나온 얘기 반복하지 마.
 - 대사만. 이름이나 접두어 붙이지 마.
 - 마크다운(#, *, >, -) 금지. JSON 금지.
-- "다음 단계", "단계 완료" 같은 말 하지 마.`;
+- "다음 단계", "단계 완료" 같은 말 하지 마.
+
+[레퍼런스 이미지 서치]
+시각적 레퍼런스가 필요할 때 딱 1번만 이렇게 써:
+🖼️ 이미지 서치: "검색어"
+검색어 예시: "사이버펑크 도시 컨셉아트", "판타지 성 배경", "다크 판타지 캐릭터 디자인"
+발언당 최대 1개만. 실제 존재하는 작품이나 스타일 검색어를 써.`;
 }
 
 // 백엔드 API URL
@@ -760,28 +780,96 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
   );
 }
 
-function MsgBubble({ msg }: { key?: string; msg: Msg }) {
+// 이미지 서치 카드 (Phase 1과 동일)
+function ImageSearchCard({ query, delayMs = 0 }: { query: string; delayMs?: number; key?: number }) {
+  const [images, setImages] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/image-search?q=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error("image-search API failed");
+        const data = await res.json() as { urls: string[] };
+        if (!cancelled) { setImages(data.urls ?? []); setLoading(false); }
+      } catch {
+        if (!cancelled) { setError(true); setLoading(false); }
+      }
+    }, delayMs);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query, delayMs]);
+
+  if (loading) return <div style={{ fontSize: 11, color: "#7c6cfc", margin: "6px 0" }}>🔍 이미지 검색 중: "{query}"...</div>;
+  if (error || images.length === 0) return <div style={{ fontSize: 11, color: "#4a4a6a", margin: "6px 0" }}>🔍 "{query}" — 이미지 없음</div>;
+  return (
+    <div style={{ margin: "8px 0" }}>
+      <div style={{ fontSize: 10, color: "#7c6cfc", marginBottom: 4 }}>🖼️ {query}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {images.slice(0, 4).map((url, i) => (
+          <img key={i} src={url} alt={query}
+            style={{ width: 90, height: 90, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a3d", cursor: "pointer" }}
+            onClick={() => window.open(url, "_blank")}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function renderMsgText(text: string) {
+  const lines = text.split("\n");
+  let imgCount = 0;
+  return lines.map((line, i) => {
+    if (/^🖼️/.test(line)) {
+      const raw = line
+        .replace(/^🖼️\s*이미지\s*서치\s*:\s*/i, "")
+        .replace(/^🖼️\s*이미지\s*검색\s*:\s*/i, "")
+        .replace(/"/g, "").trim();
+      const delay = (imgCount++) * 12000;
+      return <ImageSearchCard key={i} query={raw} delayMs={delay} />;
+    }
+    return <span key={i}>{line}{i < lines.length - 1 ? "\n" : ""}</span>;
+  });
+}
+
+function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg) => void }) {
   const ag = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
   return (
-    <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
+    <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}
+      style={{ position: "relative" }}
+      onMouseEnter={e => { if (onReply) (e.currentTarget.querySelector(".reply-btn") as HTMLElement | null)?.style.setProperty("display", "flex"); }}
+      onMouseLeave={e => { if (onReply) (e.currentTarget.querySelector(".reply-btn") as HTMLElement | null)?.style.setProperty("display", "none"); }}
+    >
       {!isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>{ag.ini}</div>}
       <div className={s.msgMain}>
         {!isUser && <div className={s.agentName} style={{ color: ag.color }}>{ag.label}</div>}
+        {msg.replyQuote && (
+          <div style={{ fontSize: 11, color: "#7878a0", background: "rgba(120,120,160,0.08)", borderLeft: "2px solid #7878a0", padding: "3px 8px", borderRadius: "0 4px 4px 0", marginBottom: 4 }}>
+            ↩ <b>{msg.replyQuote.agentLabel}</b> — {msg.replyQuote.preview}{msg.replyQuote.preview.length >= 60 ? "..." : ""}
+          </div>
+        )}
         <div className={`${s.bubble} ${isUser ? s.bubbleUser : ""}`} style={!isUser ? { borderLeft: `3px solid ${ag.color}60` } : {}}>
           {msg.streaming && !msg.text ? <ThinkingDots /> : (
-            <span className={s.msgText}>{msg.text}{msg.streaming && <StreamCursor />}</span>
+            <span className={s.msgText} style={{ whiteSpace: "pre-wrap" }}>{renderMsgText(msg.text)}{msg.streaming && <StreamCursor />}</span>
           )}
           {msg.imageUrl && (
-            <img
-              src={msg.imageUrl}
-              alt="concept art"
+            <img src={msg.imageUrl} alt="concept art"
               style={{ display: "block", maxWidth: 320, width: "100%", borderRadius: 8, marginTop: 10, border: "1px solid #2a2a3d", objectFit: "cover" }}
             />
           )}
         </div>
       </div>
       {isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>나</div>}
+      {onReply && (
+        <button className="reply-btn" onClick={() => onReply(msg)}
+          style={{ display: "none", position: "absolute", right: isUser ? 52 : 8, top: 8, alignItems: "center", gap: 3, fontSize: 10, color: "#7878a0", background: "rgba(15,20,40,0.9)", border: "1px solid #2a2a3d", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>
+          ↩ 댓글
+        </button>
+      )}
     </div>
   );
 }
@@ -802,6 +890,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [apiError, setApiError] = useState<string | null>(null);
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<string[]>([]); // 완료된 아젠다 항목
   const [agendaTurnCounts, setAgendaTurnCounts] = useState<Record<string, number>>({}); // 항목별 누적 턴수
+  const [debateModel, setDebateModel] = useState<DebateModelP2>("claude-sonnet-4-6"); // 모델 선택
+  const [rejectedItems, setRejectedItems] = useState<string[]>([]); // 블랙리스트
+  const rejectedItemsRef = useRef<string[]>([]);
+  const [replyTo, setReplyTo] = useState<{ msg: Msg; agentLabel: string; preview: string } | null>(null); // reply-to
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
   const [viewingStageIdx, setViewingStageIdx] = useState<number | null>(null); // 열람 중인 이전 단계
 
@@ -918,6 +1011,27 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (msgs.some((m: Msg) => m.streaming)) return;
     localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs));
   }, [msgs, projectId]);
+
+  // 블랙리스트 localStorage 동기화
+  useEffect(() => {
+    rejectedItemsRef.current = rejectedItems;
+    if (rejectedItems.length > 0) {
+      try { localStorage.setItem(`p2_rejected_${projectId}`, JSON.stringify(rejectedItems)); } catch { /* quota */ }
+    }
+  }, [rejectedItems, projectId]);
+
+  // 블랙리스트 복원 (mount)
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      const saved = localStorage.getItem(`p2_rejected_${projectId}`);
+      if (saved) {
+        const list = JSON.parse(saved) as string[];
+        setRejectedItems(list);
+        rejectedItemsRef.current = list;
+      }
+    } catch { /* ignore */ }
+  }, [projectId]);
 
   useEffect(() => {
     const id = "wts-blink-style";
@@ -1038,8 +1152,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       try {
         for await (const chunk of streamClaude({
           apiKey: key,
-          model: "claude-sonnet-4-6",
-          systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current, p1DataRef.current),
+          model: debateModel,
+          systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current, p1DataRef.current, rejectedItemsRef.current),
           messages: [{ role: "user", content: userContent }],
           maxTokens: tokens,
           tools: [],
@@ -2136,10 +2250,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
 
-        {/* 아젠다 체크리스트 — 토론 중일 때만 표시 */}
+        {/* 아젠다 체크리스트 + 블랙리스트 — 토론 중일 때만 표시 */}
         {debatePhase === "running" && (() => {
           const stageAgendaItems = STAGE_AGENDA[STAGES[currentStageIdx]?.id] ?? [];
-          return stageAgendaItems.length > 0 ? (
+          return (
             <div style={{
               display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap", alignItems: "center",
               background: "rgba(15,20,40,0.6)", borderBottom: "1px solid rgba(99,102,241,0.15)",
@@ -2165,9 +2279,45 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   </div>
                 );
               })}
+              {/* 블랙리스트 태그 */}
+              {rejectedItems.length > 0 && (
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: "rgba(248,113,113,0.6)" }}>차단:</span>
+                  {rejectedItems.map((w) => (
+                    <span key={w}
+                      title="클릭해서 차단 해제"
+                      onClick={() => {
+                        const next = rejectedItems.filter(x => x !== w);
+                        setRejectedItems(next); rejectedItemsRef.current = next;
+                        if (next.length === 0) localStorage.removeItem(`p2_rejected_${projectId}`);
+                      }}
+                      style={{ fontSize: 10, padding: "1px 7px", borderRadius: 99, cursor: "pointer",
+                        background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                      🚫 {w}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : null;
+          );
         })()}
+
+        {/* 모델 선택 (토론 idle 상태일 때) */}
+        {debatePhase === "idle" && (
+          <div style={{ display: "flex", gap: 6, padding: "8px 16px", background: "rgba(15,20,40,0.4)", borderBottom: "1px solid rgba(99,102,241,0.1)", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#4a4a6a", marginRight: 4 }}>모델:</span>
+            {DEBATE_MODELS_P2.map((m) => (
+              <button key={m.value} onClick={() => setDebateModel(m.value)} style={{
+                padding: "3px 10px", borderRadius: 8, fontSize: 11, cursor: "pointer",
+                border: `1px solid ${debateModel === m.value ? "#7c6cfc" : "#2a2a3d"}`,
+                background: debateModel === m.value ? "rgba(124,108,252,0.15)" : "transparent",
+                color: debateModel === m.value ? "#a5b4fc" : "#4a4a6a",
+              }}>
+                {m.label} <span style={{ opacity: 0.6, fontSize: 10 }}>{m.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {apiError && (
           <div style={{ background:"rgba(248,113,113,0.08)", border:"1px solid rgba(248,113,113,0.3)", margin:"8px 16px", borderRadius:8, padding:"8px 14px", fontSize:13, color:"#f87171" }}>
@@ -2203,7 +2353,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         )}
 
         <div className={s.chatBody}>
-          {msgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)}
+          {msgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} onReply={debatePhase === "running" && m.agent !== "user" ? (msg) => {
+            const ag = AGENTS[msg.agent];
+            setReplyTo({ msg, agentLabel: ag?.label ?? msg.agent, preview: msg.text.slice(0, 60).trim() });
+            setTimeout(() => chatInputRef.current?.focus(), 50);
+          } : undefined} />)}
 
           {/* ── 4개 이미지 그리드 (selecting 단계) ── */}
           {imageSessionPhase === "selecting" && imageConcepts.length > 0 && (
@@ -2490,20 +2644,57 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
           {/* Chat input during running */}
           {debatePhase === "running" && (
-            <div className={s.inputRow}>
-              <textarea
-                className={s.chatInput} rows={1}
-                placeholder="의견 입력 (Enter 전송) · 토론에 개입하려면 여기에 입력"
-                value={chatInput}
-                onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
-                onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    if (chatInput.trim()) { pendingUserMsgRef.current = chatInput.trim(); setChatInput(""); }
-                  }
-                }}
-              />
-              <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => { if (chatInput.trim()) { pendingUserMsgRef.current = chatInput.trim(); setChatInput(""); } }}>전송</button>
+            <div className={s.inputRow} style={{ flexDirection: "column", gap: 0 }}>
+              {/* Reply-to 표시 */}
+              {replyTo && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 12px", background: "rgba(99,102,241,0.12)", borderBottom: "1px solid rgba(99,102,241,0.2)", fontSize: 11, color: "#a5b4fc" }}>
+                  <span>↩ <b>{replyTo.agentLabel}</b> — {replyTo.preview}{replyTo.preview.length >= 60 ? "..." : ""}</span>
+                  <button onClick={() => setReplyTo(null)} style={{ background: "none", border: "none", color: "#a5b4fc", cursor: "pointer", fontSize: 13, padding: "0 4px" }}>✕</button>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8, padding: "8px" }}>
+                <textarea
+                  ref={chatInputRef}
+                  className={s.chatInput} rows={1}
+                  placeholder={replyTo ? `${replyTo.agentLabel}에게 댓글... (Enter 전송 · Esc 취소)` : "의견 입력 (Enter 전송) · 토론에 개입하려면 여기에 입력"}
+                  value={chatInput}
+                  onChange={(e: { target: HTMLTextAreaElement }) => setChatInput(e.target.value)}
+                  onKeyDown={(e: { key: string; shiftKey: boolean; preventDefault: () => void }) => {
+                    if (e.key === "Escape") { setReplyTo(null); return; }
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      const text = chatInput.trim();
+                      if (!text) return;
+                      const quote = replyTo
+                        ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
+                        : "";
+                      pendingUserMsgRef.current = quote + text;
+                      setMsgs((prev: Msg[]) => [...prev, {
+                        id: Math.random().toString(36).slice(2),
+                        agent: "user" as AgentId, text,
+                        replyQuote: replyTo ? { agentLabel: replyTo.agentLabel, preview: replyTo.preview } : undefined,
+                        streaming: false,
+                      }]);
+                      setChatInput(""); setReplyTo(null);
+                    }
+                  }}
+                />
+                <button className={s.btnSend} disabled={!chatInput.trim()} onClick={() => {
+                  const text = chatInput.trim();
+                  if (!text) return;
+                  const quote = replyTo
+                    ? `[${replyTo.agentLabel}의 발언 "${replyTo.preview}${replyTo.preview.length >= 60 ? "..." : ""}"에 대해]: `
+                    : "";
+                  pendingUserMsgRef.current = quote + text;
+                  setMsgs((prev: Msg[]) => [...prev, {
+                    id: Math.random().toString(36).slice(2),
+                    agent: "user" as AgentId, text,
+                    replyQuote: replyTo ? { agentLabel: replyTo.agentLabel, preview: replyTo.preview } : undefined,
+                    streaming: false,
+                  }]);
+                  setChatInput(""); setReplyTo(null);
+                }}>전송</button>
+              </div>
             </div>
           )}
           </>)}
