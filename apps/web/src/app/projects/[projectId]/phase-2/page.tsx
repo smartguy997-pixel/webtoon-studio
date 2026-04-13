@@ -147,13 +147,12 @@ const STAGE_AGENDA: Record<number, Array<{
   keywords: RegExp;
   nudge: string;
 }>> = {
-  1: [ // 세계관 — 시놉시스 작성의 기초: 시대배경 + 핵심 인물 + 대립협력 구도
-    { id: "era",       label: "시대·배경",     keywords: /시대|배경|세기|현대|미래|과거|공간|지역|나라|도시|문명|왕국|제국|행성|시절|연대|세계|동네|거리|분위기|공기|냄새|질감|지형|역사/,  nudge: "시대·배경이 아직 얕아. 이 공간만의 구체적인 이름, 지형, 역사적 맥락, 그리고 독자가 발을 딛는 순간 느끼는 공기와 질감까지 파고들어야 해. 예를 들어 왜 이 동네인지, 어떤 역사가 이 공간을 만들었는지." },
-    { id: "characters",label: "핵심 인물",     keywords: /인물|주인공|캐릭터|등장|누구|사람|존재|주역|주요 인물|핵심 인물|이름|설정|직업|나이|출신|과거|성격|동기|욕망|상처|얼굴|체형|복장|헤어|외모/,         nudge: "핵심 인물들이 아직 피상적이야. 이 설정은 이미지 생성에 직접 쓰여. 주인공·빌런·핵심 조력자 각각: 이름·나이·성별·얼굴 생김새(이목구비·인상)·키·체형·복장·헤어·내면의 상처·욕망·말투까지 구체적으로 파야 해." },
-    { id: "conflict",  label: "대립·갈등 구도", keywords: /대립|갈등|싸움|충돌|적|적대|원수|반목|긴장|위협|전쟁|분쟁|투쟁|대결|맞서|이유|왜|원인|뿌리|역학/,          nudge: "대립 구도가 아직 표면적이야. 누가 누구와 왜 대립하는지, 그 갈등의 뿌리는 어디서 왔는지, 세력 간 역학 관계가 어떻게 형성됐는지 구체적으로 파야 해. 단순 선악 구도 이상의 복잡성이 있어야 해." },
-    { id: "alliance",  label: "협력·관계 구도", keywords: /협력|동맹|우정|팀|같은 편|연대|협조|관계|유대|연결|파트너|동료|지원|신뢰|손잡|함께|거래|이해관계/,          nudge: "협력 구도가 아직 부족해. 누가 왜 손잡는지, 이해관계는 어떻게 얽히는지, 신뢰와 배신의 가능성은 어디 있는지. 대립과 협력이 교차하는 복합적 관계망을 설계해야 해." },
-    { id: "locations", label: "주요 장소",     keywords: /장소|공간|배경|건물|도시|마을|학교|회사|궁전|숲|지하|거리|실내|실외|색채|조명|구조|인테리어|건축/,      nudge: "이야기에 등장하는 주요 장소들을 지금 설계해야 해. 장소마다: 이름·유형·색채 팔레트·건축 구조·조명(시간대별)·분위기·이야기에서의 역할. 이미지 프롬프트로 바로 쓸 수 있을 수준으로." },
-    { id: "rules",     label: "세계 규칙",     keywords: /규칙|법칙|마법|능력|시스템|체계|작동|원리|금기|제약|힘|파워|기술|과학|설정의 법|구조|질서|사회|권력|비밀/,  nudge: "세계 규칙이 아직 충분하지 않아. 이 세계의 권력 구조, 숨겨진 비밀, 일반인이 모르는 규칙들, 그리고 주인공이 맞닥뜨릴 제약과 금기까지 구체적으로 설계해야 해." },
+  1: [ // 세계관 — 드라마/웹툰/애니 5대 프레임워크
+    { id: "atmosphere", label: "시대·공간적 공기",   keywords: /시대|배경|세기|현대|미래|과거|공간|도시|동네|거리|분위기|공기|냄새|질감|역사|연도|시절|결핍|생활|음식|의상|옷|유행어|일상|현실|디테일|공기감|거주|공간감|장소/,  nudge: "시대적 공기가 아직 얕아. 구체적인 연도와 그 시대만의 결핍·특징, 주인공이 머무는 핵심 공간의 생생한 디테일(색채·냄새·질감), 사람들이 무엇을 먹고 어떤 옷을 입으며 어떤 유행어를 쓰는지까지 파야 해." },
+    { id: "social",     label: "사회적 압박·갈등",   keywords: /계급|권력|갑|을|재벌|서민|상사|부하|통념|가치관|당연|금기|taboo|선|장벽|결핍|압박|사회|규범|관습|위계|차별|불평등|억압|질서|체계|제도/,            nudge: "사회적 압박이 아직 모호해. 이 세계에서 갑/을 관계가 어떻게 형성되는지, '당연하게' 여겨지는 가치관이 무엇인지, 주인공이 절대 넘어선 안 되는 금기의 선이 무엇인지 구체적으로 파야 해." },
+    { id: "whatif",     label: "만약에 설정",         keywords: /만약|핵심 규칙|특수 능력|초능력|능력|마법|대가|리스크|비밀|누가 알|정보|불균형|판타지|장르|비현실|설정|시스템|규칙|법칙|제약|힘|파워/,              nudge: "이 이야기를 장르물로 만드는 '만약에' 설정이 아직 불분명해. 현실과 딱 하나 다른 핵심 규칙이 뭔지, 그 능력·규칙에는 어떤 대가가 따르는지, 그리고 이 비밀을 누가 알고 누가 모르는지 정의해야 해." },
+    { id: "dynamics",   label: "인물 관계·역학",      keywords: /인물|주인공|캐릭터|등장|사람|이름|과거사|계기|얽힌|목표|충돌|원하는|복수|용서|조력자|방해자|적|빌런|관계|역학|구도|동기|상처|역할|포지션|연결/,       nudge: "인물 관계의 역학이 아직 피상적이야. 인물들이 서로 얽히게 된 결정적 과거사, 각자가 원하는 것이 어떻게 충돌하는지, 그리고 주인공의 성장을 돕는 조력자와 가로막는 방해자의 포지션까지 명확히 설계해야 해." },
+    { id: "theme",      label: "메시지·테마",          keywords: /테마|메시지|주제|하고 싶은 말|핵심|사랑|복수|가족|정의|성장|의미|작가|독자|감동|울림|방향|가치|철학|삶|죽음|희망|용기|진실/,                     nudge: "이 세계관이 궁극적으로 전하는 메시지가 무엇인지 얘기해야 해. 사랑·복수·가족애·정의 등 핵심 테마를 명확히 정의해야 모든 사건과 배경이 그 방향을 향해 달려갈 수 있어." },
   ],
   2: [ // 시놉시스
     { id: "logline",   label: "로그라인·전제", keywords: /로그라인|전제|한 줄|요약|이야기|스토리|설정|소재|아이디어|기본/,       nudge: "이 이야기를 한 줄로 정의하면 뭐야? 로그라인과 전제를 명확하게 잡아보자." },
@@ -185,7 +184,7 @@ const STAGE_AGENDA: Record<number, Array<{
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const STAGES = [
-  { id: 1 as const, name: "세계관",     topic: "세계관 — 시대·배경·핵심 인물(디자인 가능 수준)·주요 장소·대립협력 구도·세계 규칙",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"시대/배경 (구체적 장소명·역사적 맥락 포함)","atmosphere":"분위기·톤 (독자가 느낄 감정)","key_characters":[{"name":"이름","role":"역할(주인공/빌런/조력자)","age":"나이/나이대","gender":"성별","face":"얼굴 특징 (이목구비·인상·표정 습관)","height":"키 (구체적 수치 또는 묘사)","build":"체형 (근육형/마른형 등)","outfit":"복장 (주로 입는 옷·색상·특징 아이템)","personality":"성격 (3가지 이상)","motivation":"동기 (무엇을 원하고 왜)","backstory":"내면의 상처나 비밀","speech":"말투 (구체적 말하는 방식·자주 쓰는 표현)"}],"key_locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사 (색채·재질·규모)","lighting":"조명 특성","atmosphere":"분위기","significance":"이야기에서의 역할"}],"conflict_structure":"대립 구도 (누가 누구와 왜)","alliance_structure":"협력 구도 (누가 같은 편이고 왜)","world_rules":["규칙1","규칙2","규칙3"]}' },
+  { id: 1 as const, name: "세계관",     topic: "세계관 — 드라마·웹툰·애니를 위한 세계 설계: 시대적 공기·사회적 압박·만약에 설정·인물 역학·테마",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"구체적 시대 배경 (연도·장소명·그 시대의 결핍이나 특징)","core_space":"핵심 공간 (주인공이 주로 머무는 곳의 디테일 — 캐릭터 처지를 대변)","daily_life":"생활감 (사람들이 먹고·입고·쓰는 유행어 등 현실적 디테일)","power_hierarchy":"계급과 권력 (누가 갑이고 누가 을인가 — 재벌/서민, 상사/부하 등)","social_norms":"사회적 통념 (이 세계에서 당연하게 여겨지는 가치관)","taboo":"금기 (넘어서는 안 되는 선 — 주인공이 이 선을 넘을 때 갈등 폭발)","what_if_rule":"만약에 설정 (현실과 딱 하나 다른 핵심 규칙 — 장르물이면 필수, 현실물이면 생략 가능)","what_if_cost":"규칙의 대가 (초능력·행운에 따르는 리스크와 제약)","what_if_who_knows":"비밀의 공유 (이 설정을 누가 알고 누가 모르는가 — 정보 불균형이 긴장감 만듦)","key_characters":[{"name":"이름","role":"주인공/빌런/조력자/방해자","position":"이야기에서의 포지션 (돕는자/막는자/중립)","age":"나이/나이대","gender":"성별","face":"얼굴 특징 (이목구비·인상·표정 습관)","height":"키","build":"체형","outfit":"복장","personality":"성격 (3가지 이상)","motivation":"동기와 목표 (무엇을 원하고 왜)","backstory":"과거사와 내면의 상처","speech":"말투","goal_conflict":"다른 인물과의 목표 충돌"}],"key_locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","significance":"이야기에서의 역할"}],"character_backstory":"인물들이 서로 얽히게 된 결정적 계기 (과거사 요약)","goal_conflicts":"목표의 충돌 구조 (A는 복수를 원하고 B는 용서를 원할 때 등)","theme":"핵심 테마·메시지 (모든 사건과 배경이 향하는 주제 — 사랑/복수/가족애/정의 등)"}' },
   { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막·해결 방향·등장인물 요약·주요 장소 목록",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","act1":"기(起) — 도입·사건 발단","act2":"승(承) — 갈등 심화","act3":"전(轉) — 위기·반전","act4":"결(結) — 클라이맥스·해결 방향","key_characters_brief":[{"name":"이름","role":"역할","one_line":"한 줄 특징"}],"key_locations_brief":[{"name":"장소명","role":"이야기에서의 역할"}],"theme":"핵심 테마·메시지"}' },
   { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
   { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
@@ -323,7 +322,12 @@ function buildPhase1Context(p1: P1Data): string {
 // ─── Prompt builders (단계별 독립 API 호출 + 이전 결과 컨텍스트) ──────────────
 
 const STAGE_PROMPTS: Record<StageId, string> = {
-  1: "세계관 — 이 결과물이 실제 이미지 생성 재료로 쓰인다. 추상적 묘사는 쓸모없어. 반드시 다음을 충분히 다뤄야 해:\n① 시대·배경: 구체적인 지명, 역사적 맥락, 그 공간의 냄새·질감·공기감까지\n② 핵심 인물: 이름·나이·성별·얼굴 생김새(이목구비·인상)·키·체형·복장·헤어·내면의 상처·욕망·말투. 이미지 생성 프롬프트로 바로 쓸 수 있는 수준으로\n③ 주요 장소: 이름·유형·색채·건축 구조·조명·분위기. 배경 그림을 그릴 수 있는 수준으로\n④ 대립 구도: 누가 누구와 왜 대립하는지. 갈등의 뿌리, 세력 간 역학\n⑤ 협력 구도: 누가 왜 손잡는지. 이해관계, 신뢰/배신 가능성\n⑥ 세계 규칙: 권력 구조, 숨겨진 비밀, 주인공이 맞닥뜨릴 제약",
+  1: `세계관 — [기획분석]을 바탕으로 드라마·웹툰·애니메이션을 위한 세계를 설계해. 반드시 다음 5가지 프레임워크를 충분히 다뤄야 해:
+① 시대적·공간적 공기: 구체적인 연도와 그 시대만의 결핍/특징. 주인공이 주로 머무는 핵심 공간의 디테일(캐릭터 처지를 대변). 사람들이 먹는 음식·입는 옷·쓰는 유행어 등 생활감.
+② 사회적 압박과 갈등: 이 세계의 갑/을 관계(계급·권력). 당연하게 여겨지는 사회적 통념. 주인공이 넘어서면 갈등이 폭발하는 금기(Taboo).
+③ 만약에 설정: 현실과 딱 하나 다른 핵심 규칙(장르물이면 필수). 그 능력/규칙에 따르는 대가와 리스크. 이 비밀을 누가 알고 누가 모르는가(정보 불균형이 긴장감을 만든다).
+④ 인물 관계의 역학: 인물들이 서로 얽히게 된 결정적 과거사. 각자가 원하는 것이 어떻게 충돌하는가(A는 복수, B는 용서). 주인공의 성장을 돕는 조력자와 가로막는 방해자의 포지션.
+⑤ 메시지와 테마: 이 세계관을 통해 하고 싶은 말. 사랑·복수·가족애·정의 등 핵심 테마.`,
   2: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막 구조·해결 방향·등장인물 목록·주요 장소 목록. 이후 캐릭터/장소/소품 설계를 위해 시놉시스에 나온 모든 인물과 장소를 빠짐없이 언급해야 해.",
   3: "등장인물 전체 목록 — 주인공·빌런·조력자·단역까지 이 이야기에 등장하는 모든 인물. 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 바로 쓸 수 있을 만큼 시각적으로 구체적으로. 시놉시스에 이름이 나온 인물은 한 명도 빠지면 안 돼.",
   4: "장소 전체 목록 — 1화라도 등장하는 모든 장소. 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로. 스쳐 지나가는 배경도 시각적 정체성이 있어야 해.",
@@ -338,20 +342,18 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
   try {
     switch (stageId) {
       case 1: {
-        const rules = Array.isArray(data.world_rules)
-          ? (data.world_rules as string[]).map((r, i) => `  ${i + 1}. ${r}`).join("\n")
-          : data.world_rules ? `  ${String(data.world_rules)}` : "";
         const chars = Array.isArray(data.key_characters)
           ? (data.key_characters as Record<string, string>[]).map(c =>
               [
-                `  ▸ ${c.name ?? "?"}${c.role ? ` (${c.role})` : ""}${c.age ? ` · ${c.age}` : ""}${c.gender ? ` · ${c.gender}` : ""}`,
+                `  ▸ ${c.name ?? "?"}${c.role ? ` (${c.role})` : ""}${c.position ? ` [${c.position}]` : ""}${c.age ? ` · ${c.age}` : ""}${c.gender ? ` · ${c.gender}` : ""}`,
                 c.face && `    얼굴: ${c.face}`,
                 (c.height || c.build) && `    체형: ${[c.height, c.build].filter(Boolean).join(", ")}`,
                 c.outfit && `    복장: ${c.outfit}`,
                 c.personality && `    성격: ${c.personality}`,
                 c.motivation && `    동기: ${c.motivation}`,
-                c.backstory && `    배경: ${c.backstory}`,
+                c.backstory && `    과거: ${c.backstory}`,
                 c.speech && `    말투: ${c.speech}`,
+                c.goal_conflict && `    목표 충돌: ${c.goal_conflict}`,
               ].filter(Boolean).join("\n")
             ).join("\n")
           : "";
@@ -360,21 +362,25 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
               [
                 `  ▸ ${l.name ?? "?"}${l.type ? ` (${l.type})` : ""}`,
                 l.visual && `    시각: ${l.visual}`,
-                l.lighting && `    조명: ${l.lighting}`,
-                l.atmosphere && `    분위기: ${l.atmosphere}`,
                 l.significance && `    역할: ${l.significance}`,
               ].filter(Boolean).join("\n")
             ).join("\n")
           : "";
         return [
-          data.era            && `시대/배경: ${data.era}`,
-          data.atmosphere     && `분위기: ${data.atmosphere}`,
-          chars               && `핵심 인물:\n${chars}`,
-          locs                && `주요 장소:\n${locs}`,
-          rules               && `세계 규칙:\n${rules}`,
-          data.conflict_structure && `대립 구도: ${data.conflict_structure}`,
-          data.alliance_structure && `협력 구도: ${data.alliance_structure}`,
-          data.special_elements && `특수 설정: ${data.special_elements}`,
+          data.era              && `[시대 배경] ${data.era}`,
+          data.core_space       && `[핵심 공간] ${data.core_space}`,
+          data.daily_life       && `[생활감] ${data.daily_life}`,
+          data.power_hierarchy  && `[계급·권력] ${data.power_hierarchy}`,
+          data.social_norms     && `[사회적 통념] ${data.social_norms}`,
+          data.taboo            && `[금기] ${data.taboo}`,
+          data.what_if_rule     && `[만약에 설정] ${data.what_if_rule}`,
+          data.what_if_cost     && `[규칙의 대가] ${data.what_if_cost}`,
+          data.what_if_who_knows && `[비밀의 공유] ${data.what_if_who_knows}`,
+          chars                 && `[핵심 인물]\n${chars}`,
+          data.character_backstory && `[얽힌 과거사] ${data.character_backstory}`,
+          data.goal_conflicts   && `[목표 충돌] ${data.goal_conflicts}`,
+          locs                  && `[주요 장소]\n${locs}`,
+          data.theme            && `[테마] ${data.theme}`,
         ].filter(Boolean).join("\n");
       }
       case 2: {
@@ -525,10 +531,10 @@ function buildSingleAgentPrompt(
 
   const isWorldbuildingStage = stageId === 1;
   const productionMandate = isWorldbuildingStage
-    ? `\n[⚠️ 이건 제작 바이블 — 모호함 금지]\n이 토론 결과는 실제 웹툰 제작에 쓰이는 세계관 문서야. "어떤 인물" "어느 공간" 같은 추상적 표현은 쓸모가 없어. 이름, 직업, 나이, 구체적 장소명, 역사적 맥락, 관계의 이유를 못 박아야 해. 모호하게 말하면 제작 못 해.\n`
+    ? `\n[⚠️ 드라마·웹툰·애니 세계관 설계 — 5개 프레임워크]\n이 토론은 반드시 다음 5가지를 커버해야 해:\n1. 시대적·공간적 공기: 구체적 연도, 핵심 공간 디테일, 생활감(음식·옷·유행어)\n2. 사회적 압박: 갑/을 권력 구조, 사회적 통념, 금기(Taboo)\n3. 만약에 설정: 장르의 핵심 규칙 1가지, 그 대가, 누가 알고 모르는가\n4. 인물 역학: 과거사로 얽힌 계기, 목표의 충돌, 조력자/방해자 포지션\n5. 테마: 이 이야기가 궁극적으로 전하는 메시지\n모호한 표현 금지. 이름·연도·장소명·구체적 관계를 못 박아야 해.\n`
     : "";
   const responseGuide = isWorldbuildingStage
-    ? "- 한 번 발언할 때 3~5문장. 구체적인 고유명사(이름·장소·직업·나이)를 반드시 포함해.\n- 추상적·모호한 표현 금지. '어떤 인물' 대신 실제 이름, '어딘가' 대신 실제 장소명."
+    ? "- 한 번 발언할 때 3~5문장. 구체적인 고유명사(이름·연도·장소·직업)를 반드시 포함해.\n- 추상적·모호한 표현 금지. 5개 프레임워크 중 아직 다루지 않은 항목을 우선으로 얘기해."
     : "- 딱 1~2문장. 짧을수록 좋아.";
 
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
@@ -623,48 +629,46 @@ ${stage.schema}
 // ─── 단계별 상세 요약 프롬프트 (fallback용) ──────────────────────────────────────
 
 const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
-  1: `다음 토론에서 합의된 세계관을 A4 용지 3~4장 분량으로 상세히 정리해주세요.
-이 문서는 이후 모든 단계(시놉시스·캐릭터·장소·소품·이미지 생성)에서 참고할 세계관 바이블입니다.
-캐릭터와 장소는 이미지로 바로 그릴 수 있는 수준으로 작성하세요.
+  1: `다음 토론에서 합의된 세계관을 드라마·웹툰·애니메이션 제작 바이블로 정리해주세요.
+이 문서는 이후 모든 단계(시놉시스·캐릭터·장소·소품·이미지 생성)의 기준이 됩니다.
+반드시 아래 5개 섹션을 ■ 기호로 구분하여 작성하세요. 각 항목을 충분히 서술하세요.
 
-반드시 포함할 내용 (각 항목을 충분히 서술):
+■ 시대적·공간적 공기 (Atmosphere)
+  - 구체적인 연도(예: 1998년 IMF 시절, 2030년 초고령 사회)와 그 시대만의 결핍이나 특징
+  - 핵심 공간: 주인공이 주로 머무는 장소(단칸방·재벌가 저택·학교·직장 등)의 디테일 — 이 공간이 캐릭터의 처지를 어떻게 대변하는가
+  - 생활감: 사람들이 무엇을 먹고, 어떤 옷을 입으며, 어떤 유행어(키워드)를 쓰는지 등 현실적인 디테일
 
-■ 시대와 배경
-  - 구체적인 시대 (몇 세기, 근미래, 판타지 세계 등) + 지명
-  - 지리적 배경과 문명 수준
-  - 사회 구조와 계급 체계
-  - 역사적 맥락 (어떤 사건이 이 세계를 만들었는가)
-  - 세계의 분위기와 톤 (독자가 느낄 감정)
+■ 사회적 압박과 갈등 요소 (Social Conflict)
+  - 계급과 권력: 누가 갑이고 누가 을인가 (재벌과 서민, 상사와 부하, 일진과 빵셔틀 등)
+  - 사회적 통념: 이 세계에서 '당연하게' 여겨지는 가치관 (예: "성공하려면 수단방법 가리지 마라")
+  - 금기(Taboo): 넘어서는 안 되는 선 — 주인공이 이 선을 넘을 때 갈등이 폭발
 
-■ 핵심 인물 프로필 (각 인물마다)
-  - 이름, 나이, 성별, 역할
-  - 얼굴: 이목구비 특징, 인상, 표정 습관 (이미지 생성에 쓸 수 있도록)
-  - 키와 체형 (구체적 묘사)
-  - 복장: 주로 입는 옷, 색상, 특징적 아이템, 헤어스타일
-  - 성격 (3가지 이상 핵심 특성)
-  - 동기: 무엇을 원하고 왜 원하는가
-  - 내면의 상처나 숨기는 비밀
-  - 말투: 구체적 말하는 방식, 자주 쓰는 표현
+■ 만약에 설정 (The "What If" Rule) — 장르물이면 필수, 현실물이면 생략 가능
+  - 한 가지의 비현실성: "죽기 직전의 사람을 볼 수 있다면?" 같은 현실과 딱 하나 다른 핵심 규칙
+  - 규칙의 대가: 초능력이나 행운에 따르는 반드시 존재하는 리스크
+  - 비밀의 공유: 이 특수한 설정을 누가 알고 있고 누가 모르는가 (정보의 불균형이 긴장감을 만든다)
 
-■ 주요 장소 (각 장소마다)
-  - 이름, 유형, 세계관에서의 위치
-  - 시각적 묘사: 색채, 재질, 규모 (이미지로 그릴 수 있도록)
-  - 건축/공간 구조
-  - 조명과 분위기 (시간대별 변화 포함)
-  - 이야기에서의 역할과 상징
+■ 인물 관계의 역학 (Character Dynamics)
+  각 핵심 인물마다:
+  **이름 (역할 — 주인공/빌런/조력자/방해자)**
+  - 외형: 얼굴 특징, 키·체형, 복장 (이미지 생성에 쓸 수 있는 수준)
+  - 성격: 3가지 이상 핵심 특성
+  - 동기와 목표: 무엇을 원하고 왜
+  - 내면의 상처와 과거사
+  - 말투: 구체적인 말하는 방식
+  - 포지션: 주인공을 돕는가 가로막는가 그리고 왜
 
-■ 대립·갈등 구도
-  - 누가 누구와 왜 대립하는지
-  - 세력 간 역학 관계
+  관계망:
+  - 인물들이 서로 얽히게 된 결정적 계기 (과거사)
+  - 목표의 충돌: A는 복수를 원하고, B는 용서를 원할 때 생기는 드라마
+  - 조력자와 방해자의 포지션 명확화
 
-■ 협력·연대 구도
-  - 누가 왜 손잡는지, 이해관계
+■ 메시지와 테마 (Theme)
+  - 핵심 테마: 사랑·복수·가족애·정의·성장 등 — 모든 사건과 배경이 향하는 주제
+  - 작가가 이 세계관을 통해 독자에게 전하고 싶은 말
+  - 이 이야기가 끝났을 때 독자가 무엇을 느끼고 가야 하는가
 
-■ 세계 규칙과 법칙
-  - 마법/기술/능력 체계 (상세히)
-  - 사회 질서, 금기, 숨겨진 규칙
-
-서술형 문장으로 풍부하게 작성하세요.`,
+서술형 문장으로 풍부하게 작성하세요. 추상적 표현 금지 — 모든 항목에 구체적인 이름·숫자·장소명을 사용하세요.`,
 
   2: `다음 토론에서 합의된 시놉시스를 A4 용지 2~3장 분량으로 상세히 정리해주세요.
 이 문서는 이후 캐릭터·장소·소품 설계와 이미지 생성의 기반이 됩니다.
@@ -1385,37 +1389,64 @@ function StageReportInChat({
   const content = (() => {
     switch (result.stageId) {
 
-      case 1: { // 세계관
+      case 1: { // 세계관 — 5개 프레임워크
         const chars = arr(data.key_characters) as Record<string,string>[];
         const locs  = arr(data.key_locations)  as Record<string,string>[];
-        const rules = arr(data.world_rules) as string[];
+        const hasStructured = data.era || data.core_space || data.power_hierarchy || data.theme || chars.length > 0;
+        // raw_summary만 있으면 narrative 카드 렌더
+        if (!hasStructured && data.raw_summary) return renderNarrativeSummary(str(data.raw_summary));
         return (
           <>
-            {/* 세계관 개요 */}
-            <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
-              <Field label="시대/배경" val={data.era} />
-              <Field label="분위기/톤" val={data.atmosphere} />
-              <Field label="대립 구도" val={data.conflict_structure} />
-              <Field label="협력 구도" val={data.alliance_structure} />
-              {rules.length > 0 && (
-                <div style={{ marginTop:8 }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:"#4a4a6a", textTransform:"uppercase" as const, letterSpacing:"0.4px", marginBottom:6 }}>세계 규칙</div>
-                  {rules.map((r, i) => (
-                    <div key={i} style={{ display:"flex", gap:8, fontSize:13, color:"#d4dce8", lineHeight:1.65, marginBottom:4 }}>
-                      <span style={{ color:c, fontWeight:800, flexShrink:0 }}>·</span><span>{r}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {!rules.length && <Field label="세계 규칙" val={data.world_rules} />}
-            </div>
-            {/* 핵심 인물 */}
-            {chars.length > 0 && (
+            {/* ① 시대적·공간적 공기 */}
+            {(data.era || data.core_space || data.daily_life) && (
               <>
-                <SectionHeader icon="👤" title={`핵심 인물 (${chars.length}명)`} />
-                {chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)}
+                <SectionHeader icon="🌍" title="시대적·공간적 공기" />
+                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
+                  <Field label="시대 배경" val={data.era} />
+                  <Field label="핵심 공간" val={data.core_space} />
+                  <Field label="생활감" val={data.daily_life} />
+                </div>
               </>
             )}
+
+            {/* ② 사회적 압박과 갈등 */}
+            {(data.power_hierarchy || data.social_norms || data.taboo) && (
+              <>
+                <SectionHeader icon="⚔️" title="사회적 압박과 갈등" />
+                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
+                  <Field label="계급·권력" val={data.power_hierarchy} />
+                  <Field label="사회적 통념" val={data.social_norms} />
+                  <Field label="금기 (Taboo)" val={data.taboo} />
+                </div>
+              </>
+            )}
+
+            {/* ③ 만약에 설정 */}
+            {(data.what_if_rule || data.what_if_cost || data.what_if_who_knows) && (
+              <>
+                <SectionHeader icon="✨" title="만약에 설정 (What If)" />
+                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
+                  <Field label="핵심 규칙" val={data.what_if_rule} />
+                  <Field label="규칙의 대가" val={data.what_if_cost} />
+                  <Field label="비밀의 공유" val={data.what_if_who_knows} />
+                </div>
+              </>
+            )}
+
+            {/* ④ 인물 관계의 역학 */}
+            {(chars.length > 0 || data.character_backstory || data.goal_conflicts) && (
+              <>
+                <SectionHeader icon="👤" title={`인물 관계의 역학${chars.length > 0 ? ` (${chars.length}명)` : ""}`} />
+                {chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)}
+                {(data.character_backstory || data.goal_conflicts) && (
+                  <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
+                    <Field label="얽힌 과거사" val={data.character_backstory} />
+                    <Field label="목표 충돌" val={data.goal_conflicts} />
+                  </div>
+                )}
+              </>
+            )}
+
             {/* 주요 장소 */}
             {locs.length > 0 && (
               <>
@@ -1423,6 +1454,17 @@ function StageReportInChat({
                 {locs.map((l, i) => <LocCard key={i} loc={l} cardColor={c} />)}
               </>
             )}
+
+            {/* ⑤ 테마 */}
+            {data.theme && (
+              <>
+                <SectionHeader icon="🎭" title="메시지와 테마" />
+                <div style={{ background:`${c}10`, border:`1px solid ${c}30`, borderRadius:12, padding:"16px 18px", marginBottom:4 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:"#f1f5f9", lineHeight:1.75 }}>{str(data.theme)}</div>
+                </div>
+              </>
+            )}
+
             {data.raw_summary && renderNarrativeSummary(str(data.raw_summary))}
           </>
         );
