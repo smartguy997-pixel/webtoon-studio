@@ -489,15 +489,37 @@ function buildSingleAgentPrompt(
     ? `\n[🚫 절대 사용 금지 — 사용자가 거부한 이름·설정·방향]\n${blockedItems.map(w => `• ${w}`).join("\n")}\n이 항목들은 절대 언급·제안·인용하지 마. 어떤 맥락에서도 쓰지 마.\n`
     : "";
 
-  // 시놉시스에서 추출한 에셋 목록 — 반드시 설계해야 할 항목 체크리스트
+  // 이전 단계 JSON 데이터 — 설명 포함 체크리스트 생성에 사용
+  const s1Data = prevResults.find(r => r.stageId === 1)?.data;
+  const s2Data = prevResults.find(r => r.stageId === 2)?.data;
+
+  // 에셋 목록 — 세계관·시놉시스에서 확정된 항목, 설명 포함
   let assetChecklist = "";
   if (synopsisAssets) {
     if (stageId === 3 && synopsisAssets.characters.length > 0) {
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 캐릭터 목록 — 시놉시스 기준, 한 명도 빠지면 안 됨]\n${synopsisAssets.characters.map((n, i) => `${i + 1}. ${n}`).join("\n")}\n각 인물을 충분히 깊이 다뤄야 해. 위 목록에 없는 인물이 나왔다면 추가로 다뤄.\n`;
+      const lines = synopsisAssets.characters.map((name, i) => {
+        const s1ch = Array.isArray(s1Data?.key_characters)
+          ? (s1Data!.key_characters as Record<string,string>[]).find(c => c.name === name) : null;
+        const s2ch = Array.isArray(s2Data?.key_characters_brief)
+          ? (s2Data!.key_characters_brief as Record<string,string>[]).find(c => c.name === name) : null;
+        const role = s1ch?.role ?? s2ch?.role ?? "";
+        const desc = s1ch?.one_line ?? s2ch?.characteristics ?? s1ch?.motivation ?? "";
+        return `${i + 1}. ${name}${role ? ` — ${role}` : ""}${desc ? ` (${desc})` : ""}`;
+      }).join("\n");
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 캐릭터 목록 — 세계관·시놉시스에서 이미 확정된 인물들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 인물이야. 새로 만들지 말고 더 깊이 구체화해. 위 목록에 없는 인물이 등장했다면 추가로 다뤄.\n`;
     } else if (stageId === 4 && synopsisAssets.locations.length > 0) {
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록 — 시놉시스 기준, 하나도 빠지면 안 됨]\n${synopsisAssets.locations.map((n, i) => `${i + 1}. ${n}`).join("\n")}\n각 장소를 충분히 깊이 다뤄야 해. 위 목록에 없는 장소가 나왔다면 추가로 다뤄.\n`;
+      const lines = synopsisAssets.locations.map((name, i) => {
+        const s1loc = Array.isArray(s1Data?.key_locations)
+          ? (s1Data!.key_locations as Record<string,string>[]).find(l => l.name === name) : null;
+        const s2loc = Array.isArray(s2Data?.key_locations_brief)
+          ? (s2Data!.key_locations_brief as Record<string,string>[]).find(l => l.name === name) : null;
+        const type = s1loc?.type ?? s2loc?.type ?? "";
+        const role = s1loc?.significance ?? s2loc?.role ?? s1loc?.description ?? "";
+        return `${i + 1}. ${name}${type ? ` — ${type}` : ""}${role ? ` (${role})` : ""}`;
+      }).join("\n");
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록 — 세계관·시놉시스에서 이미 확정된 장소들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 장소야. 새로 만들지 말고 시각적으로 더 깊이 설계해. 위 목록에 없는 장소가 나왔다면 추가로 다뤄.\n`;
     } else if (stageId === 5 && synopsisAssets.props.length > 0) {
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 소품 목록 — 시놉시스 기준, 하나도 빠지면 안 됨]\n${synopsisAssets.props.map((n, i) => `${i + 1}. ${n}`).join("\n")}\n각 소품을 충분히 깊이 다뤄야 해. 위 목록에 없는 소품이 나왔다면 추가로 다뤄.\n`;
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 소품 목록 — 세계관·시놉시스에서 이미 확정된 소품들]\n${synopsisAssets.props.map((n, i) => `${i + 1}. ${n}`).join("\n")}\n이들은 이전 단계에서 확정된 소품이야. 각각을 충분히 깊이 다뤄야 해. 위 목록에 없는 소품이 나왔다면 추가로 다뤄.\n`;
     }
   }
 
@@ -1728,6 +1750,41 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     const stage = STAGES[stageIdx];
 
+    // Stage 3/4/5 시작 전 — Stage 1/2 확정 JSON 데이터로 synopsisAssetsRef 보강
+    // (비동기 AI 추출이 완료되지 않았을 때 대비, 구조화 JSON에서 직접 병합)
+    if (stageIdx >= 2) {
+      const s1res = stageResultsRef.current.find((r: StageResult) => r.stageId === 1);
+      const s2res = stageResultsRef.current.find((r: StageResult) => r.stageId === 2);
+      const s1d = s1res?.data;
+      const s2d = s2res?.data;
+      const names = (arr: unknown, key: string): string[] =>
+        Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
+
+      const prev = synopsisAssetsRef.current ?? { characters: [], locations: [], props: [] };
+      const chars = [...new Set([
+        ...prev.characters,
+        ...names(s1d?.key_characters, "name"),
+        ...names(s2d?.key_characters_brief, "name"),
+      ])];
+      const locs = [...new Set([
+        ...prev.locations,
+        ...names(s1d?.key_locations, "name"),
+        ...names(s2d?.key_locations_brief, "name"),
+      ])];
+      const merged: SynopsisAssets = { characters: chars, locations: locs, props: prev.props };
+      synopsisAssetsRef.current = merged;
+      // editableAssets와도 동기화
+      setEditableAssets((cur: SynopsisAssets) => {
+        const next: SynopsisAssets = {
+          characters: [...new Set([...cur.characters, ...chars])],
+          locations:  [...new Set([...cur.locations,  ...locs])],
+          props:      cur.props,
+        };
+        localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+        return next;
+      });
+    }
+
     // 롤링 요약 + 사용자 컨텍스트 상태
     let conversationSummary = "";
     let turnsSinceLastSummary = 0;
@@ -2026,7 +2083,33 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         stageResultsRef.current = newResults;
         setStageResults(newResults);
 
-        // 시놉시스(Stage 2) 완료 시 → 에셋 목록 자동 추출 (Stage 3/4/5 에이전트에게 전달)
+        // 에셋 목록 즉시 누적 (handleConfirm과 동일)
+        setEditableAssets((prev: SynopsisAssets) => {
+          const names = (arr: unknown, key: string): string[] =>
+            Array.isArray(arr) ? (arr as Record<string, string>[]).map(x => x[key]).filter(Boolean) : [];
+          let chars = [...prev.characters];
+          let locs   = [...prev.locations];
+          let props  = [...prev.props];
+          if (stage.id === 1) {
+            chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
+            locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
+          } else if (stage.id === 2) {
+            chars = [...new Set([...chars, ...names(data.key_characters_brief, "name")])];
+            locs  = [...new Set([...locs,  ...names(data.key_locations_brief,  "name")])];
+          } else if (stage.id === 3) {
+            chars = [...new Set([...chars, ...names(data.characters, "name")])];
+          } else if (stage.id === 4) {
+            locs  = [...new Set([...locs,  ...names(data.locations, "name")])];
+          } else if (stage.id === 5) {
+            props = [...new Set([...props, ...names(data.props, "name")])];
+          }
+          const next: SynopsisAssets = { characters: chars, locations: locs, props };
+          localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+          synopsisAssetsRef.current = next;
+          return next;
+        });
+
+        // 시놉시스(Stage 2) 완료 시 → 에셋 목록 AI 추가 추출 (병합)
         if (stage.id === 2 && summary) {
           void (async () => {
             try {
@@ -2047,8 +2130,18 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               const m = extracted.match(/\{[\s\S]*\}/);
               if (m) {
                 try {
-                  const assets = JSON.parse(m[0]) as SynopsisAssets;
-                  synopsisAssetsRef.current = assets;
+                  const aiAssets = JSON.parse(m[0]) as SynopsisAssets;
+                  // AI 추출 결과를 기존 목록에 병합 (덮어쓰지 않음)
+                  setEditableAssets((prev: SynopsisAssets) => {
+                    const next: SynopsisAssets = {
+                      characters: [...new Set([...prev.characters, ...aiAssets.characters])],
+                      locations:  [...new Set([...prev.locations,  ...aiAssets.locations])],
+                      props:      [...new Set([...prev.props,      ...aiAssets.props])],
+                    };
+                    localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+                    synopsisAssetsRef.current = next;
+                    return next;
+                  });
                 } catch { /* ignore */ }
               }
             } catch { /* ignore */ }
@@ -3180,10 +3273,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
       const next: SynopsisAssets = { characters: chars, locations: locs, props };
       localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+      synopsisAssetsRef.current = next; // 에이전트 체크리스트와 항상 동기화
       return next;
     });
 
-    // 시놉시스(Stage 2) 완료 시 → 에셋 목록 자동 추출 (AI fallback)
+    // 시놉시스(Stage 2) 완료 시 → 에셋 목록 자동 추출 (AI fallback — 추가 병합)
     if (stage.id === 2 && summary) {
       void (async () => {
         try {
@@ -3204,8 +3298,18 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const m = extracted.match(/\{[\s\S]*\}/);
           if (m) {
             try {
-              const assets = JSON.parse(m[0]) as SynopsisAssets;
-              synopsisAssetsRef.current = assets;
+              const aiAssets = JSON.parse(m[0]) as SynopsisAssets;
+              // 기존 목록에 병합 (덮어쓰지 않음)
+              setEditableAssets((prev: SynopsisAssets) => {
+                const next: SynopsisAssets = {
+                  characters: [...new Set([...prev.characters, ...aiAssets.characters])],
+                  locations:  [...new Set([...prev.locations,  ...aiAssets.locations])],
+                  props:      [...new Set([...prev.props,      ...aiAssets.props])],
+                };
+                localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+                synopsisAssetsRef.current = next;
+                return next;
+              });
             } catch { /* ignore */ }
           }
         } catch { /* ignore */ }
