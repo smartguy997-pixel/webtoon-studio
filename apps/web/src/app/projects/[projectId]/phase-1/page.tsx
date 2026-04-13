@@ -88,6 +88,10 @@ const AGENDA_P1 = [
 
 type AgendaId = typeof AGENDA_P1[number]["id"];
 
+// 아젠다 설정
+const MIN_TURNS_PER_TOPIC = 7;  // 주제별 최소 발언 횟수 (이 이상 다뤄야 완료 처리)
+const WRAP_UP_AFTER = 55;       // 7주제 × 7턴 + 여유 → 최소 55턴 후 마무리 제안 허용
+
 // API 키 할당 (에이전트 인덱스 → 키 인덱스) - API를 돌아가며 사용
 function getApiKeyIndexForAgent(agentIndex: number): number {
   const keys = getAllAnthropicKeys();
@@ -1287,6 +1291,7 @@ export default function Phase1Page() {
   const [isWritingReport, setIsWritingReport] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<AgendaId[]>([]); // 다뤄진 아젠다 항목 (UI 표시용)
+  const [agendaTurnCounts, setAgendaTurnCounts] = useState<Partial<Record<AgendaId, number>>>({}); // 아이템별 누적 턴수 (UI 표시용)
   const [statusMsg, setStatusMsg] = useState(""); // 진행 상태 안내 메시지
   const [replyTo, setReplyTo] = useState<{ msg: Msg; agentLabel: string; preview: string } | null>(null);
   const [rejectedWorks, setRejectedWorks] = useState<string[]>([]); // 사용자가 부정한 유사작품 블랙리스트
@@ -1541,10 +1546,11 @@ export default function Phase1Page() {
     let wrapUpProposed = false;     // 프로듀서가 마무리 제안 중
     let wrapUpProposedAt = 0;       // 제안 시각 (ms)
     let wrapUpCooldown = 0;         // 사용자 거부 후 N턴 동안 마무리 제안 금지
-    const WRAP_UP_AFTER = 20;       // 에이전트 발언 N회 후 마무리 제안 (아젠다 전체 완료 후 적용)
+    // MIN_TURNS_PER_TOPIC, WRAP_UP_AFTER — 모듈 상수 사용
     const WRAP_UP_AUTO_MS = 30_000; // 30초 무응답 → 자동 종료
     // ── 아젠다 추적 (순서 없음 — 키워드 감지 기반) ──
-    const coveredAgenda = new Set<AgendaId>(); // 자연스럽게 다뤄진 주제들
+    const coveredAgenda = new Set<AgendaId>(); // MIN_TURNS_PER_TOPIC 이상 다뤄진 주제
+    const agendaTurns: Partial<Record<AgendaId, number>> = {}; // 주제별 발언 횟수
     let nudgeCooldown = 0; // 프로듀서가 주제 꺼낸 후 N턴 대기
     setCoveredAgendaIds([]);
     // 사용자 동의 패턴 (마무리 제안에 yes 한 것으로 간주)
@@ -2015,23 +2021,37 @@ export default function Phase1Page() {
       // ── 아젠다 키워드 감지 (최근 대화에서 자연스럽게 다룬 주제 체크) ──
       const recentText = transcript.slice(-4).join(" ");
       for (const item of AGENDA_P1) {
-        if (!coveredAgenda.has(item.id) && item.keywords.test(recentText)) {
-          coveredAgenda.add(item.id);
-          setCoveredAgendaIds([...coveredAgenda]); // UI 체크리스트 업데이트
+        if (item.keywords.test(recentText)) {
+          // 턴 카운트 누적
+          agendaTurns[item.id] = (agendaTurns[item.id] ?? 0) + 1;
+          // MIN_TURNS_PER_TOPIC 이상 다뤄야 완료 처리
+          if (!coveredAgenda.has(item.id) && (agendaTurns[item.id] ?? 0) >= MIN_TURNS_PER_TOPIC) {
+            coveredAgenda.add(item.id);
+            setCoveredAgendaIds([...coveredAgenda]);
+          }
+          // UI에 실시간 턴수 반영
+          setAgendaTurnCounts({ ...agendaTurns });
         }
       }
-      // 아직 안 다룬 주제가 있고 5턴마다 프로듀서가 슬쩍 꺼냄
+      // 아직 MIN_TURNS_PER_TOPIC 미달인 주제가 있고 3턴마다 프로듀서가 심층 분석 요청
       if (nudgeCooldown > 0) {
         nudgeCooldown--;
-      } else if (agentTurnsSoFar > 0 && agentTurnsSoFar % 5 === 0) {
+      } else if (agentTurnsSoFar > 0 && agentTurnsSoFar % 3 === 0) {
+        // 가장 덜 다뤄진(턴수 적은) 미완료 주제 우선 선택
         const uncovered = AGENDA_P1.filter(item => !coveredAgenda.has(item.id));
         if (uncovered.length > 0) {
-          // 아직 안 다룬 것 중 하나를 랜덤으로 꺼냄
-          const pick = uncovered[Math.floor(Math.random() * uncovered.length)];
-          await runSingleAgent("producer", pick.nudge + " 짧게 한마디만.", 60);
+          const pick = uncovered.sort(
+            (a, b) => (agendaTurns[a.id] ?? 0) - (agendaTurns[b.id] ?? 0)
+          )[0];
+          const currentTurns = agendaTurns[pick.id] ?? 0;
+          await runSingleAgent(
+            "producer",
+            `${pick.nudge} 지금까지 ${currentTurns}회 논의됐는데, 최소 ${MIN_TURNS_PER_TOPIC}회 이상 심층 분석이 필요해. 구체적인 데이터와 사례를 들어 깊이 있게 이야기해줘.`,
+            120,
+          );
           lastSpeaker = "producer";
           recentSpeakers = (["producer" as AgentId, ...recentSpeakers] as AgentId[]).slice(0, 3);
-          nudgeCooldown = 4; // 4턴 대기 후 다시 체크
+          nudgeCooldown = 2; // 2턴 대기 후 다시 체크
           continue;
         }
       }
@@ -2301,17 +2321,24 @@ export default function Phase1Page() {
           }}>
             {AGENDA_P1.map((item) => {
               const covered = debatePhase === "done" || coveredAgendaIds.includes(item.id);
+              const turns = agendaTurnCounts[item.id] ?? 0;
+              const progress = Math.min(turns, MIN_TURNS_PER_TOPIC);
               return (
                 <div key={item.id} style={{
                   display: "flex", alignItems: "center", gap: 4,
                   padding: "2px 8px", borderRadius: 99, fontSize: 11,
-                  background: covered ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.04)",
-                  border: "1px solid transparent",
-                  color: covered ? "#a5b4fc" : "rgba(255,255,255,0.3)",
+                  background: covered ? "rgba(99,102,241,0.25)" : turns > 0 ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${covered ? "rgba(99,102,241,0.4)" : "transparent"}`,
+                  color: covered ? "#a5b4fc" : turns > 0 ? "rgba(165,180,252,0.6)" : "rgba(255,255,255,0.3)",
                   transition: "all 0.5s",
                 }}>
                   <span>{covered ? "✓" : "○"}</span>
                   <span>{item.label}</span>
+                  {debatePhase === "running" && (
+                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>
+                      {covered ? `${MIN_TURNS_PER_TOPIC}/${MIN_TURNS_PER_TOPIC}` : `${progress}/${MIN_TURNS_PER_TOPIC}`}
+                    </span>
+                  )}
                 </div>
               );
             })}
