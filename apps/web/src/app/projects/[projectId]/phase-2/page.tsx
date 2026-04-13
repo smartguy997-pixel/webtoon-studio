@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import s from "./page.module.css";
 import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicKeys } from "@/lib/claude-client";
 
@@ -988,6 +988,7 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
 export default function Phase2Page({ params }: { params: { projectId: string } }) {
   const { projectId } = params;
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // ── State ──
   const [genre, setGenre] = useState("판타지");
@@ -1006,6 +1007,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
   const [viewingStageIdx, setViewingStageIdx] = useState<number | null>(null); // 열람 중인 이전 단계
+
+  // ── 에셋 리스트 단계 State (Stage 2 완료 후 스타일 전 삽입) ──
+  type AssetListPhase = "idle" | "reviewing" | "confirmed";
+  const [assetListPhase, setAssetListPhase] = useState<AssetListPhase>("idle");
+  const [editableAssets, setEditableAssets] = useState<SynopsisAssets>({ characters: [], locations: [], props: [] });
+  // 각 섹션별 새 항목 입력값
+  const [newCharInput, setNewCharInput] = useState("");
+  const [newLocInput, setNewLocInput] = useState("");
+  const [newPropInput, setNewPropInput] = useState("");
 
   // ── 스타일 정의 State (Stage 2 완료 후 삽입) ──
   type StylePhase = "idle" | "debating" | "reviewing" | "generating" | "confirmed";
@@ -1078,6 +1088,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           improvements:        p1.data.improvements,
           genre_analysis:      p1.data.genre_analysis,
         };
+      }
+
+      // 에셋 리스트 복원
+      const savedAssets = localStorage.getItem(`wts_asset_list_${projectId}`);
+      if (savedAssets) {
+        const parsed = JSON.parse(savedAssets) as SynopsisAssets;
+        synopsisAssetsRef.current = parsed;
+        setEditableAssets(parsed);
+        setAssetListPhase("confirmed");
       }
 
       // 확정된 스타일 복원
@@ -1520,6 +1539,25 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       }
     }
   }, [genre, addMsg, updateMsg, projectId]);
+
+  // ── Asset List Review: 에셋 목록 확인 (Stage 2 완료 후, 스타일 전) ──
+  const runAssetListReview = useCallback(async () => {
+    // synopsisAssetsRef.current should already have extracted assets from Stage 2 completion
+    const assets = synopsisAssetsRef.current ?? { characters: [], locations: [], props: [] };
+    setEditableAssets(assets);
+    setAssetListPhase("reviewing");
+
+    // Producer announces the asset list review
+    setMsgs([]);
+    convRef.current = [];
+    const msgId = addMsg("producer", "", true);
+    const text = "시놉시스에서 에셋 목록을 뽑았어. 이걸 기준으로 캐릭터/장소/소품을 설계할 거야. 빠진 거 있으면 추가해줘.";
+    for (let i = 2; i < text.length; i += 2) {
+      await new Promise<void>(r => setTimeout(r, 80));
+      setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: text.slice(0, i), streaming: true } : m));
+    }
+    setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text, streaming: false } : m));
+  }, [addMsg]);
 
   // ── Style Definition: 스타일 토론 (Stage 2 완료 후) ──
   const runStyleDebate = useCallback(async () => {
@@ -2586,12 +2624,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Move to next stage (only via button) ──
   const handleNextStage = useCallback((stageIdx: number) => {
-    // Stage 2(index=1) 완료 후 → 스타일 정의 단계 삽입
-    if (stageIdx === 1 && stylePhase === "idle") {
+    // Stage 2(index=1) 완료 후 → 에셋 리스트 검토 → 스타일 정의 단계
+    if (stageIdx === 1) {
       setMsgs([]);
       convRef.current = [];
-      setStylePhase("debating");
-      void runStyleDebate();
+      if (assetListPhase === "idle") {
+        // Start asset list review first
+        void runAssetListReview();
+      } else if (assetListPhase === "confirmed" && stylePhase === "idle") {
+        setStylePhase("debating");
+        void runStyleDebate();
+      }
       return;
     }
     // Stage 3/4/5(index=2/3/4) 완료 후 → 이미지 생성 단계 삽입
@@ -2608,12 +2651,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     } else {
       void runDebate(nextIdx);
     }
-  }, [runDebate, runStyleDebate, stylePhase, enterImageGenPhase]);
+  }, [runDebate, runStyleDebate, runAssetListReview, stylePhase, assetListPhase, enterImageGenPhase]);
 
   const handleRestartNew = useCallback(() => {
     abortRef.current = true;
     localStorage.removeItem(`p2_msgs_${projectId}`);
     localStorage.removeItem(`wts_phase2_${projectId}`);
+    localStorage.removeItem(`wts_asset_list_${projectId}`);
     STAGES.forEach((_, idx) => {
       localStorage.removeItem(`p2_conv_${idx}_${projectId}`);
       localStorage.removeItem(`p2_msgs_${idx}_${projectId}`);
@@ -2622,12 +2666,79 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     convRef.current = [];
     stageResultsRef.current = [];
     runningRef.current = false;
+    synopsisAssetsRef.current = null;
     setMsgs([]); setStageResults([]); setCurrentStageIdx(0); setApiError(null);
     setStageHistoryMsgs({}); setViewingStageIdx(null);
+    setAssetListPhase("idle");
+    setEditableAssets({ characters: [], locations: [], props: [] });
     setDebatePhase("idle");
   }, [projectId]);
 
   // ── UI ──
+
+  // ── View mode: sidebar 내비게이션 ──
+  const viewParam = searchParams.get("view");
+  if (viewParam) {
+    const stageIdMap: Record<string, number> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5 };
+    const stageId = stageIdMap[viewParam];
+    const viewResult = stageId ? stageResults.find((r: StageResult) => r.stageId === stageId) : null;
+    const isAssetsView = viewParam === "assets";
+    const isStyleView = viewParam === "style";
+    const hasData = viewResult ?? (isAssetsView && editableAssets.characters.length + editableAssets.locations.length + editableAssets.props.length > 0) ?? (isStyleView && !!conceptStyle);
+
+    if (hasData) {
+      return (
+        <div className={s.page}>
+          <div style={{ padding: "16px 20px", maxWidth: 900, margin: "0 auto" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: "#c8d0e0", margin: 0 }}>
+                {stageId ? STAGES.find(st => st.id === stageId)?.name : isAssetsView ? "에셋 리스트" : "스타일"}
+              </h2>
+              <a href={`/projects/${projectId}/phase-2`} style={{ fontSize: 12, color: "#7c6cfc", textDecoration: "none", padding: "5px 12px", border: "1px solid rgba(124,108,252,0.3)", borderRadius: 6, background: "rgba(124,108,252,0.05)" }}>
+                ← 현재 단계로 돌아가기
+              </a>
+            </div>
+
+            {viewResult && <StageResultCard result={viewResult} />}
+
+            {isAssetsView && (
+              <div style={{ background: "#0e0e1a", border: "1px solid #1e1e2a", borderRadius: 10, padding: "16px 18px" }}>
+                {(["characters", "locations", "props"] as const).map(key => {
+                  const labels = { characters: "캐릭터", locations: "장소", props: "소품·장비" };
+                  const colors = { characters: "#fb923c", locations: "#a78bfa", props: "#e879f9" };
+                  return (
+                    <div key={key} style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>{labels[key]}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6 }}>
+                        {editableAssets[key].map((name, i) => (
+                          <span key={i} style={{ background: `${colors[key]}18`, border: `1px solid ${colors[key]}40`, borderRadius: 99, padding: "2px 10px", fontSize: 12, color: colors[key] }}>{name}</span>
+                        ))}
+                        {editableAssets[key].length === 0 && <span style={{ fontSize: 12, color: "#3a3a52" }}>(없음)</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {isStyleView && conceptStyle && (
+              <div style={{ background: "#0e0e1a", border: "1px solid #f59e0b40", borderRadius: 10, padding: "16px 18px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 8 }}>확정된 스타일 프롬프트</div>
+                <div style={{ fontSize: 13, color: "#eeeef5", lineHeight: 1.7, fontFamily: "monospace" }}>{conceptStyle}</div>
+                {styleTestImages.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" as const }}>
+                    {styleTestImages.map((url, i) => (
+                      <img key={i} src={url} alt={`스타일 테스트 ${i+1}`} style={{ height: 150, borderRadius: 8, objectFit: "cover", border: "1px solid #2a2a3d" }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+  }
 
   if (debatePhase === "idle") {
     return (
@@ -2672,6 +2783,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 </div>
               );
             })}
+            {/* 에셋 리스트 단계 표시기 */}
+            {assetListPhase !== "idle" && (
+              <div className={s.stepItem} style={{ opacity: assetListPhase === "confirmed" ? 0.5 : 1 }}>
+                <div className={s.stepDot} style={{ background: assetListPhase === "confirmed" ? "#34d399" : "#fbbf24", boxShadow: assetListPhase !== "confirmed" ? "0 0 6px #fbbf24" : "none" }} />
+                <span className={s.stepLabel} style={{ color: assetListPhase === "confirmed" ? "#34d399" : "#fbbf24" }}>
+                  {assetListPhase === "confirmed" ? "✓ 에셋 리스트" : "📋 에셋 리스트"}
+                </span>
+              </div>
+            )}
             {/* 스타일 정의 단계 표시기 */}
             {stylePhase !== "idle" && (
               <div className={s.stepItem} style={{ opacity: stylePhase === "confirmed" ? 0.5 : 1 }}>
@@ -3047,8 +3167,94 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             </div>
           )}
 
-          {/* 이미지/스타일 단계 활성 중엔 아래 일반 바텀바 숨김 */}
-          {imageSessionPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") ? null : (<>
+          {/* ── 에셋 리스트 검토 단계 UI ── */}
+          {imageSessionPhase === "idle" && assetListPhase === "reviewing" && (
+            <div style={{ padding: "12px 16px", borderTop: "1px solid #1e1e2a", overflowY: "auto", maxHeight: "60vh" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 10 }}>
+                📋 에셋 리스트 확인 — 빠진 항목이 있으면 추가하세요
+              </div>
+
+              {/* 캐릭터 섹션 */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>캐릭터</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
+                  {editableAssets.characters.map((name, i) => (
+                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#fb923c" }}>
+                      {name}
+                      <button onClick={() => setEditableAssets(a => ({ ...a, characters: a.characters.filter((_, j) => j !== i) }))}
+                        style={{ background: "none", border: "none", color: "#fb923c", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input value={newCharInput} onChange={e => setNewCharInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }}
+                    placeholder="+ 캐릭터 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
+                  <button onClick={() => { if (newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }}
+                    style={{ background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 6, color: "#fb923c", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
+                </div>
+              </div>
+
+              {/* 장소 섹션 */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>장소</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
+                  {editableAssets.locations.map((name, i) => (
+                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#a78bfa" }}>
+                      {name}
+                      <button onClick={() => setEditableAssets(a => ({ ...a, locations: a.locations.filter((_, j) => j !== i) }))}
+                        style={{ background: "none", border: "none", color: "#a78bfa", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input value={newLocInput} onChange={e => setNewLocInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }}
+                    placeholder="+ 장소 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
+                  <button onClick={() => { if (newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }}
+                    style={{ background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 6, color: "#a78bfa", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
+                </div>
+              </div>
+
+              {/* 소품·장비 섹션 */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>소품·장비</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
+                  {editableAssets.props.map((name, i) => (
+                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(232,121,249,0.1)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#e879f9" }}>
+                      {name}
+                      <button onClick={() => setEditableAssets(a => ({ ...a, props: a.props.filter((_, j) => j !== i) }))}
+                        style={{ background: "none", border: "none", color: "#e879f9", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input value={newPropInput} onChange={e => setNewPropInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }}
+                    placeholder="+ 소품·장비 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
+                  <button onClick={() => { if (newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }}
+                    style={{ background: "rgba(232,121,249,0.1)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 6, color: "#e879f9", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
+                </div>
+              </div>
+
+              {/* 확정 버튼 */}
+              <button
+                onClick={() => {
+                  const confirmed = { ...editableAssets };
+                  synopsisAssetsRef.current = confirmed;
+                  localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(confirmed));
+                  setAssetListPhase("confirmed");
+                  setStylePhase("debating");
+                  void runStyleDebate();
+                }}
+                style={{ width: "100%", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "10px 0", cursor: "pointer", marginTop: 4 }}>
+                ✓ 확정 → 스타일 정의로
+              </button>
+            </div>
+          )}
+
+          {/* 이미지/스타일/에셋 리스트 단계 활성 중엔 아래 일반 바텀바 숨김 */}
+          {imageSessionPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") || assetListPhase === "reviewing" ? null : (<>
 
           {/* Paused: 이전 토론 이어하기 */}
           {debatePhase === "paused" && (
