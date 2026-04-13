@@ -212,7 +212,9 @@ ${concept}
 
 [이미지 서치할 때]
 반드시 이 형식으로: 🖼️ 이미지 서치: "검색어"
-한 번 발언에 딱 1개만. 한국/일본 작품은 한글로, 미국/유럽 작품은 영어로.
+한 번 발언에 딱 1개만.
+검색어는 작품 제목만 써. "webtoon", "manhwa", "art", "comic" 같은 영문 단어 절대 붙이지 마.
+한국/일본 작품은 한글 제목으로, 영미권 작품은 원제 그대로.
 
 ${DEBATE_RULES}`;
 }
@@ -1266,6 +1268,8 @@ export default function Phase1Page() {
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<AgendaId[]>([]); // 다뤄진 아젠다 항목 (UI 표시용)
   const [statusMsg, setStatusMsg] = useState(""); // 진행 상태 안내 메시지
   const [replyTo, setReplyTo] = useState<{ msg: Msg; agentLabel: string; preview: string } | null>(null);
+  const [rejectedWorks, setRejectedWorks] = useState<string[]>([]); // 사용자가 부정한 유사작품 블랙리스트
+  const rejectedWorksRef = useRef<string[]>([]);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Refs ──
@@ -1276,6 +1280,9 @@ export default function Phase1Page() {
   const userTypingRef = useRef(false);
   const savedTranscriptRef = useRef<string[]>([]);
   const isComposingRef = useRef(false);
+
+  // rejectedWorks state → ref 동기화
+  useEffect(() => { rejectedWorksRef.current = rejectedWorks; }, [rejectedWorks]);
 
   useEffect(() => {
     setMounted(true);
@@ -1756,6 +1763,8 @@ export default function Phase1Page() {
       if (rollingSummary)          parts.push(`[전체 토론 요약]\n${rollingSummary}`);
       if (topicContent)            parts.push(`[${label}]\n${topicContent}`);
       if (relevantTurns.length > 0) parts.push(`[${label} 관련 과거 발언]\n${relevantTurns.join("\n")}`);
+      if (rejectedWorksRef.current.length > 0)
+        parts.push(`[언급 금지 작품 — 사용자가 유사하지 않다고 명시적으로 부정함]\n${rejectedWorksRef.current.map(w => `• ${w}`).join("\n")}\n위 작품들은 절대 언급하거나 유사작품으로 분석하지 마.`);
       parts.push(`[최근 대화]\n${transcript.slice(-6).join("\n")}`);
       return parts.join("\n\n") + "\n\n";
     };
@@ -1799,6 +1808,25 @@ export default function Phase1Page() {
         saveTurn(`[사용자]: ${pendingMsg}`, "user", round); // 사용자 발언도 Firestore 저장
         round++;
         lastUserMsg = pendingMsg;
+
+        // 사용자가 특정 작품을 부정한 경우 블랙리스트에 추가
+        // "X가 왜 나와", "X는 관계없어", "X 언급하지마" 등 감지
+        const REJECT_RE = /왜\s*나와|관계\s*없|상관\s*없|언급\s*하지|얘기\s*하지\s*마|다르잖|틀렸|아니잖|아니야|관련\s*없/;
+        if (REJECT_RE.test(pendingMsg)) {
+          // 최근 3턴 에이전트 발언에서 꺾쇠·따옴표로 감싸진 작품명 또는 <작품명> 추출
+          const recentAgentLines = transcript.slice(-6).filter(l => !l.startsWith("[사용자]"));
+          const workPattern = /[<「『""]([^>」』""]{1,30})[>」』""]/g;
+          const foundWorks = new Set<string>();
+          for (const line of recentAgentLines) {
+            let m;
+            while ((m = workPattern.exec(line)) !== null) foundWorks.add(m[1].trim());
+          }
+          if (foundWorks.size > 0) {
+            const newRejected = [...rejectedWorksRef.current, ...foundWorks].filter((v, i, a) => a.indexOf(v) === i);
+            rejectedWorksRef.current = newRejected;
+            setRejectedWorks(newRejected);
+          }
+        }
         userTurnCount = 4; // 4턴 동안 사용자 의견을 context에 유지
         // 마무리 제안 중이면: 동의 → 종료, 그 외 → 계속 대화
         if (wrapUpProposed) {
@@ -2020,14 +2048,24 @@ export default function Phase1Page() {
   }, [concept, genre, platform, episodeCount, projectId, runDebate]);
 
   const handleRestartNew = useCallback(() => {
+    // 대화 데이터 초기화
     localStorage.removeItem(`p1_result_${projectId}`);
     localStorage.removeItem(`p1_msgs_${projectId}`);
     localStorage.removeItem(`p1_conv_${projectId}`);
     localStorage.removeItem(`wts_phase1_${projectId}`);
+    // 메모리(롤링 요약·토픽 요약) 완전 초기화 — 이전 작품 기억이 오염되지 않도록
+    localStorage.removeItem(`p1_memory_${projectId}`);
+    if (db) {
+      void import("firebase/firestore").then(({ doc: fsDoc, deleteDoc }) => {
+        void deleteDoc(fsDoc(db!, "p1_memory", projectId)).catch(() => {});
+      });
+    }
     savedTranscriptRef.current = [];
     setSavedAt(null);
     setMsgs([]);
     setResult(null);
+    setRejectedWorks([]);
+    rejectedWorksRef.current = [];
     setStage("form");
     setDebatePhase("idle");
   }, [projectId]);
