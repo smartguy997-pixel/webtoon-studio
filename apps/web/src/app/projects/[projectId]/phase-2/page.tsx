@@ -185,7 +185,7 @@ const STAGE_AGENDA: Record<number, Array<{
 
 const STAGES = [
   { id: 1 as const, name: "세계관",     topic: "세계관 — 드라마·웹툰·애니를 위한 세계 설계: 시대적 공기·사회적 압박·만약에 설정·인물 역학·테마",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"구체적 시대 배경 (연도·장소명·그 시대의 결핍이나 특징)","core_space":"핵심 공간 (주인공이 주로 머무는 곳의 디테일 — 캐릭터 처지를 대변)","daily_life":"생활감 (사람들이 먹고·입고·쓰는 유행어 등 현실적 디테일)","power_hierarchy":"계급과 권력 (누가 갑이고 누가 을인가 — 재벌/서민, 상사/부하 등)","social_norms":"사회적 통념 (이 세계에서 당연하게 여겨지는 가치관)","taboo":"금기 (넘어서는 안 되는 선 — 주인공이 이 선을 넘을 때 갈등 폭발)","what_if_rule":"만약에 설정 (현실과 딱 하나 다른 핵심 규칙 — 장르물이면 필수, 현실물이면 생략 가능)","what_if_cost":"규칙의 대가 (초능력·행운에 따르는 리스크와 제약)","what_if_who_knows":"비밀의 공유 (이 설정을 누가 알고 누가 모르는가 — 정보 불균형이 긴장감 만듦)","key_characters":[{"name":"이름","role":"주인공/빌런/조력자/방해자","position":"이야기에서의 포지션 (돕는자/막는자/중립)","age":"나이/나이대","gender":"성별","face":"얼굴 특징 (이목구비·인상·표정 습관)","height":"키","build":"체형","outfit":"복장","personality":"성격 (3가지 이상)","motivation":"동기와 목표 (무엇을 원하고 왜)","backstory":"과거사와 내면의 상처","speech":"말투","goal_conflict":"다른 인물과의 목표 충돌"}],"key_locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","significance":"이야기에서의 역할"}],"character_backstory":"인물들이 서로 얽히게 된 결정적 계기 (과거사 요약)","goal_conflicts":"목표의 충돌 구조 (A는 복수를 원하고 B는 용서를 원할 때 등)","theme":"핵심 테마·메시지 (모든 사건과 배경이 향하는 주제 — 사랑/복수/가족애/정의 등)"}' },
-  { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — IP 전략가+수석 작가 관점: 로그라인·기획의도·세계관규칙·인카네이션·스토리아크·비판보완 + 에셋리스트",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 문장 — 아이러니하고 시선을 끄는 로그라인","production_intent":"기획 의도 — 이 작품이 지금 이 시대에 왜 필요한가","target_audience":"핵심 타겟층 (나이·성별·관심사)","genre":"최적 장르 + 서브장르","world_rules":["이 세계에서만 작동하는 사회 규칙 1","규칙 2","규칙 3"],"protagonist":{"name":"이름","pain_point":"결핍(Pain point) — 무엇이 빠져있는가","want":"목표(Want) — 무엇을 원하는가","need":"진짜 필요 — 자신도 모르는 진짜 문제","incarnation":"왜 이 세계관에서만 이 결핍이 의미 있는가","arc":"캐릭터 아크 — 시작에서 끝까지 어떻게 변하는가"},"trigger":"사건의 트리거 — 세계관 특수 규칙이 주인공 일상과 충돌하는 첫 번째 대사건","story_arc":{"setup":"발단 — 주인공의 일상과 사건의 도화선","development":"전개 — 갈등 심화와 세계관 비밀 노출 시작","crisis":"위기 — 모든 것이 잘못될 때","climax":"절정 — 가장 극적인 대결 또는 선택","resolution":"결말 — 카타르시스와 변화","twist":"반전 — 독자가 예상 못할 전환점"},"world_exclusivity":"이 세계관이 아니면 절대 불가능한 이유","critique":"진부한 요소 지적 + 어떻게 신선하게 만들 것인가","characters":[{"name":"이름","role":"역할(주인공/빌런/조력자 등)","appearance":"외형 묘사 (이미지 생성용 — 얼굴·키·체형·복장·헤어·특징)","personality":"성격 키워드 3가지 이상","relation":"주인공과의 관계"}],"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사 (이미지 생성용 — 건축·조명·색채·분위기·디테일)","significance":"이야기에서의 역할"}],"props":[{"name":"소품명","type":"유형","visual":"시각적 묘사 (이미지 생성용 — 색·형태·재질·크기·상태)","story_role":"이야기 역할","owner":"소유자"}],"key_scenes":[{"title":"장면 제목","location":"장소","characters":"등장 인물","action":"행동·상황 묘사","visual":"시각적 묘사 (이미지 생성용 — 구도·색감·조명·분위기)","emotion":"감정·분위기 키워드"}]}' },
+  { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — IP 전략가+수석 작가 관점: 로그라인·기획의도·세계관규칙·인카네이션·스토리아크·비판보완 + 에셋리스트",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 문장 — 아이러니하고 시선을 끄는 로그라인","production_intent":"기획 의도 — 이 작품이 지금 이 시대에 왜 필요한가","target_audience":"핵심 타겟층 (나이·성별·관심사)","genre":"최적 장르 + 서브장르","world_rules":["이 세계에서만 작동하는 사회 규칙 1","규칙 2","규칙 3"],"protagonist":{"name":"이름","pain_point":"결핍(Pain point) — 무엇이 빠져있는가","want":"목표(Want) — 무엇을 원하는가","need":"진짜 필요 — 자신도 모르는 진짜 문제","incarnation":"왜 이 세계관에서만 이 결핍이 의미 있는가","arc":"캐릭터 아크 — 시작에서 끝까지 어떻게 변하는가"},"trigger":"사건의 트리거 — 세계관 특수 규칙이 주인공 일상과 충돌하는 첫 번째 대사건","story_arc":{"setup":"발단 — 주인공의 일상과 사건의 도화선","development":"전개 — 갈등 심화와 세계관 비밀 노출 시작","crisis":"위기 — 모든 것이 잘못될 때","climax":"절정 — 가장 극적인 대결 또는 선택","resolution":"결말 — 카타르시스와 변화","twist":"반전 — 독자가 예상 못할 전환점"},"world_exclusivity":"이 세계관이 아니면 절대 불가능한 이유","critique":"진부한 요소 지적 + 어떻게 신선하게 만들 것인가","characters":[{"name":"이름","role":"역할(주인공/빌런/조력자 등)","appearance":"외형 묘사 (얼굴·키·체형·복장·헤어·특징 — 구체적으로)","personality":"성격 키워드 3가지 이상","relation":"주인공과의 관계","image_prompt":"Runway Gen-4 영문 프롬프트 — [인물 외형: 인종·나이·헤어·복장·표정], [조명: 유형·방향·색온도], [카메라: 샷 종류·앵글], [분위기·스타일 키워드]. 예: Korean woman in her 20s, shoulder-length black hair, wearing worn denim jacket, looking away from camera, golden hour backlighting, medium close-up, webtoon line art style, melancholic mood"}],"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사 (건축·조명·색채·분위기·디테일 — 구체적으로)","significance":"이야기에서의 역할","image_prompt":"Runway Gen-4 영문 프롬프트 — [장소 묘사: 공간·건축·색채], [조명: 시간대·자연/인공·그림자], [카메라: 샷 종류·무브], [분위기·스타일]. 예: narrow alleyway between brutalist concrete buildings, flickering neon signs reflected on wet pavement, overcast night lighting, low-angle wide shot, Korean urban noir style, oppressive atmosphere"}],"props":[{"name":"소품명","type":"유형","visual":"시각적 묘사 (색·형태·재질·크기·상태 — 구체적으로)","story_role":"이야기 역할","owner":"소유자","image_prompt":"Runway Gen-4 영문 프롬프트 — [소품 묘사: 형태·색상·재질·상태·크기], [조명: 방향·색온도·반사], [카메라: 샷 종류], [스타일·분위기]. 예: worn leather notebook with frayed edges, dark brown with gold-stamped cover, sitting on wooden desk, soft desk lamp sidelight, extreme close-up, warm tones, webtoon still-life style"}],"key_scenes":[{"title":"장면 제목","location":"장소","characters":"등장 인물","action":"행동·상황 묘사","visual":"시각적 묘사 (구도·색감·조명·분위기)","emotion":"감정·분위기 키워드","image_prompt":"Runway Gen-4 영문 프롬프트 — [인물 행동·표정], [장소 배경], [조명: 시간·방향·색온도], [카메라: 샷·무브·앵글], [분위기·스타일]. 예: young man in hoodie running through rain-soaked alley, desperate expression, pursuing shadows behind him, dramatic side lighting with blue tones, tracking shot from low angle, Korean webtoon action style"}]}' },
   { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
   { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
   { id: 5 as const, name: "소품·장비",  topic: "소품·장비·도구 — 탈것·무기·특수 아이템·장비·일상용품 등 이야기에서 중요한 모든 물건의 시각적 설계",  tag: "PROPS", color: "#e879f9", schema: '{"props":[{"name":"소품명","type":"유형(탈것/무기/장비/아이템/일상용품)","visual":"시각적 묘사 (색상·형태·재질·크기)","condition":"상태 (낡음/새것/특별히 장식됨 등)","function":"기능/용도","story_role":"이야기에서의 역할","symbolic_meaning":"상징적 의미","owner":"주요 소유자/사용자"}]}' },
@@ -497,33 +497,79 @@ function buildSingleAgentPrompt(
   const s1Data = prevResults.find(r => r.stageId === 1)?.data;
   const s2Data = prevResults.find(r => r.stageId === 2)?.data;
 
-  // 에셋 목록 — 세계관·시놉시스에서 확정된 항목, 설명 포함
+  // 에셋 목록 — 세계관·시놉시스에서 확정된 항목, 시각 묘사 + Runway 프롬프트 포함
+  const s1chars   = Array.isArray(s1Data?.key_characters) ? (s1Data!.key_characters as Record<string,string>[]) : [];
+  const s2chars   = Array.isArray(s2Data?.characters)     ? (s2Data!.characters     as Record<string,string>[]) : [];
+  const s1locs    = Array.isArray(s1Data?.key_locations)  ? (s1Data!.key_locations  as Record<string,string>[]) : [];
+  const s2locs    = Array.isArray(s2Data?.locations)      ? (s2Data!.locations      as Record<string,string>[]) : [];
+  const s2props   = Array.isArray(s2Data?.props)          ? (s2Data!.props          as Record<string,string>[]) : [];
+
   let assetChecklist = "";
   if (synopsisAssets) {
     if (stageId === 3 && synopsisAssets.characters.length > 0) {
+      // 주인공 인카네이션 별도 강조
+      const prot = s2Data?.protagonist as Record<string,string> | undefined;
+      const protSection = prot ? [
+        `[📌 주인공 — 시놉시스 확정 설정]`,
+        prot.name        ? `이름: ${prot.name}` : "",
+        prot.pain_point  ? `결핍(Pain Point): ${prot.pain_point}` : "",
+        prot.want        ? `목표(Want): ${prot.want}` : "",
+        prot.need        ? `진짜 필요(Need): ${prot.need}` : "",
+        prot.incarnation ? `인카네이션: ${prot.incarnation}` : "",
+        prot.arc         ? `캐릭터 아크: ${prot.arc}` : "",
+      ].filter(Boolean).join("\n") + "\n" : "";
+
       const lines = synopsisAssets.characters.map((name, i) => {
-        const s1ch = Array.isArray(s1Data?.key_characters)
-          ? (s1Data!.key_characters as Record<string,string>[]).find(c => c.name === name) : null;
-        const s2ch = Array.isArray(s2Data?.characters)
-          ? (s2Data!.characters as Record<string,string>[]).find(c => c.name === name) : null;
-        const role = s1ch?.role ?? s2ch?.role ?? "";
-        const desc = s2ch?.appearance ?? s2ch?.relation ?? s1ch?.motivation ?? "";
-        return `${i + 1}. ${name}${role ? ` — ${role}` : ""}${desc ? ` (${desc})` : ""}`;
+        const s1ch = s1chars.find(c => c.name === name);
+        const s2ch = s2chars.find(c => c.name === name);
+        const role = s2ch?.role ?? s1ch?.role ?? "";
+        const desc = [
+          (s2ch?.appearance ?? s1ch?.face) ? `외형: ${s2ch?.appearance ?? s1ch?.face}` : "",
+          (s2ch?.personality ?? s1ch?.personality) ? `성격: ${s2ch?.personality ?? s1ch?.personality}` : "",
+          s2ch?.relation ? `관계: ${s2ch.relation}` : "",
+          (!s2ch && s1ch?.motivation) ? `동기: ${s1ch.motivation}` : "",
+          s2ch?.image_prompt ? `Runway프롬프트(EN): ${s2ch.image_prompt}` : "",
+        ].filter(Boolean).join(" / ");
+        return `${i + 1}. **${name}**${role ? ` — ${role}` : ""}${desc ? `\n   ${desc}` : ""}`;
       }).join("\n");
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 캐릭터 목록 — 세계관·시놉시스에서 이미 확정된 인물들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 인물이야. 새로 만들지 말고 더 깊이 구체화해. 위 목록에 없는 인물이 등장했다면 추가로 다뤄.\n`;
+
+      assetChecklist = `\n${protSection}[⚠️ 반드시 설계해야 할 캐릭터 목록]\n${lines}\n` +
+        `시놉시스·세계관에서 확정된 인물들이야. 위 외형·성격 기반으로 Runway Gen-4 이미지 생성에 바로 쓸 수 있는 수준까지 구체화해.\n` +
+        `얼굴·키·체형·복장·헤어·표정 습관·말투 + Runway 프롬프트(영문)까지 빠짐없이. 위 목록에 없는 인물이 필요하다면 추가로 설계해.\n`;
+
     } else if (stageId === 4 && synopsisAssets.locations.length > 0) {
       const lines = synopsisAssets.locations.map((name, i) => {
-        const s1loc = Array.isArray(s1Data?.key_locations)
-          ? (s1Data!.key_locations as Record<string,string>[]).find(l => l.name === name) : null;
-        const s2loc = Array.isArray(s2Data?.locations)
-          ? (s2Data!.locations as Record<string,string>[]).find(l => l.name === name) : null;
-        const type = s1loc?.type ?? s2loc?.type ?? "";
-        const role = s1loc?.significance ?? s2loc?.significance ?? s2loc?.visual ?? "";
-        return `${i + 1}. ${name}${type ? ` — ${type}` : ""}${role ? ` (${role})` : ""}`;
+        const s1loc = s1locs.find(l => l.name === name);
+        const s2loc = s2locs.find(l => l.name === name);
+        const type  = s2loc?.type ?? s1loc?.type ?? "";
+        const desc  = [
+          (s2loc?.visual ?? s1loc?.visual) ? `시각: ${s2loc?.visual ?? s1loc?.visual}` : "",
+          (s2loc?.significance ?? s1loc?.significance) ? `역할: ${s2loc?.significance ?? s1loc?.significance}` : "",
+          s2loc?.image_prompt ? `Runway프롬프트(EN): ${s2loc.image_prompt}` : "",
+        ].filter(Boolean).join(" / ");
+        return `${i + 1}. **${name}**${type ? ` — ${type}` : ""}${desc ? `\n   ${desc}` : ""}`;
       }).join("\n");
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록 — 세계관·시놉시스에서 이미 확정된 장소들]\n${lines}\n이들은 이전 단계에서 존재가 확정된 장소야. 새로 만들지 말고 시각적으로 더 깊이 설계해. 위 목록에 없는 장소가 나왔다면 추가로 다뤄.\n`;
+
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 장소 목록]\n${lines}\n` +
+        `시놉시스·세계관에서 확정된 장소들이야. 위 시각 묘사를 기반으로 Runway Gen-4 이미지 생성 가능 수준까지 설계해.\n` +
+        `건축 구조·조명·색채 팔레트·분위기·냄새·소리 + Runway 프롬프트(영문)까지. 위 목록에 없는 장소가 필요하다면 추가로 설계해.\n`;
+
     } else if (stageId === 5 && synopsisAssets.props.length > 0) {
-      assetChecklist = `\n[⚠️ 반드시 설계해야 할 소품 목록 — 세계관·시놉시스에서 이미 확정된 소품들]\n${synopsisAssets.props.map((n, i) => `${i + 1}. ${n}`).join("\n")}\n이들은 이전 단계에서 확정된 소품이야. 각각을 충분히 깊이 다뤄야 해. 위 목록에 없는 소품이 나왔다면 추가로 다뤄.\n`;
+      const lines = synopsisAssets.props.map((name, i) => {
+        const prop = s2props.find(p => p.name === name);
+        const desc = [
+          prop?.type         ? `유형: ${prop.type}` : "",
+          prop?.visual       ? `시각: ${prop.visual}` : "",
+          prop?.story_role   ? `역할: ${prop.story_role}` : "",
+          prop?.owner        ? `소유자: ${prop.owner}` : "",
+          prop?.image_prompt ? `Runway프롬프트(EN): ${prop.image_prompt}` : "",
+        ].filter(Boolean).join(" / ");
+        return `${i + 1}. **${name}**${desc ? `\n   ${desc}` : ""}`;
+      }).join("\n");
+
+      assetChecklist = `\n[⚠️ 반드시 설계해야 할 소품 목록]\n${lines}\n` +
+        `시놉시스에서 확정된 소품들이야. 위 시각 묘사를 기반으로 Runway Gen-4 이미지 생성 가능 수준까지 설계해.\n` +
+        `형태·색상·재질·크기·상태·디테일 + Runway 프롬프트(영문)까지. 위 목록에 없는 소품이 필요하다면 추가로 설계해.\n`;
     }
   }
 
@@ -708,17 +754,34 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
 ■ 비판과 보완
   이 시놉시스에서 진부하거나 식상한 요소. 그것을 어떻게 신선하게 바꿀 것인가.
 
-■ 등장인물 리스트 (이미지 생성용)
-  각 인물마다: 이름 / 역할 / 외형 묘사 (얼굴·키·체형·복장·헤어·특징) / 성격 키워드 / 주인공과의 관계
+■ 등장인물 리스트 (Runway Gen-4 이미지 생성용)
+  각 인물마다:
+  - 이름 / 역할
+  - 외형 묘사: 얼굴·인상·키·체형·헤어 색상·복장·눈에 띄는 특징 (구체적으로)
+  - 성격 키워드 3가지 이상 / 주인공과의 관계
+  - Runway 프롬프트 (영문): [인물 외형·복장], [조명: 유형·방향·색온도], [카메라: 샷 종류·앵글], [분위기·화풍 키워드]
+    예: "Korean woman early 20s, shoulder-length black hair, worn denim jacket, looking away, golden hour backlighting, medium close-up, webtoon line art, melancholic mood"
 
-■ 장소 리스트 (이미지 생성용)
-  각 장소마다: 장소명 / 유형 / 시각적 묘사 (건축·조명·색채·분위기) / 이야기 역할
+■ 장소 리스트 (Runway Gen-4 이미지 생성용)
+  각 장소마다:
+  - 장소명 / 유형 / 이야기 역할
+  - 시각적 묘사: 건축·공간 구조·색채·주요 오브젝트 (구체적으로)
+  - Runway 프롬프트 (영문): [공간 묘사·건축·색채], [조명: 시간대·자연/인공·색온도], [카메라: 샷 종류·무브], [분위기·화풍]
+    예: "narrow alleyway between brutalist concrete buildings, neon reflections on wet pavement, overcast night, low-angle wide shot, Korean urban noir, oppressive atmosphere"
 
-■ 소품 리스트 (이미지 생성용)
-  각 소품마다: 이름 / 유형 / 시각적 묘사 (색·형태·재질·상태) / 이야기 역할
+■ 소품 리스트 (Runway Gen-4 이미지 생성용)
+  각 소품마다:
+  - 이름 / 유형 / 소유자 / 이야기 역할
+  - 시각적 묘사: 형태·색상·재질·크기·상태 (구체적으로)
+  - Runway 프롬프트 (영문): [소품 묘사·재질·상태], [조명: 방향·색온도], [카메라: 샷 종류], [스타일·분위기]
+    예: "worn leather notebook dark brown gold-stamped cover frayed edges, on wooden desk, soft desk lamp sidelight, extreme close-up, warm tones, webtoon still-life"
 
-■ 핵심장면 리스트 (이미지 생성용)
-  각 장면마다: 제목 / 장소 / 등장인물 / 행동·상황 / 시각적 묘사 (구도·색감·분위기) / 감정 키워드
+■ 핵심장면 리스트 (Runway Gen-4 이미지 생성용)
+  각 장면마다:
+  - 제목 / 장소 / 등장인물 / 감정 키워드
+  - 행동·상황 묘사 (구체적으로)
+  - Runway 프롬프트 (영문): [인물 행동·표정], [배경 장소], [조명: 시간·방향·색온도], [카메라: 샷·무브·앵글], [분위기·화풍]
+    예: "young man in hoodie running through rain-soaked alley, desperate expression, shadows pursuing, blue dramatic side lighting, low-angle tracking shot, Korean webtoon action style"
 
 서술형 문장으로 풍부하게 작성하세요.`,
 
@@ -1595,6 +1658,13 @@ function StageReportInChat({
                       <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{ch.name} <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({ch.role})</span></div>
                       {ch.appearance && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{ch.appearance}</div>}
                       {ch.relation && <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>↔ {ch.relation}</div>}
+                      {ch.image_prompt && (
+                        <div style={{ marginTop:6, background:"rgba(251,146,60,0.06)", border:"1px solid rgba(251,146,60,0.2)", borderRadius:6, padding:"5px 8px", display:"flex", alignItems:"flex-start", gap:6 }}>
+                          <span style={{ fontSize:9, fontWeight:700, color:"#fb923c", textTransform:"uppercase" as const, letterSpacing:"0.07em", whiteSpace:"nowrap", marginTop:1 }}>Runway</span>
+                          <span style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, fontFamily:"monospace", flex:1 }}>{ch.image_prompt}</span>
+                          <button onClick={() => navigator.clipboard.writeText(ch.image_prompt ?? "")} style={{ background:"rgba(251,146,60,0.15)", border:"1px solid rgba(251,146,60,0.3)", borderRadius:4, color:"#fb923c", fontSize:9, fontWeight:700, padding:"2px 6px", cursor:"pointer", whiteSpace:"nowrap" }}>복사</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1609,6 +1679,13 @@ function StageReportInChat({
                     <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{l.name} {l.type && <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({l.type})</span>}</div>
                     {l.visual && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{l.visual}</div>}
                     {l.significance && <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>역할: {l.significance}</div>}
+                    {l.image_prompt && (
+                      <div style={{ marginTop:6, background:"rgba(167,139,250,0.06)", border:"1px solid rgba(167,139,250,0.2)", borderRadius:6, padding:"5px 8px", display:"flex", alignItems:"flex-start", gap:6 }}>
+                        <span style={{ fontSize:9, fontWeight:700, color:"#a78bfa", textTransform:"uppercase" as const, letterSpacing:"0.07em", whiteSpace:"nowrap", marginTop:1 }}>Runway</span>
+                        <span style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, fontFamily:"monospace", flex:1 }}>{l.image_prompt}</span>
+                        <button onClick={() => navigator.clipboard.writeText(l.image_prompt ?? "")} style={{ background:"rgba(167,139,250,0.15)", border:"1px solid rgba(167,139,250,0.3)", borderRadius:4, color:"#a78bfa", fontSize:9, fontWeight:700, padding:"2px 6px", cursor:"pointer", whiteSpace:"nowrap" }}>복사</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </>
@@ -1622,6 +1699,13 @@ function StageReportInChat({
                     <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9" }}>{p.name} {p.type && <span style={{ fontSize:11, color:"#64748b", fontWeight:400 }}>({p.type})</span>}</div>
                     {p.visual && <div style={{ fontSize:12, color:"#9a9abf", marginTop:3 }}>{p.visual}</div>}
                     {p.story_role && <div style={{ fontSize:11, color:"#64748b", marginTop:2 }}>역할: {p.story_role}</div>}
+                    {p.image_prompt && (
+                      <div style={{ marginTop:6, background:"rgba(232,121,249,0.06)", border:"1px solid rgba(232,121,249,0.2)", borderRadius:6, padding:"5px 8px", display:"flex", alignItems:"flex-start", gap:6 }}>
+                        <span style={{ fontSize:9, fontWeight:700, color:"#e879f9", textTransform:"uppercase" as const, letterSpacing:"0.07em", whiteSpace:"nowrap", marginTop:1 }}>Runway</span>
+                        <span style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, fontFamily:"monospace", flex:1 }}>{p.image_prompt}</span>
+                        <button onClick={() => navigator.clipboard.writeText(p.image_prompt ?? "")} style={{ background:"rgba(232,121,249,0.15)", border:"1px solid rgba(232,121,249,0.3)", borderRadius:4, color:"#e879f9", fontSize:9, fontWeight:700, padding:"2px 6px", cursor:"pointer", whiteSpace:"nowrap" }}>복사</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </>
@@ -1636,6 +1720,13 @@ function StageReportInChat({
                     <div style={{ fontSize:12, color:"#9a9abf" }}>{sc.location} {sc.characters && `· ${sc.characters}`}</div>
                     {sc.visual && <div style={{ fontSize:12, color:"#d4dce8", marginTop:4, lineHeight:1.6 }}>{sc.visual}</div>}
                     {sc.emotion && <div style={{ fontSize:11, color:"#64748b", marginTop:3 }}>분위기: {sc.emotion}</div>}
+                    {sc.image_prompt && (
+                      <div style={{ marginTop:6, background:"rgba(251,191,36,0.06)", border:"1px solid rgba(251,191,36,0.2)", borderRadius:6, padding:"5px 8px", display:"flex", alignItems:"flex-start", gap:6 }}>
+                        <span style={{ fontSize:9, fontWeight:700, color:"#fbbf24", textTransform:"uppercase" as const, letterSpacing:"0.07em", whiteSpace:"nowrap", marginTop:1 }}>Runway</span>
+                        <span style={{ fontSize:10, color:"#94a3b8", lineHeight:1.5, fontFamily:"monospace", flex:1 }}>{sc.image_prompt}</span>
+                        <button onClick={() => navigator.clipboard.writeText(sc.image_prompt ?? "")} style={{ background:"rgba(251,191,36,0.15)", border:"1px solid rgba(251,191,36,0.3)", borderRadius:4, color:"#fbbf24", fontSize:9, fontWeight:700, padding:"2px 6px", cursor:"pointer", whiteSpace:"nowrap" }}>복사</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </>
@@ -2650,13 +2741,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         for await (const chunk of streamClaude({
           apiKey,
           model: "claude-sonnet-4-6",
-          systemPrompt: "이미지 생성 프롬프트 전문가.",
+          systemPrompt: "Runway Gen-4 이미지 생성 프롬프트 전문가.",
           messages: [{
             role: "user",
             content:
-              `다음 스타일 토론 내용을 영문 이미지 생성 스타일 키워드로 40~70단어 이내로 정리하세요.\n` +
-              `예시: "Korean webtoon line art, dark fantasy, detailed ink lines, muted earth tones with glowing blue accents, dramatic shadows, cinematic widescreen"\n` +
-              `[토론]\n${transcript.join("\n")}\n\n영문 키워드만 출력. 설명 없이.`,
+              `다음 스타일 토론 내용을 Runway Gen-4용 영문 스타일 프롬프트로 40~70단어 이내로 정리하세요.\n` +
+              `Runway Gen-4 프롬프트는: [화풍 키워드], [색채 팔레트], [조명 스타일], [카메라 특성], [분위기 키워드] 순서로.\n` +
+              `예시: "Korean webtoon line art, dark fantasy, detailed ink lines, muted earth tones with glowing blue accents, dramatic side lighting, cinematic wide shots, melancholic atmosphere"\n` +
+              `[토론]\n${transcript.join("\n")}\n\n영문 Runway 프롬프트 키워드만 출력. 설명 없이.`,
           }],
           maxTokens: 150,
           tools: [],
@@ -4532,90 +4624,212 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           )}
 
           {/* ── 에셋 리스트 검토 단계 UI ── */}
-          {imageSessionPhase === "idle" && assetListPhase === "reviewing" && (
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #1e1e2a", overflowY: "auto", maxHeight: "60vh" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 10 }}>
-                📋 에셋 리스트 확인 — 빠진 항목이 있으면 추가하세요
-              </div>
+          {imageSessionPhase === "idle" && assetListPhase === "reviewing" && (() => {
+            // Stage 1·2 JSON에서 상세 정보 룩업
+            const s1d = stageResults.find((r: StageResult) => r.stageId === 1)?.data;
+            const s2d = stageResults.find((r: StageResult) => r.stageId === 2)?.data;
+            const s1charsA = Array.isArray(s1d?.key_characters) ? (s1d!.key_characters as Record<string,string>[]) : [];
+            const s2charsA = Array.isArray(s2d?.characters)     ? (s2d!.characters     as Record<string,string>[]) : [];
+            const s1locsA  = Array.isArray(s1d?.key_locations)  ? (s1d!.key_locations  as Record<string,string>[]) : [];
+            const s2locsA  = Array.isArray(s2d?.locations)      ? (s2d!.locations      as Record<string,string>[]) : [];
+            const s2propsA = Array.isArray(s2d?.props)          ? (s2d!.props          as Record<string,string>[]) : [];
+            const protA    = s2d?.protagonist as Record<string,string> | undefined;
 
-              {/* 캐릭터 섹션 */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>캐릭터</div>
-                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
-                  {editableAssets.characters.map((name, i) => (
-                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#fb923c" }}>
-                      {name}
-                      <button onClick={() => setEditableAssets(a => ({ ...a, characters: a.characters.filter((_, j) => j !== i) }))}
-                        style={{ background: "none", border: "none", color: "#fb923c", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input value={newCharInput} onChange={e => setNewCharInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }}
-                    placeholder="+ 캐릭터 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
-                  <button onClick={() => { if (newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }}
-                    style={{ background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 6, color: "#fb923c", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
-                </div>
-              </div>
+            const confirmAssets = () => {
+              const confirmed = { ...editableAssets };
+              synopsisAssetsRef.current = confirmed;
+              localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(confirmed));
+              setAssetListPhase("confirmed");
+              setStylePhase("debating");
+              void runStyleDebate();
+            };
 
-              {/* 장소 섹션 */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>장소</div>
-                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
-                  {editableAssets.locations.map((name, i) => (
-                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#a78bfa" }}>
-                      {name}
-                      <button onClick={() => setEditableAssets(a => ({ ...a, locations: a.locations.filter((_, j) => j !== i) }))}
-                        style={{ background: "none", border: "none", color: "#a78bfa", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input value={newLocInput} onChange={e => setNewLocInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }}
-                    placeholder="+ 장소 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
-                  <button onClick={() => { if (newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }}
-                    style={{ background: "rgba(167,139,250,0.1)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 6, color: "#a78bfa", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
-                </div>
+            const SectionHdr = ({ label, color, count }: { label: string; color: string; count: number }) => (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, marginTop: 16 }}>
+                <div style={{ width: 3, height: 14, background: color, borderRadius: 2 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>{label}</span>
+                <span style={{ fontSize: 10, color: "#3a3a52", fontWeight: 600 }}>{count}개</span>
               </div>
+            );
 
-              {/* 소품·장비 섹션 */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#3a3a52", textTransform: "uppercase" as const, letterSpacing: "0.1em", marginBottom: 6 }}>소품·장비</div>
-                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginBottom: 6 }}>
-                  {editableAssets.props.map((name, i) => (
-                    <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(232,121,249,0.1)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 99, padding: "2px 8px 2px 10px", fontSize: 12, color: "#e879f9" }}>
-                      {name}
-                      <button onClick={() => setEditableAssets(a => ({ ...a, props: a.props.filter((_, j) => j !== i) }))}
-                        style={{ background: "none", border: "none", color: "#e879f9", cursor: "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input value={newPropInput} onChange={e => setNewPropInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }}
-                    placeholder="+ 소품·장비 추가 (Enter)" style={{ flex: 1, background: "#12121c", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 8px" }} />
-                  <button onClick={() => { if (newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }}
-                    style={{ background: "rgba(232,121,249,0.1)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 6, color: "#e879f9", fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer" }}>+ 추가</button>
-                </div>
+            const AddRow = ({ value, onChange, onAdd, placeholder, color }: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string; color: string }) => (
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <input value={value} onChange={e => onChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && value.trim()) onAdd(); }}
+                  placeholder={placeholder}
+                  style={{ flex: 1, background: "#0e0e1a", border: "1px solid #2a2a3d", borderRadius: 6, color: "#eeeef5", fontSize: 12, padding: "5px 9px", outline: "none" }} />
+                <button onClick={onAdd}
+                  style={{ background: `${color}15`, border: `1px solid ${color}40`, borderRadius: 6, color, fontSize: 11, fontWeight: 700, padding: "5px 12px", cursor: "pointer" }}>+ 추가</button>
               </div>
+            );
 
-              {/* 확정 버튼 */}
-              <button
-                onClick={() => {
-                  const confirmed = { ...editableAssets };
-                  synopsisAssetsRef.current = confirmed;
-                  localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(confirmed));
-                  setAssetListPhase("confirmed");
-                  setStylePhase("debating");
-                  void runStyleDebate();
-                }}
-                style={{ width: "100%", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "10px 0", cursor: "pointer", marginTop: 4 }}>
-                ✓ 확정 → 스타일 정의로
-              </button>
-            </div>
-          )}
+            return (
+              <div style={{ padding: "14px 16px 16px", borderTop: "1px solid #1e1e2a", overflowY: "auto", maxHeight: "65vh" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 4 }}>
+                  📋 에셋 리스트 확인
+                </div>
+                <div style={{ fontSize: 11, color: "#3a3a52", marginBottom: 2 }}>
+                  빠진 항목 추가 또는 불필요한 항목 삭제 후 확정하세요. Runway 프롬프트가 있는 항목은 이미지 생성에 바로 사용 가능합니다.
+                </div>
+
+                {/* ── 캐릭터 ── */}
+                <SectionHdr label="캐릭터" color="#fb923c" count={editableAssets.characters.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {editableAssets.characters.map((name, i) => {
+                    const s2c = s2charsA.find(c => c.name === name);
+                    const s1c = s1charsA.find(c => c.name === name);
+                    const isProtag   = protA?.name === name;
+                    const role       = s2c?.role ?? s1c?.role ?? "";
+                    const appearance = s2c?.appearance ?? s1c?.face ?? "";
+                    const personality= s2c?.personality ?? s1c?.personality ?? "";
+                    const relation   = s2c?.relation ?? "";
+                    const imagePrompt= s2c?.image_prompt ?? "";
+                    return (
+                      <div key={i} style={{
+                        background: isProtag ? "rgba(251,146,60,0.08)" : "rgba(255,255,255,0.025)",
+                        border: `1px solid ${isProtag ? "rgba(251,146,60,0.35)" : "rgba(251,146,60,0.12)"}`,
+                        borderRadius: 10, padding: "10px 12px",
+                        display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start",
+                      }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#fb923c" }}>{name}</span>
+                            {isProtag && <span style={{ fontSize: 9, fontWeight: 700, color: "#fb923c", background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 4, padding: "1px 5px" }}>주인공</span>}
+                            {role && !isProtag && <span style={{ fontSize: 11, color: "#64748b" }}>{role}</span>}
+                          </div>
+                          {isProtag && protA && (
+                            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginBottom: 3 }}>
+                              {protA.pain_point && <span style={{ color: "#f87171" }}>결핍: {protA.pain_point}</span>}
+                              {protA.want && <span style={{ color: "#60a5fa", marginLeft: 8 }}>목표: {protA.want}</span>}
+                            </div>
+                          )}
+                          {appearance && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>외형 </span>{appearance}</div>}
+                          {personality && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>성격 </span>{personality}</div>}
+                          {relation && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>관계 </span>{relation}</div>}
+                          {imagePrompt && (
+                            <div style={{ marginTop: 6, background: "rgba(251,146,60,0.06)", border: "1px solid rgba(251,146,60,0.2)", borderRadius: 6, padding: "6px 8px" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: "#fb923c", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Runway Prompt</span>
+                                <button onClick={() => navigator.clipboard.writeText(imagePrompt)}
+                                  style={{ background: "rgba(251,146,60,0.15)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 4, color: "#fb923c", fontSize: 9, fontWeight: 700, padding: "2px 6px", cursor: "pointer" }}>복사</button>
+                              </div>
+                              <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5, fontFamily: "monospace" }}>{imagePrompt}</div>
+                            </div>
+                          )}
+                          {!appearance && !personality && !relation && !isProtag && !imagePrompt && (
+                            <div style={{ fontSize: 11, color: "#3a3a52", fontStyle: "italic" }}>세부 정보 없음 — 캐릭터 설계 단계에서 구체화됩니다</div>
+                          )}
+                        </div>
+                        <button onClick={() => setEditableAssets(a => ({ ...a, characters: a.characters.filter((_, j) => j !== i) }))}
+                          style={{ background: "none", border: "none", color: "#3a3a52", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, marginTop: 2 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <AddRow value={newCharInput} onChange={setNewCharInput} placeholder="+ 캐릭터 이름 추가 (Enter)" color="#fb923c"
+                  onAdd={() => { if (newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }} />
+
+                {/* ── 장소 ── */}
+                <SectionHdr label="장소" color="#a78bfa" count={editableAssets.locations.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {editableAssets.locations.map((name, i) => {
+                    const s2l = s2locsA.find(l => l.name === name);
+                    const s1l = s1locsA.find(l => l.name === name);
+                    const type         = s2l?.type ?? s1l?.type ?? "";
+                    const visual       = s2l?.visual ?? s1l?.visual ?? "";
+                    const significance = s2l?.significance ?? s1l?.significance ?? "";
+                    const imagePrompt  = s2l?.image_prompt ?? "";
+                    return (
+                      <div key={i} style={{
+                        background: "rgba(255,255,255,0.025)", border: "1px solid rgba(167,139,250,0.12)",
+                        borderRadius: 10, padding: "10px 12px",
+                        display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start",
+                      }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#a78bfa" }}>{name}</span>
+                            {type && <span style={{ fontSize: 11, color: "#64748b" }}>{type}</span>}
+                          </div>
+                          {visual && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>시각 </span>{visual}</div>}
+                          {significance && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>역할 </span>{significance}</div>}
+                          {imagePrompt && (
+                            <div style={{ marginTop: 6, background: "rgba(167,139,250,0.06)", border: "1px solid rgba(167,139,250,0.2)", borderRadius: 6, padding: "6px 8px" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Runway Prompt</span>
+                                <button onClick={() => navigator.clipboard.writeText(imagePrompt)}
+                                  style={{ background: "rgba(167,139,250,0.15)", border: "1px solid rgba(167,139,250,0.3)", borderRadius: 4, color: "#a78bfa", fontSize: 9, fontWeight: 700, padding: "2px 6px", cursor: "pointer" }}>복사</button>
+                              </div>
+                              <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5, fontFamily: "monospace" }}>{imagePrompt}</div>
+                            </div>
+                          )}
+                          {!visual && !significance && !imagePrompt && (
+                            <div style={{ fontSize: 11, color: "#3a3a52", fontStyle: "italic" }}>세부 정보 없음 — 장소 설계 단계에서 구체화됩니다</div>
+                          )}
+                        </div>
+                        <button onClick={() => setEditableAssets(a => ({ ...a, locations: a.locations.filter((_, j) => j !== i) }))}
+                          style={{ background: "none", border: "none", color: "#3a3a52", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, marginTop: 2 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <AddRow value={newLocInput} onChange={setNewLocInput} placeholder="+ 장소명 추가 (Enter)" color="#a78bfa"
+                  onAdd={() => { if (newLocInput.trim()) { setEditableAssets(a => ({ ...a, locations: [...a.locations, newLocInput.trim()] })); setNewLocInput(""); } }} />
+
+                {/* ── 소품·장비 ── */}
+                <SectionHdr label="소품·장비" color="#e879f9" count={editableAssets.props.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {editableAssets.props.map((name, i) => {
+                    const prop = s2propsA.find(p => p.name === name);
+                    const type        = prop?.type ?? "";
+                    const visual      = prop?.visual ?? "";
+                    const story_role  = prop?.story_role ?? "";
+                    const owner       = prop?.owner ?? "";
+                    const imagePrompt = prop?.image_prompt ?? "";
+                    return (
+                      <div key={i} style={{
+                        background: "rgba(255,255,255,0.025)", border: "1px solid rgba(232,121,249,0.12)",
+                        borderRadius: 10, padding: "10px 12px",
+                        display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start",
+                      }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#e879f9" }}>{name}</span>
+                            {type && <span style={{ fontSize: 11, color: "#64748b" }}>{type}</span>}
+                            {owner && <span style={{ fontSize: 10, color: "#4a4a68" }}>— {owner}</span>}
+                          </div>
+                          {visual && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>시각 </span>{visual}</div>}
+                          {story_role && <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5, marginTop: 2 }}><span style={{ color: "#4a4a68", fontWeight: 600 }}>역할 </span>{story_role}</div>}
+                          {imagePrompt && (
+                            <div style={{ marginTop: 6, background: "rgba(232,121,249,0.06)", border: "1px solid rgba(232,121,249,0.2)", borderRadius: 6, padding: "6px 8px" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: "#e879f9", textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>Runway Prompt</span>
+                                <button onClick={() => navigator.clipboard.writeText(imagePrompt)}
+                                  style={{ background: "rgba(232,121,249,0.15)", border: "1px solid rgba(232,121,249,0.3)", borderRadius: 4, color: "#e879f9", fontSize: 9, fontWeight: 700, padding: "2px 6px", cursor: "pointer" }}>복사</button>
+                              </div>
+                              <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.5, fontFamily: "monospace" }}>{imagePrompt}</div>
+                            </div>
+                          )}
+                          {!visual && !story_role && !imagePrompt && (
+                            <div style={{ fontSize: 11, color: "#3a3a52", fontStyle: "italic" }}>세부 정보 없음 — 소품 설계 단계에서 구체화됩니다</div>
+                          )}
+                        </div>
+                        <button onClick={() => setEditableAssets(a => ({ ...a, props: a.props.filter((_, j) => j !== i) }))}
+                          style={{ background: "none", border: "none", color: "#3a3a52", cursor: "pointer", fontSize: 14, padding: "0 2px", lineHeight: 1, marginTop: 2 }}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <AddRow value={newPropInput} onChange={setNewPropInput} placeholder="+ 소품·장비 추가 (Enter)" color="#e879f9"
+                  onAdd={() => { if (newPropInput.trim()) { setEditableAssets(a => ({ ...a, props: [...a.props, newPropInput.trim()] })); setNewPropInput(""); } }} />
+
+                {/* 확정 버튼 */}
+                <button onClick={confirmAssets}
+                  style={{ width: "100%", background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#34d399", fontSize: 13, fontWeight: 700, padding: "11px 0", cursor: "pointer", marginTop: 16 }}>
+                  ✓ 확정 → 스타일 정의로
+                </button>
+              </div>
+            );
+          })()}
 
           {/* 이미지/스타일/에셋 리스트 단계 활성 중엔 아래 일반 바텀바 숨김 */}
           {imageSessionPhase !== "idle" || (stylePhase !== "idle" && stylePhase !== "confirmed") || assetListPhase === "reviewing" ? null : (<>
