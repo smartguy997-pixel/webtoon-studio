@@ -57,6 +57,78 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
     "짧고 핵심만. 길게 말하지 마.",
 };
 
+// ─── Phase 2 사용자 명령 패턴 ────────────────────────────────────────────────────
+// 사용자가 특정 키워드 입력 시 즉시 반응하는 에이전트 라우팅
+
+interface P2CommandPattern {
+  triggers: string[];
+  handler: "single_turn" | "end" | "break";
+  speakerAgent?: AgentId;
+  maxTokens?: number;
+  promptOverride?: string;
+}
+
+const COMMAND_PATTERNS_P2: P2CommandPattern[] = [
+  // 토론 종료
+  {
+    triggers: ["끝내자", "마무리해", "결론 내자", "결론내자", "종료해", "다음으로 가자", "다음 단계"],
+    handler: "end",
+  },
+  // 요약/정리 요청
+  {
+    triggers: ["요약해줘", "요약 해줘", "지금까지 정리해줘", "내용 정리해줘", "정리해줘", "뭐가 나왔어"],
+    handler: "single_turn",
+    speakerAgent: "producer",
+    maxTokens: 500,
+    promptOverride:
+      "{history}사용자가 지금까지 토론 내용을 요약해달라고 했어. " +
+      "프로듀서로서 지금 단계에서 합의된 핵심 내용을 5~8문장으로 구체적으로 정리해줘. " +
+      "이름·설정·관계 등 확정된 정보 위주로. 마크다운 금지.",
+  },
+  // 이미지/레퍼런스 요청
+  {
+    triggers: [
+      "보여줘", "이미지 보여", "레퍼런스 보여", "그림 보여줘", "시각적으로 보여줘",
+      "이미지로 보여", "비주얼 보여줘", "레퍼런스 찾아줘", "어떻게 생겼어", "어떤 느낌이야",
+    ],
+    handler: "single_turn",
+    speakerAgent: "script",
+    maxTokens: 200,
+    promptOverride:
+      "{history}사용자가 시각적 레퍼런스 이미지를 보고 싶다고 했어. " +
+      "방금 토론에서 나온 핵심 시각 요소 1~2개를 골라 이미지 서치를 해줘. " +
+      "반드시 이 형식 사용: 🖼️ 이미지 서치: \"구체적인 검색어\"\n" +
+      "1~2문장 코멘트 추가 가능.",
+  },
+  // 설명/자세히 요청
+  {
+    triggers: [
+      "설명해줘", "자세히", "더 자세히", "이유가 뭐야", "왜 그래", "근거가 뭐야",
+      "무슨 말이야", "다시 말해줘", "이해 못 했어",
+    ],
+    handler: "single_turn",
+    speakerAgent: "worldbuilder",
+    maxTokens: 400,
+    promptOverride:
+      "{history}사용자가 방금 나온 내용에 대해 더 자세한 설명을 요청했어. " +
+      "가장 최근 논의된 포인트를 골라 3~5문장으로 구체적으로 설명해줘. " +
+      "이름, 이유, 맥락을 포함해서. 마크다운 금지.",
+  },
+  // 멈춤
+  {
+    triggers: ["멈춰", "잠깐", "그만해", "스톱", "stop", "잠깐만", "일시정지"],
+    handler: "break",
+    speakerAgent: "producer",
+    maxTokens: 80,
+    promptOverride: "사용자가 잠깐 멈추라고 했어. 알겠다고 짧게 말해줘.",
+  },
+];
+
+function matchCommandP2(msg: string): P2CommandPattern | null {
+  const lower = msg.toLowerCase().trim();
+  return COMMAND_PATTERNS_P2.find(p => p.triggers.some(t => lower.includes(t))) ?? null;
+}
+
 // ─── Phase 2 스테이지별 아젠다 ──────────────────────────────────────────────────
 // 각 스테이지마다 반드시 다뤄야 할 하위 주제들
 // 스테이지별 주제당 최소 턴 수 — 세계관(1)은 깊이가 중요해서 더 많이
@@ -403,6 +475,11 @@ function buildStyleAgentPrompt(
 ): string {
   const agentLabel = AGENTS[agentId].label;
   const roleDesc = AGENT_ROLE_DESC[agentId] ?? "";
+  const isScriptAgent = agentId === "script";
+  const imageSearchGuide = isScriptAgent
+    ? `\n[이미지 서치 — 필수]\n매 발언마다 반드시 시각 레퍼런스 이미지를 1개 찾아줘:\n🖼️ 이미지 서치: "구체적인 검색어"\n예: 🖼️ 이미지 서치: "Korean webtoon dark fantasy ink style"\n예: 🖼️ 이미지 서치: "manga noir style urban thriller"\n검색어는 영어로, 스타일·분위기·작품 조합으로.`
+    : `\n[이미지 서치 — 선택]\n레퍼런스 작품 언급할 때 이미지를 보여줄 수 있어:\n🖼️ 이미지 서치: "검색어" (발언당 최대 1개)`;
+
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
 성격: ${roleDesc}
 장르: ${genre}
@@ -413,6 +490,7 @@ function buildStyleAgentPrompt(
 
 지금 주제: 이 작품에 맞는 시각적 스타일 정의
 목표: 선화 스타일, 색채 팔레트, 분위기/톤을 구체적으로 합의
+${imageSearchGuide}
 
 [대화 방식]
 - 앞 사람 말 받아서 자연스럽게 이어가.
@@ -1242,6 +1320,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         // 사용자 메시지 처리 (UI는 입력 핸들러에서 이미 표시됨 — addMsg 호출 안 함)
         const pendingMsg = pendingUserMsgRef.current;
+        let matchedCmd: P2CommandPattern | null = null;
         if (pendingMsg) {
           pendingUserMsgRef.current = null;
           transcript.push(`[사용자]: ${pendingMsg}`);
@@ -1254,6 +1333,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             if (AGREE_RE.test(pendingMsg.trim())) { naturalExit = true; break debateLoop; }
             wrapUpProposed = false;
           }
+          matchedCmd = matchCommandP2(pendingMsg);
+          if (matchedCmd?.handler === "end") { naturalExit = true; break debateLoop; }
         }
 
         // 주기적 요약 갱신
@@ -1266,6 +1347,20 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
           : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
         if (userTurnCount > 0) userTurnCount--;
+
+        // ── 명령 핸들러 — 사용자 명령에 즉시 반응 ──
+        if (matchedCmd?.handler === "single_turn" && matchedCmd.speakerAgent) {
+          const p = matchedCmd.promptOverride?.replace("{history}", historyText) ?? `${historyText}사용자 요청에 직접 응답해줘.`;
+          await runSingleAgent(matchedCmd.speakerAgent, p, matchedCmd.maxTokens ?? 300);
+          nudgeCooldown = 2;
+          continue;
+        }
+        if (matchedCmd?.handler === "break") {
+          const p = matchedCmd.promptOverride ?? "사용자가 잠깐 멈추라고 했어.";
+          await runSingleAgent(matchedCmd.speakerAgent ?? "producer", p, matchedCmd.maxTokens ?? 80);
+          await sleep(10000);
+          continue;
+        }
 
         // ── 아젠다 키워드 감지 ──
         const recentLines = transcript.slice(-4).join(" ");
@@ -1404,7 +1499,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           model: "claude-sonnet-4-6",
           systemPrompt: buildStyleAgentPrompt(genre, agentId, worldSum, synSum),
           messages: [{ role: "user", content: prompt }],
-          maxTokens: 180,
+          maxTokens: 250,
           tools: [],
         })) {
           if (abortRef.current) break;
