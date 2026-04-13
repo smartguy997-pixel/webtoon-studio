@@ -1275,7 +1275,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             await runSingleAgent(
               "producer",
               `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데, 최소 ${MIN_TURNS_PER_TOPIC_P2}회 이상 심층 분석이 필요해. 구체적인 데이터와 사례를 들어 깊이 있게 이야기해줘.`,
-              120,
+              200,
             );
             lastSpeaker = "producer";
             nudgeCooldown = 2;
@@ -1293,7 +1293,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           wrapUpProposedAt = Date.now();
           await runSingleAgent("producer",
             `${historyText}[${stage.name}] 단계의 모든 주요 항목을 충분히 다뤘어. 프로듀서로서 이 단계를 마무리하고 확인하자고 자연스럽게 제안해줘. 1~2문장.`,
-            80);
+            150);
           lastSpeaker = "producer";
           continue;
         }
@@ -1308,7 +1308,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
             : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
-        await runSingleAgent(nextAgent, agentPrompt, 220);
+        await runSingleAgent(nextAgent, agentPrompt, 500);
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
