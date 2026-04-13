@@ -1258,6 +1258,13 @@ type PlatformValue = typeof PLATFORMS[number]["value"];
 const EPISODE_COUNTS = ["30화", "50화", "100화", "150화", "200화", "미정"] as const;
 type EpisodeCount = typeof EPISODE_COUNTS[number];
 
+const DEBATE_MODELS = [
+  { value: "claude-haiku-4-5-20251001", label: "Haiku", desc: "빠름 · 저비용" },
+  { value: "claude-sonnet-4-6",         label: "Sonnet", desc: "균형 · 권장" },
+  { value: "claude-opus-4-6",           label: "Opus",   desc: "최고품질 · 고비용" },
+] as const;
+type DebateModel = typeof DEBATE_MODELS[number]["value"];
+
 export default function Phase1Page() {
   const { projectId } = useParams<{ projectId: string }>();
   const router = useRouter();
@@ -1268,6 +1275,7 @@ export default function Phase1Page() {
   const [genre, setGenre] = useState(GENRES[0]);
   const [platform, setPlatform] = useState<PlatformValue>("undecided");
   const [episodeCount, setEpisodeCount] = useState<EpisodeCount>("30화");
+  const [debateModel, setDebateModel] = useState<DebateModel>("claude-sonnet-4-6");
   const [concept, setConcept] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [result, setResult] = useState<Phase1Result | null>(null);
@@ -1560,7 +1568,7 @@ export default function Phase1Page() {
         try {
           for await (const chunk of streamClaude({
             apiKey: key,
-            model: "claude-sonnet-4-6",
+            model: debateModel,
             systemPrompt: buildAgentPromptP1(agentId, g, c, platLabel, ep, rejectedWorksRef.current),
             messages: msgs,
             maxTokens: tokens,
@@ -2203,6 +2211,29 @@ export default function Phase1Page() {
                 >
                   <span className={styles.platformCardLabel}>{p.label}</span>
                   <span className={styles.platformCardDesc}>{p.desc}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* 모델 선택 */}
+            <label className={styles.formLabel} style={{ marginTop: 18 }}>AI 모델</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {DEBATE_MODELS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setDebateModel(m.value)}
+                  style={{
+                    flex: 1, padding: "8px 4px", borderRadius: 8, cursor: "pointer",
+                    border: `1px solid ${debateModel === m.value ? "var(--primary)" : "var(--border)"}`,
+                    background: debateModel === m.value ? "rgba(99,102,241,0.15)" : "var(--surface-2)",
+                    color: debateModel === m.value ? "var(--primary)" : "var(--text-muted)",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>{m.label}</span>
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>{m.desc}</span>
                 </button>
               ))}
             </div>
