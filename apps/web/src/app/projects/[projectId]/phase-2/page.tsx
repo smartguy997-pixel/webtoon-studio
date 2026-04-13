@@ -531,10 +531,10 @@ function buildSingleAgentPrompt(
 
   const isWorldbuildingStage = stageId === 1;
   const productionMandate = isWorldbuildingStage
-    ? `\n[⚠️ 드라마·웹툰·애니 세계관 설계 — 5개 프레임워크]\n이 토론은 반드시 다음 5가지를 커버해야 해:\n1. 시대적·공간적 공기: 구체적 연도, 핵심 공간 디테일, 생활감(음식·옷·유행어)\n2. 사회적 압박: 갑/을 권력 구조, 사회적 통념, 금기(Taboo)\n3. 만약에 설정: 장르의 핵심 규칙 1가지, 그 대가, 누가 알고 모르는가\n4. 인물 역학: 과거사로 얽힌 계기, 목표의 충돌, 조력자/방해자 포지션\n5. 테마: 이 이야기가 궁극적으로 전하는 메시지\n모호한 표현 금지. 이름·연도·장소명·구체적 관계를 못 박아야 해.\n`
+    ? `\n[⚠️ 드라마·웹툰·애니 세계관 설계 — 5개 프레임워크]\n이 토론은 제안→토론→합의 순서로 진행돼. 처음부터 확정하지 마 — 각자 방향을 제안하고 팀원들이 반응하면서 좁혀나가야 해.\n커버해야 할 5가지:\n1. 시대적·공간적 공기: 연도, 핵심 공간, 생활감\n2. 사회적 압박: 갑/을 구조, 통념, 금기\n3. 만약에 설정: 핵심 규칙 1가지, 대가, 정보 불균형\n4. 인물 역학: 과거사, 목표 충돌, 조력자/방해자\n5. 테마: 궁극적으로 전하는 메시지\n사용자가 개입하면 반드시 그 의견을 충분히 반영하고 논의를 이어가.\n`
     : "";
   const responseGuide = isWorldbuildingStage
-    ? "- 한 번 발언할 때 3~5문장. 구체적인 고유명사(이름·연도·장소·직업)를 반드시 포함해.\n- 추상적·모호한 표현 금지. 5개 프레임워크 중 아직 다루지 않은 항목을 우선으로 얘기해."
+    ? "- 한 번 발언할 때 3~4문장. 의견을 제안하고 이유를 설명해. 다른 팀원 의견에 동의·반박·질문을 섞어.\n- 확정 선언 금지. '~이 좋을 것 같아', '~는 어때?', '~보다 ~이 더 낫지 않을까?' 같은 제안 어조로.\n- 사용자가 말하면 그 내용을 먼저 받아 충분히 반응한 뒤 이어가."
     : "- 딱 1~2문장. 짧을수록 좋아.";
 
   return `너는 웹툰 기획 팀의 ${agentLabel}야.
@@ -2226,7 +2226,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             const currentTurns = agendaTurns[pick.id] ?? 0;
             await runSingleAgent(
               "producer",
-              `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데, 최소 ${minTurnsForStage}회 이상 충분히 다뤄야 해. 구체적인 이름, 배경, 관계, 이유를 들어 깊이 있게 이야기해줘.`,
+              `${historyText}${pick.nudge} 지금까지 ${currentTurns}회 다뤄졌는데 아직 충분하지 않아. 각자 어떤 방향이 좋은지 의견을 내고 서로 반응해봐 — 일단 여러 선택지를 놓고 토론해야 최선의 답이 나와.`,
               stage.id === 1 ? 400 : 200,
             );
             lastSpeaker = "producer";
@@ -2256,12 +2256,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         const agentPrompt = isFirst
           ? stage.id === 1
-            ? `"${stage.topic}" 주제의 첫 발언을 해줘. 지금 우리가 만드는 작품의 시대·배경부터 구체적으로 잡아줘. 추상적이면 안 돼 — 실제 제작에 쓸 정보여야 해.`
+            ? `"${stage.topic}" 주제로 첫 발언을 해줘. 아직 아무것도 정해진 게 없어 — 기획분석 내용을 보고 이 작품에 어울릴 시대·배경 방향을 2~3가지 제안하면서 팀 의견을 물어봐. 선언하지 말고 제안과 질문으로 열어줘. 구어체, 3~4문장.`
             : `"${stage.topic}" 주제로 첫 의견을 자연스럽게 말해줘. 짧고 구어체로.`
           : userTurnCount > 0
-            ? `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
+            ? stage.id === 1
+              ? `${historyText}사용자가 방금 의견을 냈어. 반드시 그 내용을 직접 받아서 충분히 반응해줘 — 동의하거나, 다른 방향을 제안하거나, 그 의견을 더 구체화해줘. 사용자 말을 흘리지 마.`
+              : `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
             : stage.id === 1
-              ? `${historyText}앞 대화 받아서 구체적인 디테일을 추가해줘. 이름, 장소, 관계, 이유 — 제작 문서에 쓸 수 있는 정보로.`
+              ? `${historyText}앞 사람 의견에 반응해줘. 동의하거나 다른 방향을 제안하거나 질문을 던져. 아직 확정하지 마 — 여러 선택지를 탐색해야 해.`
               : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
         await runSingleAgent(nextAgent, agentPrompt, stage.id === 1 ? 700 : 500);
