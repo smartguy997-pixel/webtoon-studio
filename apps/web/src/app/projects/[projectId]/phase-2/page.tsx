@@ -461,9 +461,62 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
 function buildContext(stageId: StageId, prevResults: StageResult[]): string {
   const relevant = prevResults.filter(r => r.stageId < stageId);
   if (!relevant.length) return "";
+
   return relevant.map(r => {
     const stage = STAGES.find(s => s.id === r.stageId)!;
-    return `[${stage.name} 확정]\n${r.summary}`;
+    let extra = "";
+
+    // Stage 3/4/5 진입 시 — 시놉시스 JSON 구조 데이터를 보충 (summary 텍스트 보완)
+    if (stageId >= 3 && r.stageId === 2) {
+      const d = r.data;
+      const parts: string[] = [];
+
+      if (d.logline)          parts.push(`로그라인: ${String(d.logline)}`);
+      if (Array.isArray(d.world_rules) && (d.world_rules as string[]).length)
+        parts.push(`세계관 규칙:\n${(d.world_rules as string[]).map((rule, i) => `  ${i + 1}. ${rule}`).join("\n")}`);
+
+      const prot = d.protagonist as Record<string,string> | undefined;
+      if (prot?.name) {
+        parts.push([
+          `주인공 — ${prot.name}`,
+          prot.pain_point  ? `  결핍: ${prot.pain_point}` : "",
+          prot.want        ? `  목표: ${prot.want}` : "",
+          prot.incarnation ? `  인카네이션: ${prot.incarnation}` : "",
+          prot.arc         ? `  아크: ${prot.arc}` : "",
+        ].filter(Boolean).join("\n"));
+      }
+
+      if (d.trigger) parts.push(`사건의 트리거: ${String(d.trigger)}`);
+
+      const arc = d.story_arc as Record<string,string> | undefined;
+      if (arc) {
+        parts.push([
+          "스토리 아크:",
+          arc.setup       ? `  발단: ${arc.setup}` : "",
+          arc.development ? `  전개: ${arc.development}` : "",
+          arc.crisis      ? `  위기: ${arc.crisis}` : "",
+          arc.climax      ? `  절정: ${arc.climax}` : "",
+          arc.resolution  ? `  결말: ${arc.resolution}` : "",
+          arc.twist       ? `  반전: ${arc.twist}` : "",
+        ].filter(Boolean).join("\n"));
+      }
+
+      if (parts.length) extra = `\n[시놉시스 핵심 구조]\n${parts.join("\n\n")}`;
+    }
+
+    // Stage 4/5 진입 시 — 세계관 핵심 설정도 보충
+    if (stageId >= 4 && r.stageId === 1) {
+      const d = r.data;
+      const parts: string[] = [];
+      if (d.era)            parts.push(`시대/배경: ${String(d.era)}`);
+      if (d.core_space)     parts.push(`핵심 공간: ${String(d.core_space)}`);
+      if (d.what_if_rule)   parts.push(`만약에 설정: ${String(d.what_if_rule)}`);
+      if (d.social_norms)   parts.push(`사회적 통념: ${String(d.social_norms)}`);
+      if (d.theme)          parts.push(`테마: ${String(d.theme)}`);
+      if (parts.length) extra = `\n[세계관 핵심 구조]\n${parts.join("\n")}`;
+    }
+
+    return `[${stage.name} 확정]\n${r.summary}${extra}`;
   }).join("\n\n");
 }
 
@@ -1969,6 +2022,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
 
+  // ── 시놉시스 4단계 워크플로우 State ──
+  type SynopsisStep = "idle" | "learning" | "persona" | "logline" | "completing";
+  const [synopsisStep, setSynopsisStep] = useState<SynopsisStep>("idle");
+  const [synopsisLoglines, setSynopsisLoglines] = useState<string[]>([]);
+  const [selectedLogline, setSelectedLogline] = useState<string>("");
+  const synopsisStepRef = useRef<SynopsisStep>("idle");
+  // logline 선택을 기다리는 Promise resolver
+  const loglineResolverRef = useRef<((logline: string) => void) | null>(null);
+
   // ── 에셋 리스트 단계 State (Stage 2 완료 후 스타일 전 삽입) ──
   type AssetListPhase = "idle" | "reviewing" | "confirmed";
   const [assetListPhase, setAssetListPhase] = useState<AssetListPhase>("idle");
@@ -2198,8 +2260,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       });
     }
 
-    // 롤링 요약 + 사용자 컨텍스트 상태
+    // 롤링 요약 + 결정사항 추적 + 사용자 컨텍스트 상태
     let conversationSummary = "";
+    let stageDecisions: { agreed: string[]; rejected: string[]; pending: string[] } = {
+      agreed: [], rejected: [], pending: [],
+    };
     let turnsSinceLastSummary = 0;
     let lastUserMsg = "";
     let userTurnCount = 0;
@@ -2264,16 +2329,67 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           for await (const chunk of streamClaude({
             apiKey: key,
             model: "claude-sonnet-4-6",
-            systemPrompt: "웹툰 기획 토론 요약 전문가. 핵심만 2문장 이내로.",
+            systemPrompt: "웹툰 기획 토론 기록 전문가. 빠짐없이 정확하게 정리해. 마크다운 금지.",
             messages: [{
               role: "user",
-              content: `${conversationSummary ? `이전 요약: ${conversationSummary}\n\n` : ""}최근 대화:\n${transcript.slice(-5).join("\n")}\n\n합쳐서 2문장 이내 요약. 핵심 합의사항·의견 포함. 마크다운 금지.`,
+              content: [
+                conversationSummary ? `[이전 요약]\n${conversationSummary}\n\n` : "",
+                `[최근 대화]\n${transcript.slice(-8).join("\n")}\n\n`,
+                `위 내용을 합쳐서 토론 진행 상황 요약문을 작성해줘.\n`,
+                `다음 순서로:\n`,
+                `1. 현재 논의 중인 핵심 주제와 방향 (2~3문장)\n`,
+                `2. 팀이 탐색한 주요 아이디어·선택지·의견들 (2~3문장)\n`,
+                `3. 사용자가 언급한 내용이나 선호도 (있다면, 1~2문장)\n`,
+                `총 5~8문장. 구체적인 설정값(연도, 이름, 규칙 등)은 반드시 포함.`,
+              ].filter(Boolean).join(""),
             }],
-            maxTokens: 120,
+            maxTokens: 400,
             tools: [],
           })) next += chunk;
         } catch { /* ignore */ }
         if (next.trim()) conversationSummary = next.trim();
+      })();
+    };
+
+    const refreshDecisions = () => {
+      if (transcript.length < 5) return;
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key) return;
+      void (async () => {
+        let raw = "";
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            model: "claude-sonnet-4-6",
+            systemPrompt: "웹툰 기획 토론 분석가. JSON만 출력. 설명 없이.",
+            messages: [{
+              role: "user",
+              content: [
+                stageDecisions.agreed.length > 0
+                  ? `[이미 합의된 내용 — 중복 추출 금지]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}\n\n`
+                  : "",
+                `[토론 내용]\n${transcript.slice(-10).join("\n")}\n\n`,
+                `위 토론에서 새롭게 확인된 합의·거부·미결 항목을 추출해줘.\n`,
+                `출력 형식 (JSON만, 설명 없이):\n`,
+                `{"agreed":["합의 항목 (구체적 설정값 포함)"],"rejected":["팀/사용자가 거부한 방향"],"pending":["아직 결정 안 된 중요 쟁점"]}\n`,
+                `각 항목은 한 줄 이내. 없으면 빈 배열.`,
+              ].filter(Boolean).join(""),
+            }],
+            maxTokens: 300,
+            tools: [],
+          })) raw += chunk;
+        } catch { /* ignore */ }
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            const parsed = JSON.parse(m[0]) as { agreed?: string[]; rejected?: string[]; pending?: string[] };
+            stageDecisions = {
+              agreed:   [...new Set([...stageDecisions.agreed,   ...(parsed.agreed   ?? [])])],
+              rejected: [...new Set([...stageDecisions.rejected, ...(parsed.rejected ?? [])])],
+              pending:  parsed.pending ?? stageDecisions.pending,
+            };
+          } catch { /* ignore */ }
+        }
       })();
     };
 
@@ -2334,6 +2450,233 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       }
     }
 
+    // ── Stage 2 전용: 4단계 구조화 워크플로우 ─────────────────────────────────
+    if (stage.id === 2) {
+      const worldCtx  = buildContext(2, stageResultsRef.current);
+      const p1Context = p1DataRef.current ? buildPhase1Context(p1DataRef.current) : "";
+      const baseCtx   = [p1Context, worldCtx].filter(Boolean).join("\n\n").slice(0, 4000);
+
+      const histText = () => {
+        if (transcript.length === 0) return "";
+        const dec = [
+          stageDecisions.agreed.length   > 0 ? `[✅ 합의된 내용]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.rejected.length > 0 ? `[❌ 거부된 방향]\n${stageDecisions.rejected.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.pending.length  > 0 ? `[⏳ 미결 쟁점]\n${stageDecisions.pending.map(d => `• ${d}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n");
+        return conversationSummary
+          ? `[토론 요약]\n${conversationSummary}\n\n${dec ? `${dec}\n\n` : ""}[직전 대화]\n${transcript.slice(-3).join("\n")}\n\n`
+          : `[지금까지 대화]\n${transcript.slice(-5).join("\n")}\n\n`;
+      };
+
+      try {
+        // ─ Step 1: 세계관 학습 (3턴) ─────────────────────────────────────────
+        synopsisStepRef.current = "learning";
+        setSynopsisStep("learning");
+        setCoveredAgendaIds(["step_learning"]);
+
+        await runSingleAgent("producer",
+          `[세계관 학습 시작] 팀이 시놉시스 기획을 시작하기 전에 세계관 내용을 먼저 파악해야 해. 아래 세계관의 핵심 내용을 팀에게 2~3문장으로 자연스럽게 소개해줘. 구어체로.\n\n${baseCtx}`,
+          300);
+        if (abortRef.current) throw new Error("abort");
+
+        await runSingleAgent("worldbuilder",
+          `${histText()}이 세계관에서 이야기 만들기에 가장 흥미로운 긴장감이나 규칙이 뭐야? 1~2문장.`,
+          200);
+        if (abortRef.current) throw new Error("abort");
+
+        await runSingleAgent("scenario",
+          `${histText()}IP 전략가 관점에서, 이 세계관의 어떤 요소가 독자를 끌어당길 가장 강한 훅이야? 1~2문장.`,
+          200);
+        if (abortRef.current) throw new Error("abort");
+
+        // ─ Step 2: 페르소나 추출 (8~10턴) ────────────────────────────────────
+        synopsisStepRef.current = "persona";
+        setSynopsisStep("persona");
+        setCoveredAgendaIds(["step_learning", "step_persona"]);
+
+        await runSingleAgent("producer",
+          `${histText()}이제 이 세계관에서 가장 흥미로운 주인공 후보를 찾아보자. '이 세계관 안에서 가장 고통받을 인물'과 '가장 큰 권력을 가질 인물'을 중심으로 — 각자 인물 유형 1개씩 제안해봐.`,
+          250);
+        if (abortRef.current) throw new Error("abort");
+
+        const personaAgents: AgentId[] = ["character", "scenario", "worldbuilder", "editor", "script"];
+        for (let pt = 0; pt < 8 && !abortRef.current; pt++) {
+          // 사용자 입력 폴링 (최대 8초 대기)
+          const waitStart = Date.now();
+          while (Date.now() - waitStart < 8000) {
+            if (abortRef.current || pendingUserMsgRef.current) break;
+            await sleep(200);
+          }
+          if (abortRef.current) break;
+
+          // 사용자 메시지 처리
+          const pendingMsg = pendingUserMsgRef.current;
+          if (pendingMsg) {
+            pendingUserMsgRef.current = null;
+            transcript.push(`[사용자]: ${pendingMsg}`);
+            convRef.current = transcript;
+            refreshSummary();
+            refreshDecisions();
+            await runSingleAgent("scenario",
+              `${histText()}사용자가 방금 "${pendingMsg}" 라고 했어. 이 의견을 반영해서 페르소나 논의를 이어가줘. 2~3문장.`,
+              250);
+            continue;
+          }
+
+          if (pt < 6) {
+            const agent = personaAgents[pt % personaAgents.length];
+            await runSingleAgent(agent,
+              `${histText()}이 세계관에서 가장 극적인 갈등을 겪을 수 있는 인물 유형을 1개 제안해줘. 이름이나 직업·처지, 그리고 왜 이 세계관에서만 의미 있는지. 2~3문장.`,
+              280);
+          } else {
+            // 마지막 2턴: 3명으로 수렴
+            await runSingleAgent("producer",
+              `${histText()}지금까지 나온 인물 유형들 중에서 가장 흥미로운 3명을 골라서 정리해줘. 각 인물 이름 또는 유형 + 이 세계관에서 겪는 핵심 갈등 한 줄씩.`,
+              350);
+            break;
+          }
+        }
+        if (abortRef.current) throw new Error("abort");
+
+        // ─ Step 3: 로그라인 대결 ──────────────────────────────────────────────
+        synopsisStepRef.current = "logline";
+
+        await runSingleAgent("scenario",
+          `${histText()}[로그라인 대결] 방금 추출한 3명의 인물 후보를 활용해서 서로 다른 느낌의 로그라인을 5개 써줘.\n각 로그라인은:\n- 한 문장\n- 아이러니하고 시선을 끄는 훅\n- 이 세계관이 아니면 불가능한 이야기\n- "1. [로그라인]" 형식으로 번호 붙여서\n5개를 모두 작성해줘.`,
+          600);
+        if (abortRef.current) throw new Error("abort");
+
+        // 마지막 메시지에서 로그라인 파싱
+        const lastMsg = transcript[transcript.length - 1] ?? "";
+        const parsed = [...lastMsg.matchAll(/^\s*\d+[\.\)]\s+(.+)/gm)]
+          .map(m => m[1].trim())
+          .filter(Boolean);
+        const loglines = parsed.length >= 2 ? parsed : [];
+
+        setSynopsisLoglines(loglines);
+        setSynopsisStep("logline");
+        setCoveredAgendaIds(["step_learning", "step_persona", "step_logline"]);
+
+        // 로그라인 선택 대기 (사용자가 카드 클릭 또는 채팅 입력)
+        const chosenLogline = await new Promise<string>((resolve) => {
+          loglineResolverRef.current = resolve;
+          // abort 폴링
+          const poll = setInterval(() => {
+            if (abortRef.current) { clearInterval(poll); resolve(""); return; }
+            const um = pendingUserMsgRef.current;
+            if (um && synopsisStepRef.current === "logline") {
+              clearInterval(poll);
+              pendingUserMsgRef.current = null;
+              transcript.push(`[사용자]: ${um}`);
+              convRef.current = transcript;
+              resolve(um);
+            }
+          }, 300);
+        });
+
+        if (abortRef.current || !chosenLogline) throw new Error("abort");
+
+        setSelectedLogline(chosenLogline);
+        addMsg("user", `선택: ${chosenLogline.length > 80 ? chosenLogline.slice(0, 80) + "…" : chosenLogline}`);
+        transcript.push(`[사용자]: [선택한 로그라인] ${chosenLogline}`);
+        convRef.current = transcript;
+
+        await runSingleAgent("producer",
+          `${histText()}사용자가 이 로그라인을 선택했어: "${chosenLogline.slice(0, 120)}"\n이 방향으로 전체 시놉시스를 완성하자. 팀에게 짧게 공지해줘. 1~2문장.`,
+          180);
+        if (abortRef.current) throw new Error("abort");
+
+        // ─ Step 4: 시놉시스 완성 (10~12턴) ──────────────────────────────────
+        synopsisStepRef.current = "completing";
+        setSynopsisStep("completing");
+        setCoveredAgendaIds(["step_learning", "step_persona", "step_logline", "step_synopsis"]);
+
+        const synopsisTopics = [
+          { agent: "scenario"    as AgentId, prompt: `${histText()}선택된 로그라인을 바탕으로 기획 의도를 말해줘. 이 작품이 지금 이 시대에 왜 필요한가. 2~3문장.` },
+          { agent: "worldbuilder"as AgentId, prompt: `${histText()}이 이야기 세계에서만 작동하는 특별한 사회 규칙 3가지를 구체적으로 제안해줘. 각각 한 줄씩.` },
+          { agent: "character"   as AgentId, prompt: `${histText()}주인공의 인카네이션을 정의해줘. Pain Point(결핍)와 Want(목표)를 이 세계관과 연결해서. 왜 이 세계관이 아니면 이 결핍이 의미 없는지 포함해줘. 3~4문장.` },
+          { agent: "scenario"    as AgentId, prompt: `${histText()}사건의 트리거를 구체적으로 말해줘. 세계관 규칙이 주인공 일상과 충돌하는 첫 번째 대사건. 2~3문장.` },
+          { agent: "script"      as AgentId, prompt: `${histText()}스토리 아크를 제안해줘. 발단-전개-위기-절정-결말 5단계 + 독자가 예상 못할 반전. 각 단계를 한 줄씩.` },
+          { agent: "editor"      as AgentId, prompt: `${histText()}솔직히 말해봐 — 이 시놉시스에서 진부하거나 식상한 부분이 어디야? 그리고 어떻게 신선하게 바꿀 수 있어? 2~3문장.` },
+        ];
+
+        for (const { agent, prompt } of synopsisTopics) {
+          if (abortRef.current) break;
+          // 사용자 입력 폴링 (6초)
+          const ws = Date.now();
+          while (Date.now() - ws < 6000) {
+            if (abortRef.current || pendingUserMsgRef.current) break;
+            await sleep(200);
+          }
+          const pendingMsg2 = pendingUserMsgRef.current;
+          if (pendingMsg2) {
+            pendingUserMsgRef.current = null;
+            transcript.push(`[사용자]: ${pendingMsg2}`);
+            convRef.current = transcript;
+            await runSingleAgent("scenario",
+              `${histText()}사용자가 "${pendingMsg2}" 라고 했어. 이 의견을 충분히 반영해서 시놉시스 논의를 이어가줘.`,
+              300);
+          }
+          await runSingleAgent(agent, prompt, 400);
+        }
+        if (abortRef.current) throw new Error("abort");
+
+        // 에셋 리스트 확정 요청
+        await runSingleAgent("producer",
+          `${histText()}시놉시스 완성됐어. 이제 이미지 생성을 위해 이야기에 등장하는 모든 인물, 장소, 소품, 핵심 장면 목록을 간략히 정리해줘. 각각 이름 + 한 줄 시각적 특징. 마크다운 금지.`,
+          400);
+        if (abortRef.current) throw new Error("abort");
+
+        naturalExit = true;
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
+      }
+
+      runningRef.current = false;
+      synopsisStepRef.current = "idle";
+      setSynopsisStep("idle");
+
+      // 자연 종료 시 자동 추출
+      if (!abortRef.current && naturalExit) {
+        setDebatePhase("confirming");
+        const apiKey = getAnthropicKey();
+        if (apiKey) {
+          const debateText = convRef.current.join("\n");
+          const extractId = addMsg("producer", "시놉시스 정리 중...", true);
+          const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+          const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
+          updateMsg(extractId, "", false);
+          setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
+          localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
+          localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
+          const result: StageResult = { stageId: stage.id, data, summary };
+          const newResults = [...stageResultsRef.current, result];
+          stageResultsRef.current = newResults;
+          setStageResults(newResults);
+          setEditableAssets((prev: SynopsisAssets) => {
+            const ns = (arr: unknown, key: string): string[] =>
+              Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
+            const next: SynopsisAssets = {
+              characters: [...new Set([...prev.characters, ...ns(data.characters, "name")])],
+              locations:  [...new Set([...prev.locations,  ...ns(data.locations,  "name")])],
+              props:      [...new Set([...prev.props,      ...ns(data.props,      "name")])],
+            };
+            localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
+            synopsisAssetsRef.current = next;
+            return next;
+          });
+          setCurrentStageIdx(stageIdx + 1);
+          localStorage.setItem(`wts_p2_stage_${projectId}`, String(stageIdx + 1));
+          setDebatePhase("confirmed");
+        }
+      } else {
+        setDebatePhase("idle");
+      }
+      return; // Stage 2 워크플로우 종료 — 아래 debateLoop 실행 안 함
+    }
+    // ── Stage 2 워크플로우 끝 ─────────────────────────────────────────────────
+
     try {
       debateLoop: while (true) {
         if (abortRef.current) break;
@@ -2371,6 +2714,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           lastUserMsg = pendingMsg;
           userTurnCount = 4;
           refreshSummary();
+          refreshDecisions();
           turnsSinceLastSummary = 0;
           if (wrapUpProposed) {
             if (AGREE_RE.test(pendingMsg.trim())) { naturalExit = true; break debateLoop; }
@@ -2380,15 +2724,20 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (matchedCmd?.handler === "end") { naturalExit = true; break debateLoop; }
         }
 
-        // 주기적 요약 갱신
+        // 주기적 요약 + 결정사항 갱신 (5턴마다)
         turnsSinceLastSummary++;
-        if (turnsSinceLastSummary >= 5) { refreshSummary(); turnsSinceLastSummary = 0; }
+        if (turnsSinceLastSummary >= 5) { refreshSummary(); refreshDecisions(); turnsSinceLastSummary = 0; }
 
         // 히스토리 텍스트 구성
         const lastLine = transcript.filter(l => !l.startsWith("[사용자]")).slice(-1)[0] ?? "";
+        const decisionsBlock = [
+          stageDecisions.agreed.length   > 0 ? `[✅ 합의된 내용]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.rejected.length > 0 ? `[❌ 거부된 방향]\n${stageDecisions.rejected.map(d => `• ${d}`).join("\n")}` : "",
+          stageDecisions.pending.length  > 0 ? `[⏳ 미결 쟁점]\n${stageDecisions.pending.map(d => `• ${d}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n");
         const historyText = conversationSummary
-          ? `[지금까지]: ${conversationSummary}\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
-          : `[대화 내용]\n${transcript.slice(-3).join("\n")}\n\n`;
+          ? `[토론 요약]\n${conversationSummary}\n\n${decisionsBlock ? `${decisionsBlock}\n\n` : ""}${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
+          : `[대화 내용]\n${transcript.slice(-5).join("\n")}\n\n`;
         if (userTurnCount > 0) userTurnCount--;
 
         // ── 명령 핸들러 — 사용자 명령에 즉시 반응 ──
@@ -2425,8 +2774,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const uncovered = stageAgenda.filter(item => !coveredAgenda.has(item.id));
           const covered   = stageAgenda.filter(item =>  coveredAgenda.has(item.id));
 
-          // Stage 1·2: 8턴마다 프로듀서가 진행 상황 공지 + 다음 주제 안내
-          const shouldProgress = (stage.id === 1 || stage.id === 2) && agentTurnsSoFar % 8 === 0 && uncovered.length > 0;
+          // Stage 1: 8턴마다 프로듀서가 진행 상황 공지 + 다음 주제 안내
+          const shouldProgress = stage.id === 1 && agentTurnsSoFar % 8 === 0 && uncovered.length > 0;
           // 나머지 스테이지: 3턴마다 미완료 주제 넛지
           const shouldNudge = !shouldProgress && agentTurnsSoFar % 3 === 0 && uncovered.length > 0;
 
@@ -2459,10 +2808,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         // 마무리 조건 체크 — 모든 아젠다 완료 or WRAP_UP_AFTER 턴 초과
         const allCovered = stageAgenda.length > 0 && coveredAgenda.size >= stageAgenda.length;
-        // Stage 1·2: 최소 10턴 이상 + 모든 항목 완료 시 수렴 신호 1개만 있어도 마무리
-        const minTurnsForConverge = (stage.id === 1 || stage.id === 2) ? 10 : 8;
+        // Stage 1: 최소 10턴 이상 + 모든 항목 완료 시 수렴 신호 1개만 있어도 마무리
+        const minTurnsForConverge = stage.id === 1 ? 10 : 8;
         const converging = agentTurnsSoFar >= minTurnsForConverge && (
-          (stage.id === 1 || stage.id === 2)
+          stage.id === 1
             ? (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계|좋아|됐어|완성/g) ?? []).length >= 1
             : (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2
         );
@@ -2473,8 +2822,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const coveredLabels = stageAgenda.map(i => i.label);
           const wrapUpIntro = stage.id === 1
             ? `5개 프레임워크 — "${coveredLabels.join('", "')}" — 모두 충분히 다뤘어.`
-            : stage.id === 2
-            ? `4가지 시놉시스 항목 — "${coveredLabels.join('", "')}" — 모두 충분히 다뤘어.`
             : `이 단계의 항목들 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
           await runSingleAgent("producer",
             `${historyText}${wrapUpIntro} 프로듀서로서 이 단계를 마무리하자고 자연스럽게 제안해줘. 1~2문장.`,
@@ -2485,28 +2832,21 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         // 다음 발언자 선택 및 실행
         const isFirst = agentTurnsSoFar === 0;
-        const firstAgent: AgentId = stage.id === 2 ? "scenario" : "worldbuilder";
-        const nextAgent = isFirst ? firstAgent : pickNextSpeaker(lastLine, lastSpeaker);
+        const nextAgent = isFirst ? "worldbuilder" : pickNextSpeaker(lastLine, lastSpeaker);
 
         const agentPrompt = isFirst
           ? stage.id === 1
             ? `"${stage.topic}" 주제로 첫 발언을 해줘. 아직 아무것도 정해진 게 없어 — 기획분석 내용을 보고 이 작품에 어울릴 시대·배경 방향을 2~3가지 제안하면서 팀 의견을 물어봐. 선언하지 말고 제안과 질문으로 열어줘. 구어체, 3~4문장.`
-            : stage.id === 2
-            ? `"${stage.topic}" 주제로 첫 발언을 해줘. 세계관에서 확정된 내용을 바탕으로 이 이야기를 한 줄로 표현하는 로그라인 방향을 2~3가지 제안하면서 팀 의견을 물어봐. 선언하지 말고 제안과 질문으로 열어줘. 구어체, 2~3문장.`
             : `"${stage.topic}" 주제로 첫 의견을 자연스럽게 말해줘. 짧고 구어체로.`
           : userTurnCount > 0
             ? stage.id === 1
               ? `${historyText}사용자가 방금 의견을 냈어. 반드시 그 내용을 직접 받아서 충분히 반응해줘 — 동의하거나, 다른 방향을 제안하거나, 그 의견을 더 구체화해줘. 사용자 말을 흘리지 마.`
-              : stage.id === 2
-              ? `${historyText}사용자가 방금 의견을 냈어. 반드시 그 내용을 직접 받아서 충분히 반응해줘 — 동의하거나, 다른 방향을 제안하거나, 그 의견을 더 구체화해줘. 사용자 말을 흘리지 마.`
               : `${historyText}사용자 의견을 자연스럽게 반영해서 토론을 이어가줘.`
             : stage.id === 1
               ? `${historyText}앞 사람 의견에 반응해줘. 동의하거나 다른 방향을 제안하거나 질문을 던져. 아직 확정하지 마 — 여러 선택지를 탐색해야 해.`
-              : stage.id === 2
-              ? `${historyText}앞 사람 의견에 반응해줘. 동의하거나 다른 방향을 제안하거나 질문을 던져. 아직 확정하지 마 — 여러 선택지를 탐색해야 해.`
               : `${historyText}앞 대화 받아서 네 관점으로 짧게 한마디.`;
 
-        await runSingleAgent(nextAgent, agentPrompt, (stage.id === 1 || stage.id === 2) ? 700 : 500);
+        await runSingleAgent(nextAgent, agentPrompt, stage.id === 1 ? 700 : 500);
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
@@ -2545,10 +2885,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (stage.id === 1) {
             chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
             locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
-          } else if (stage.id === 2) {
-            chars = [...new Set([...chars, ...names(data.characters, "name")])];
-            locs  = [...new Set([...locs,  ...names(data.locations,  "name")])];
-            props = [...new Set([...props, ...names(data.props,      "name")])];
           } else if (stage.id === 3) {
             chars = [...new Set([...chars, ...names(data.characters, "name")])];
           } else if (stage.id === 4) {
@@ -2561,45 +2897,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           synopsisAssetsRef.current = next;
           return next;
         });
-
-        // 시놉시스(Stage 2) 완료 시 → 에셋 목록 AI 추가 추출 (병합)
-        if (stage.id === 2 && summary) {
-          void (async () => {
-            try {
-              let extracted = "";
-              for await (const chunk of streamClaude({
-                apiKey,
-                model: "claude-sonnet-4-6",
-                systemPrompt: "JSON만 출력. 설명 없이.",
-                messages: [{
-                  role: "user",
-                  content:
-                    `다음 시놉시스에 등장하는 캐릭터, 장소, 소품의 이름을 모두 추출하세요.\n\n[시놉시스]\n${summary.slice(0, 3000)}\n\n` +
-                    `출력 형식 (JSON만, 설명 없이):\n{"characters":["이름1","이름2"],"locations":["장소1","장소2"],"props":["소품1"]}`,
-                }],
-                maxTokens: 400,
-                tools: [],
-              })) { extracted += chunk; }
-              const m = extracted.match(/\{[\s\S]*\}/);
-              if (m) {
-                try {
-                  const aiAssets = JSON.parse(m[0]) as SynopsisAssets;
-                  // AI 추출 결과를 기존 목록에 병합 (덮어쓰지 않음)
-                  setEditableAssets((prev: SynopsisAssets) => {
-                    const next: SynopsisAssets = {
-                      characters: [...new Set([...prev.characters, ...aiAssets.characters])],
-                      locations:  [...new Set([...prev.locations,  ...aiAssets.locations])],
-                      props:      [...new Set([...prev.props,      ...aiAssets.props])],
-                    };
-                    localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(next));
-                    synopsisAssetsRef.current = next;
-                    return next;
-                  });
-                } catch { /* ignore */ }
-              }
-            } catch { /* ignore */ }
-          })();
-        }
 
         const savedMsgs = msgsRef.current.filter((m: Msg) => !m.streaming);
         setStageHistoryMsgs((prev: Record<number, Msg[]>) => {
@@ -3953,24 +4250,37 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   const handleRestartNew = useCallback(() => {
     abortRef.current = true;
-    localStorage.removeItem(`p2_msgs_${projectId}`);
-    localStorage.removeItem(`wts_phase2_${projectId}`);
-    localStorage.removeItem(`wts_asset_list_${projectId}`);
-    STAGES.forEach((_, idx) => {
-      localStorage.removeItem(`p2_conv_${idx}_${projectId}`);
-      localStorage.removeItem(`p2_msgs_${idx}_${projectId}`);
-    });
+    const idx = currentStageIdx;
+    // 현재 스테이지 대화만 지우고, 이전 스테이지 결과는 보존
+    localStorage.removeItem(`p2_conv_${idx}_${projectId}`);
+    localStorage.removeItem(`p2_msgs_${idx}_${projectId}`);
+    // 이전 결과는 유지, 현재 스테이지부터 제거
+    const keptResults = stageResultsRef.current.filter((r: StageResult) => r.stageId < STAGES[idx].id);
+    const keptHistory: Record<number, Msg[]> = {};
+    for (let i = 0; i < idx; i++) keptHistory[i] = stageHistoryMsgs[i] ?? [];
+    try {
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+        stageResults: keptResults,
+        currentStageIdx: idx,
+        stageHistoryMsgs: keptHistory,
+      }));
+    } catch { /* ignore */ }
     resumeDataRef.current = null;
     convRef.current = [];
-    stageResultsRef.current = [];
+    stageResultsRef.current = keptResults;
     runningRef.current = false;
-    synopsisAssetsRef.current = null;
-    setMsgs([]); setStageResults([]); setCurrentStageIdx(0); setApiError(null);
-    setStageHistoryMsgs({});
-    setAssetListPhase("idle");
-    setEditableAssets({ characters: [], locations: [], props: [] });
+    // synopsis step 초기화
+    synopsisStepRef.current = "idle";
+    loglineResolverRef.current = null;
+    setMsgs([]);
+    setStageResults(keptResults);
+    setStageHistoryMsgs(keptHistory);
+    setApiError(null);
+    setSynopsisStep("idle");
+    setSynopsisLoglines([]);
+    setSelectedLogline("");
     setDebatePhase("idle");
-  }, [projectId]);
+  }, [projectId, currentStageIdx, stageHistoryMsgs]);
 
   // ── 뷰 모드 전용: 과거 스테이지 이어서 토론 (기존 트랜스크립트 resume) ──
   const handleResumeStageFromView = useCallback((stageIdx: number) => {
@@ -4299,20 +4609,31 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 const covered = coveredAgendaIds.includes(item.id);
                 const turns = agendaTurnCounts[item.id] ?? 0;
                 const progress = Math.min(turns, minTurnsUI);
+                // Stage 2: 현재 진행 중인 단계 하이라이트
+                const isSynStep = currentStageId === 2;
+                const isActive = isSynStep && (
+                  (item.id === "step_learning"  && synopsisStep === "learning") ||
+                  (item.id === "step_persona"   && synopsisStep === "persona") ||
+                  (item.id === "step_logline"   && synopsisStep === "logline") ||
+                  (item.id === "step_synopsis"  && synopsisStep === "completing")
+                );
                 return (
                   <div key={item.id} style={{
                     display: "flex", alignItems: "center", gap: 4,
                     padding: "2px 8px", borderRadius: 99, fontSize: 11,
-                    background: covered ? "rgba(99,102,241,0.25)" : turns > 0 ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)",
-                    border: `1px solid ${covered ? "rgba(99,102,241,0.4)" : "transparent"}`,
-                    color: covered ? "#a5b4fc" : turns > 0 ? "rgba(165,180,252,0.6)" : "rgba(255,255,255,0.3)",
+                    background: covered ? "rgba(52,211,153,0.2)" : isActive ? "rgba(52,211,153,0.1)" : turns > 0 ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${covered ? "rgba(52,211,153,0.5)" : isActive ? "rgba(52,211,153,0.3)" : "transparent"}`,
+                    color: covered ? "#34d399" : isActive ? "#6ee7b7" : turns > 0 ? "rgba(165,180,252,0.6)" : "rgba(255,255,255,0.3)",
                     transition: "all 0.5s",
+                    fontWeight: isActive ? 700 : 400,
                   }}>
-                    <span>{covered ? "✓" : "○"}</span>
+                    <span>{covered ? "✓" : isActive ? "▶" : "○"}</span>
                     <span>{item.label}</span>
-                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>
-                      {progress}/{minTurnsUI}
-                    </span>
+                    {!isSynStep && (
+                      <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>
+                        {progress}/{minTurnsUI}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -4368,6 +4689,43 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             setReplyTo({ msg, agentLabel: ag?.label ?? msg.agent, preview: msg.text.slice(0, 60).trim() });
             setTimeout(() => chatInputRef.current?.focus(), 50);
           } : undefined} />)}
+
+          {/* ── 시놉시스 로그라인 선택 UI ── */}
+          {synopsisStep === "logline" && synopsisLoglines.length > 0 && (
+            <div style={{ margin:"12px 0", background:"#0e0e1a", border:"1px solid #34d39940", borderRadius:14, padding:"18px 16px" }}>
+              <div style={{ fontSize:12, fontWeight:800, color:"#34d399", letterSpacing:"0.06em", marginBottom:4 }}>
+                🎯 로그라인 대결 — 하나를 선택해주세요
+              </div>
+              <div style={{ fontSize:11, color:"#64748b", marginBottom:14 }}>
+                클릭하면 해당 로그라인으로 시놉시스를 완성합니다
+              </div>
+              <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
+                {synopsisLoglines.map((line, i) => (
+                  <button key={i}
+                    onClick={() => {
+                      if (!loglineResolverRef.current) return;
+                      const resolver = loglineResolverRef.current;
+                      loglineResolverRef.current = null;
+                      resolver(line);
+                    }}
+                    style={{
+                      background: selectedLogline === line ? "#34d39918" : "#12121e",
+                      border: selectedLogline === line ? "1px solid #34d399" : "1px solid #1e2a1e",
+                      borderRadius:10, padding:"12px 14px", cursor:"pointer",
+                      textAlign:"left" as const, color:"#e2e8f0", fontSize:13, lineHeight:1.65,
+                      transition:"all 0.15s",
+                    }}
+                  >
+                    <span style={{ fontSize:11, fontWeight:800, color:"#34d399", marginRight:8 }}>{i+1}.</span>
+                    {line}
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginTop:12, fontSize:11, color:"#4a5568" }}>
+                또는 채팅창에 직접 로그라인을 입력해도 됩니다
+              </div>
+            </div>
+          )}
 
           {/* ── 스테이지 완료 인라인 보고서 ── */}
           {debatePhase === "confirmed" && stageResults.length > 0 && imageSessionPhase === "idle" && (() => {

@@ -1202,31 +1202,34 @@ function FeasibilitySection({
   );
 }
 
-function FinalReportSection({ report }: { report: string }) {
+function FinalReportSection({ result }: { result: Phase1Result }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(report).then(() => {
+    navigator.clipboard.writeText(result.final_report).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
 
-  const renderLine = (line: string, i: number) => {
-    if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━━")) {
-      return <div key={i} className={styles.reportHeading}>{line}</div>;
-    }
-    if (line.startsWith("━")) {
-      return <hr key={i} style={{ border: "none", borderTop: "1px solid #23233a", margin: "8px 0" }} />;
-    }
-    if (line.startsWith("- ") || line.startsWith("• ") || line.startsWith("①") || line.startsWith("②") || line.startsWith("③")) {
-      return <div key={i} className={styles.reportBullet}>{line}</div>;
-    }
-    if (line.trim() === "") {
-      return <br key={i} />;
-    }
-    return <div key={i} className={styles.reportLine}>{line}</div>;
-  };
+  const verdictColor =
+    result.verdict === "go" ? "#34d399" :
+    result.verdict === "conditional" ? "#fbbf24" : "#f87171";
+  const verdictLabel =
+    result.verdict === "go" ? "✅ Phase 2 진행 권장" :
+    result.verdict === "conditional" ? "⚠️ 조건부 진행" : "❌ 재기획 권장";
+
+  const priorityColor = (p: string) =>
+    p === "high" ? "#f87171" : p === "medium" ? "#fbbf24" : "#60a5fa";
+  const priorityLabel = (p: string) =>
+    p === "high" ? "HIGH" : p === "medium" ? "MED" : "LOW";
+
+  const notes = result.worldbuilding_notes ?? [];
+  const sortedNotes = [
+    ...notes.filter(n => n.priority === "high"),
+    ...notes.filter(n => n.priority === "medium"),
+    ...notes.filter(n => n.priority === "low"),
+  ];
 
   return (
     <section className={styles.resultSec}>
@@ -1234,14 +1237,129 @@ function FinalReportSection({ report }: { report: string }) {
         <span className={styles.secNum}>06</span>
         <div className={styles.secHeader}>
           <h3 className={styles.secTitle}>최종 분석 보고서</h3>
-          <p className={styles.secSub}>총괄 프로듀서 종합 의견서</p>
+          <p className={styles.secSub}>총괄 프로듀서 종합 의견 + Phase 2 인계사항</p>
         </div>
         <button className={styles.btnCopy} onClick={handleCopy}>
           {copied ? "✓ 복사됨" : "복사"}
         </button>
       </div>
-      <div className={styles.finalReportCard}>
-        {report.split("\n").map((line, i) => renderLine(line, i))}
+
+      {/* 판정 헤더 카드 */}
+      <div style={{
+        background: `${verdictColor}10`, border: `1px solid ${verdictColor}40`,
+        borderRadius: 12, padding: "16px 20px", marginBottom: 10,
+        display: "flex", alignItems: "center", gap: 20,
+      }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: verdictColor, flexShrink: 0 }}>
+          {verdictLabel}
+        </div>
+        <div style={{ width: 1, height: 32, background: `${verdictColor}30`, flexShrink: 0 }} />
+        <div style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6 }}>{result.summary}</div>
+      </div>
+
+      {/* Phase 2 인계사항 */}
+      {sortedNotes.length > 0 && (
+        <div style={{
+          background: "rgba(124,108,252,0.06)", border: "1px solid rgba(124,108,252,0.22)",
+          borderRadius: 12, padding: "16px 18px", marginBottom: 10,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#a78bfa", marginBottom: 10 }}>
+            🔗 Phase 2 인계사항 — 세계관·시놉시스에서 반드시 보완할 항목
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {sortedNotes.map((n, i) => (
+              <div key={i} style={{
+                display: "grid", gridTemplateColumns: "44px 1fr 1fr", gap: 12,
+                background: "rgba(255,255,255,0.03)", borderRadius: 8,
+                padding: "10px 12px", alignItems: "start",
+              }}>
+                <div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700,
+                    color: priorityColor(n.priority),
+                    background: `${priorityColor(n.priority)}18`,
+                    border: `1px solid ${priorityColor(n.priority)}40`,
+                    borderRadius: 4, padding: "2px 5px",
+                  }}>
+                    {priorityLabel(n.priority)}
+                  </span>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 3 }}>문제점</div>
+                  <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.5 }}>{n.issue}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "#a78bfa", marginBottom: 3 }}>Phase 2 방향</div>
+                  <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.5 }}>{n.suggestion}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 강점 / 약점 2열 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{
+          background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#34d399", marginBottom: 8 }}>✅ 강점</div>
+          {result.strengths?.map((s, i) => (
+            <div key={i} style={{
+              fontSize: 13, color: "#94a3b8", lineHeight: 1.6,
+              paddingLeft: 10, borderLeft: "2px solid rgba(52,211,153,0.3)", marginBottom: 5,
+            }}>{s}</div>
+          ))}
+        </div>
+        <div style={{
+          background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)",
+          borderRadius: 10, padding: "14px 16px",
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#f87171", marginBottom: 8 }}>⚠️ 약점 &amp; 리스크</div>
+          {result.weaknesses?.map((w, i) => (
+            <div key={i} style={{
+              fontSize: 13, color: "#94a3b8", lineHeight: 1.6,
+              paddingLeft: 10, borderLeft: "2px solid rgba(248,113,113,0.3)", marginBottom: 5,
+            }}>{w}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* 개선 액션 아이템 */}
+      {(result.improvements?.length ?? 0) > 0 && (
+        <div style={{
+          background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.2)",
+          borderRadius: 10, padding: "14px 16px", marginBottom: 10,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", marginBottom: 8 }}>🔧 보강해야 할 점</div>
+          {result.improvements.map((imp, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 5 }}>
+              <span style={{ color: "#fbbf24", fontSize: 13, flexShrink: 0, marginTop: 1 }}>•</span>
+              <span style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.6 }}>{imp}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 총괄 프로듀서 의견 */}
+      <div style={{
+        background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)",
+        borderRadius: 10, padding: "16px 18px",
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#7c6cfc", marginBottom: 10 }}>
+          💬 총괄 프로듀서 의견
+        </div>
+        {result.final_report.split("\n").map((line, i) => {
+          if (line.startsWith("■") || line.startsWith("▶") || line.startsWith("━━"))
+            return <div key={i} style={{ fontWeight: 700, color: "#a78bfa", fontSize: 13, marginTop: i === 0 ? 0 : 8, marginBottom: 3 }}>{line}</div>;
+          if (line.startsWith("━"))
+            return <hr key={i} style={{ border: "none", borderTop: "1px solid #23233a", margin: "6px 0" }} />;
+          if (line.startsWith("- ") || line.startsWith("• ") || /^[①②③④⑤]/.test(line))
+            return <div key={i} style={{ paddingLeft: 12, color: "#94a3b8", fontSize: 13, lineHeight: 1.6, marginBottom: 2 }}>{line}</div>;
+          if (!line.trim()) return <div key={i} style={{ height: 4 }} />;
+          return <div key={i} style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.65 }}>{line}</div>;
+        })}
       </div>
     </section>
   );
@@ -2442,7 +2560,7 @@ export default function Phase1Page() {
               <PositioningSection positioning={result.positioning} radar={result.radar} mounted={mounted} />
               <USPSection usp={result.usp} />
               <FeasibilitySection result={result} mounted={mounted} />
-              <FinalReportSection report={result.final_report} />
+              <FinalReportSection result={result} />
 
               {/* Gating */}
               <div className={styles.gatingRow}>
