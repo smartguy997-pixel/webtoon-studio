@@ -881,10 +881,11 @@ function StreamCursor() {
 }
 
 function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: StageId; result: StageResult; onViewDebate?: () => void; isViewingDebate?: boolean }) {
-  const [showContext, setShowContext] = useState(false);
+  const [modalTab, setModalTab] = useState<"data" | "context" | null>(null);
   const stage = STAGES.find(s => s.id === result.stageId)!;
   const { data } = result;
   const c = stage.color;
+
   const row = (label: string, val: unknown) => val ? (
     <div key={label} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"6px 0", borderBottom:"1px solid #1e1e2a" }}>
       <span style={{ fontSize:10, fontWeight:700, color:"#4a4a68", minWidth:72, flexShrink:0, paddingTop:2, textTransform:"uppercase" as const, letterSpacing:"0.4px" }}>{label}</span>
@@ -892,32 +893,19 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
     </div>
   ) : null;
 
-  return (
-    <div style={{ background:`${c}08`, border:`1px solid ${c}30`, borderRadius:10, padding:"14px 16px", marginBottom:6 }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-        <div style={{ fontSize:10, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.7px" }}>✓ {stage.name} 완료</div>
-        <div style={{ display:"flex", gap:6 }}>
-          <button
-            onClick={() => setShowContext((v: boolean) => !v)}
-            style={{ fontSize:11, fontWeight:700, color: showContext ? c : "#4a4a6a", background: showContext ? `${c}18` : "transparent", border:`1px solid ${showContext ? c : "#2a2a3d"}`, borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
-            {showContext ? "▲" : "📋"} 전달 내용
-          </button>
-          {onViewDebate && (
-            <button
-              onClick={onViewDebate}
-              style={{ fontSize:11, fontWeight:700, color: isViewingDebate ? c : "#4a4a6a", background: isViewingDebate ? `${c}18` : "transparent", border:`1px solid ${isViewingDebate ? c : "#2a2a3d"}`, borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
-              {isViewingDebate ? "▲ 닫기" : "💬 토론"}
-            </button>
-          )}
-        </div>
-      </div>
-      {/* 다음 단계 에이전트에게 전달되는 내용 */}
-      {showContext && result.summary && (
-        <div style={{ marginBottom:12, padding:"10px 12px", background:"#0d0d1a", border:`1px solid ${c}30`, borderRadius:8 }}>
-          <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, letterSpacing:"0.05em" }}>📋 다음 단계 에이전트 전달 내용</div>
-          <pre style={{ fontSize:12, color:`${c}dd`, lineHeight:1.75, whiteSpace:"pre-wrap" as const, margin:0, fontFamily:"inherit" }}>{result.summary}</pre>
-        </div>
-      )}
+  // 카드에 표시할 한 줄 프리뷰
+  const preview = (() => {
+    if (result.stageId === 1) return data.era ? String(data.era).slice(0, 55) : "";
+    if (result.stageId === 2) return data.logline ? String(data.logline).slice(0, 65) : "";
+    if (result.stageId === 3) return Array.isArray(data.characters) ? `${(data.characters as unknown[]).length}명 설계 완료` : "";
+    if (result.stageId === 4) return Array.isArray(data.locations) ? `${(data.locations as unknown[]).length}개 장소 설계 완료` : "";
+    if (result.stageId === 5) return Array.isArray(data.props) ? `${(data.props as unknown[]).length}개 소품 설계 완료` : "";
+    return "";
+  })();
+
+  // 모달 내 구조화 데이터 렌더
+  const dataContent = (
+    <div>
       {result.stageId === 1 && (
         <>
           {row("시대/배경", data.era)}
@@ -925,11 +913,11 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
           {row("대립 구도", data.conflict_structure)}
           {row("협력 구도", data.alliance_structure)}
           {Array.isArray(data.key_characters) && (data.key_characters as Record<string,string>[]).length > 0 && (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>핵심 인물</div>
+            <div style={{ marginTop:12, marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:8, textTransform:"uppercase" as const, letterSpacing:"0.06em" }}>핵심 인물</div>
               {(data.key_characters as Record<string,string>[]).map((ch, i) => (
-                <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #1e1e2a" }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>
+                <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #1e1e2a" }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>
                     {ch.name} <span style={{ fontSize:11, color:"#7878a0" }}>({ch.role})</span>
                     {ch.age && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>{ch.age}{ch.gender ? ` · ${ch.gender}` : ""}</span>}
                   </div>
@@ -939,11 +927,11 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
             </div>
           )}
           {Array.isArray(data.key_locations) && (data.key_locations as Record<string,string>[]).length > 0 && (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>주요 장소</div>
+            <div style={{ marginTop:12, marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:8, textTransform:"uppercase" as const, letterSpacing:"0.06em" }}>주요 장소</div>
               {(data.key_locations as Record<string,string>[]).map((l, i) => (
-                <div key={i} style={{ marginBottom:6, paddingBottom:6, borderBottom:"1px solid #1e1e2a" }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>
+                <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #1e1e2a" }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>
                     {l.name}{l.type && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>({l.type})</span>}
                   </div>
                   {row("시각", l.visual)}{row("조명/분위기", [l.lighting, l.atmosphere].filter(Boolean).join(" · ") || undefined)}{row("역할", l.significance)}
@@ -966,22 +954,22 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
           {data.act4 && row("결(結)", data.act4)}
           {row("테마", data.theme)}
           {Array.isArray(data.key_characters_brief) && (data.key_characters_brief as Record<string,string>[]).length > 0 && (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>등장인물</div>
-              {(data.key_characters_brief as Record<string,string>[]).map((c, i) => (
-                <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:3 }}>
-                  <span style={{ color:"#eeeef5", fontWeight:600 }}>{c.name}</span>
-                  {c.role && <span style={{ color:"#7878a0", marginLeft:6 }}>({c.role})</span>}
-                  {c.one_line && <span style={{ color:"#64748b" }}> — {c.one_line}</span>}
+            <div style={{ marginTop:12, marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:8, textTransform:"uppercase" as const, letterSpacing:"0.06em" }}>등장인물</div>
+              {(data.key_characters_brief as Record<string,string>[]).map((ch, i) => (
+                <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
+                  <span style={{ color:"#eeeef5", fontWeight:600 }}>{ch.name}</span>
+                  {ch.role && <span style={{ color:"#7878a0", marginLeft:6 }}>({ch.role})</span>}
+                  {ch.one_line && <span style={{ color:"#64748b" }}> — {ch.one_line}</span>}
                 </div>
               ))}
             </div>
           )}
           {Array.isArray(data.key_locations_brief) && (data.key_locations_brief as Record<string,string>[]).length > 0 && (
-            <div style={{ marginBottom:10 }}>
-              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>주요 장소</div>
+            <div style={{ marginTop:12, marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:8, textTransform:"uppercase" as const, letterSpacing:"0.06em" }}>주요 장소</div>
               {(data.key_locations_brief as Record<string,string>[]).map((l, i) => (
-                <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:3 }}>
+                <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
                   <span style={{ color:"#eeeef5", fontWeight:600 }}>{l.name}</span>
                   {l.role && <span style={{ color:"#64748b" }}> — {l.role}</span>}
                 </div>
@@ -991,22 +979,22 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
         </>
       )}
       {result.stageId === 3 && Array.isArray(data.characters) && (data.characters as Record<string,string>[]).map((ch, i) => (
-        <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
+        <div key={i} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid #1e1e2a" }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>
             {ch.name} <span style={{ fontSize:11, color:"#7878a0" }}>({ch.role})</span>
             {ch.gender && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>{ch.gender}{ch.age ? ` · ${ch.age}` : ""}</span>}
           </div>
-          {row("얼굴", ch.face)}{row("키 / 체형", ch.height || ch.build ? [ch.height, ch.build, ch.weight].filter(Boolean).join(" · ") : undefined)}{row("복장", ch.outfit)}{row("성격", ch.personality)}{row("동기", ch.motivation)}{row("말투", ch.speech)}{row("세계관 역할", ch.story_role)}
+          {row("얼굴", ch.face)}{row("키/체형", ch.height || ch.build ? [ch.height, ch.build, ch.weight].filter(Boolean).join(" · ") : undefined)}{row("복장", ch.outfit)}{row("성격", ch.personality)}{row("동기", ch.motivation)}{row("말투", ch.speech)}{row("세계관 역할", ch.story_role)}
         </div>
       ))}
       {result.stageId === 4 && Array.isArray(data.locations) && (data.locations as Record<string,string>[]).map((loc, i) => (
-        <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
+        <div key={i} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid #1e1e2a" }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>{loc.name} <span style={{ fontSize:11, color:"#7878a0" }}>({loc.type})</span></div>
           {row("시각", loc.visual)}{row("구조", loc.architecture)}{row("조명", loc.lighting)}{row("색채", loc.color_palette)}{row("분위기", loc.atmosphere)}{row("소리", loc.sound)}{row("서사적 의미", loc.significance)}{row("주요 장면", loc.key_scenes)}{row("상징", loc.symbolic_meaning)}
         </div>
       ))}
       {result.stageId === 5 && Array.isArray(data.props) && (data.props as Record<string,string>[]).map((p, i) => (
-        <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
+        <div key={i} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid #1e1e2a" }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>
             {p.name} <span style={{ fontSize:11, color:"#7878a0" }}>({p.type})</span>
             {p.owner && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>· {p.owner}</span>}
@@ -1014,13 +1002,114 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
           {row("시각", p.visual)}{row("상태", p.condition)}{row("기능", p.function)}{row("역할", p.story_role)}{row("상징", p.symbolic_meaning)}
         </div>
       ))}
-      {/* Fallback: 구조화 실패 시 단계별 상세 요약 */}
       {data.raw_summary && (
         <div style={{ fontSize:13, color:"#d4d4e8", lineHeight:1.85, whiteSpace:"pre-wrap" as const, background:"#12121c", borderRadius:8, padding:"12px 14px" }}>
           {String(data.raw_summary)}
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      {/* ── 컴팩트 카드 ── */}
+      <div style={{ background:`${c}0a`, border:`1px solid ${c}28`, borderRadius:8, padding:"8px 12px", marginBottom:6, display:"flex", alignItems:"center", gap:10 }}>
+        {/* 색상 도트 */}
+        <div style={{ width:7, height:7, borderRadius:"50%", background:c, flexShrink:0 }} />
+        {/* 텍스트 */}
+        <div style={{ flex:1, minWidth:0 }}>
+          <span style={{ fontSize:11, fontWeight:800, color:c, textTransform:"uppercase" as const, letterSpacing:"0.6px" }}>✓ {stage.name} 완료</span>
+          {preview && (
+            <span style={{ fontSize:11, color:"#5a5a7a", marginLeft:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>
+              {preview}
+            </span>
+          )}
+        </div>
+        {/* 버튼들 */}
+        <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+          <button
+            onClick={() => setModalTab("data")}
+            style={{ fontSize:11, fontWeight:600, color:"#7878a0", background:"transparent", border:"1px solid #2a2a3d", borderRadius:5, padding:"3px 9px", cursor:"pointer" }}>
+            🗂 보기
+          </button>
+          {result.summary && (
+            <button
+              onClick={() => setModalTab("context")}
+              style={{ fontSize:11, fontWeight:600, color:"#7878a0", background:"transparent", border:"1px solid #2a2a3d", borderRadius:5, padding:"3px 9px", cursor:"pointer" }}>
+              📋 전달
+            </button>
+          )}
+          {onViewDebate && (
+            <button
+              onClick={onViewDebate}
+              style={{ fontSize:11, fontWeight:600, color: isViewingDebate ? c : "#7878a0", background: isViewingDebate ? `${c}18` : "transparent", border:`1px solid ${isViewingDebate ? c : "#2a2a3d"}`, borderRadius:5, padding:"3px 9px", cursor:"pointer" }}>
+              💬 토론
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── 모달 오버레이 ── */}
+      {modalTab !== null && (
+        <>
+          {/* 배경 딤 — pointer-events: none으로 채팅 입력창은 그대로 사용 가능 */}
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", pointerEvents:"none", zIndex:900 }} />
+          {/* 모달 박스 */}
+          <div style={{
+            position:"fixed",
+            top:"50%", left:"50%",
+            transform:"translate(-50%,-50%)",
+            zIndex:901,
+            width:"min(700px, 92vw)",
+            maxHeight:"72vh",
+            display:"flex",
+            flexDirection:"column",
+            background:"#14141e",
+            border:`1px solid ${c}40`,
+            borderRadius:14,
+            boxShadow:"0 24px 60px rgba(0,0,0,0.7)",
+            overflow:"hidden",
+          }}>
+            {/* 헤더 */}
+            <div style={{ padding:"14px 18px 12px", borderBottom:`1px solid ${c}20`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:c }} />
+                <span style={{ fontSize:13, fontWeight:800, color:c, letterSpacing:"0.3px" }}>✓ {stage.name}</span>
+                {/* 탭 */}
+                <div style={{ display:"flex", gap:4, marginLeft:4 }}>
+                  <button
+                    onClick={() => setModalTab("data")}
+                    style={{ fontSize:11, fontWeight:700, color: modalTab === "data" ? c : "#4a4a6a", background: modalTab === "data" ? `${c}18` : "transparent", border:`1px solid ${modalTab === "data" ? c : "#2a2a3d"}`, borderRadius:5, padding:"2px 9px", cursor:"pointer" }}>
+                    결과
+                  </button>
+                  {result.summary && (
+                    <button
+                      onClick={() => setModalTab("context")}
+                      style={{ fontSize:11, fontWeight:700, color: modalTab === "context" ? c : "#4a4a6a", background: modalTab === "context" ? `${c}18` : "transparent", border:`1px solid ${modalTab === "context" ? c : "#2a2a3d"}`, borderRadius:5, padding:"2px 9px", cursor:"pointer" }}>
+                      에이전트 전달 내용
+                    </button>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setModalTab(null)}
+                style={{ fontSize:17, lineHeight:1, color:"#5a5a7a", background:"transparent", border:"none", cursor:"pointer", padding:"0 4px" }}>
+                ✕
+              </button>
+            </div>
+            {/* 스크롤 내용 */}
+            <div style={{ padding:"16px 18px 20px", overflowY:"auto", flex:1 }}>
+              {modalTab === "data" && dataContent}
+              {modalTab === "context" && result.summary && (
+                <pre style={{ fontSize:12, color:`${c}cc`, lineHeight:1.8, whiteSpace:"pre-wrap" as const, margin:0, fontFamily:"inherit" }}>
+                  {result.summary}
+                </pre>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
