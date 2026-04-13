@@ -190,18 +190,15 @@
 .cardDeleteBtn {
   flex-shrink: 0;
   background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  color: #f87171;
+  font-size: 11px;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
-  line-height: 1;
-}
-.card:hover .cardDeleteBtn {
+  padding: 3px 8px;
+  border-radius: 6px;
   opacity: 1;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  line-height: 1;
 }
 .cardDeleteBtn:hover {
   color: #f87171;

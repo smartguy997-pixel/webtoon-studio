@@ -98,7 +98,7 @@ function ProjectCard({ project, onDelete }: { key?: string; project: Project; on
             <span className={phaseBadgeClass(project.currentPhase)}>Phase {project.currentPhase} · {PHASE_LABELS[project.currentPhase - 1]}</span>
           </div>
         </div>
-        <button className={s.cardDeleteBtn} onClick={handleDelete} title="프로젝트 삭제">✕</button>
+        <button className={s.cardDeleteBtn} onClick={handleDelete}>🗑 삭제</button>
       </div>
       <PhaseStepper current={project.currentPhase} />
       {project.currentPhase >= 4 && project.episodeProgress !== undefined && (
