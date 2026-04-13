@@ -133,7 +133,7 @@ function matchCommandP2(msg: string): P2CommandPattern | null {
 // 각 스테이지마다 반드시 다뤄야 할 하위 주제들
 // 스테이지별 주제당 최소 턴 수 — 세계관(1)은 깊이가 중요해서 더 많이
 const MIN_TURNS_BY_STAGE: Record<number, number> = {
-  1: 15, // 세계관 — A4 분량 깊이 필요
+  1: 18, // 세계관 — A4 분량 깊이 필요 (인물 시각 설계 + 장소 시각 설계 추가)
   2: 10, // 시놉시스
   3: 8,  // 캐릭터
   4: 8,  // 장소
@@ -149,9 +149,10 @@ const STAGE_AGENDA: Record<number, Array<{
 }>> = {
   1: [ // 세계관 — 시놉시스 작성의 기초: 시대배경 + 핵심 인물 + 대립협력 구도
     { id: "era",       label: "시대·배경",     keywords: /시대|배경|세기|현대|미래|과거|공간|지역|나라|도시|문명|왕국|제국|행성|시절|연대|세계|동네|거리|분위기|공기|냄새|질감|지형|역사/,  nudge: "시대·배경이 아직 얕아. 이 공간만의 구체적인 이름, 지형, 역사적 맥락, 그리고 독자가 발을 딛는 순간 느끼는 공기와 질감까지 파고들어야 해. 예를 들어 왜 이 동네인지, 어떤 역사가 이 공간을 만들었는지." },
-    { id: "characters",label: "핵심 인물",     keywords: /인물|주인공|캐릭터|등장|누구|사람|존재|주역|주요 인물|핵심 인물|이름|설정|직업|나이|출신|과거|성격|동기|욕망|상처/,         nudge: "핵심 인물들이 아직 피상적이야. 주인공·빌런·핵심 조력자 각각의 이름·직업·나이·출신 배경·내면의 상처·욕망·숨기는 것까지. 왜 이 인물이 이 이야기에서 이 역할을 맡아야 하는지 설득력이 있어야 해." },
+    { id: "characters",label: "핵심 인물",     keywords: /인물|주인공|캐릭터|등장|누구|사람|존재|주역|주요 인물|핵심 인물|이름|설정|직업|나이|출신|과거|성격|동기|욕망|상처|얼굴|체형|복장|헤어|외모/,         nudge: "핵심 인물들이 아직 피상적이야. 이 설정은 이미지 생성에 직접 쓰여. 주인공·빌런·핵심 조력자 각각: 이름·나이·성별·얼굴 생김새(이목구비·인상)·키·체형·복장·헤어·내면의 상처·욕망·말투까지 구체적으로 파야 해." },
     { id: "conflict",  label: "대립·갈등 구도", keywords: /대립|갈등|싸움|충돌|적|적대|원수|반목|긴장|위협|전쟁|분쟁|투쟁|대결|맞서|이유|왜|원인|뿌리|역학/,          nudge: "대립 구도가 아직 표면적이야. 누가 누구와 왜 대립하는지, 그 갈등의 뿌리는 어디서 왔는지, 세력 간 역학 관계가 어떻게 형성됐는지 구체적으로 파야 해. 단순 선악 구도 이상의 복잡성이 있어야 해." },
     { id: "alliance",  label: "협력·관계 구도", keywords: /협력|동맹|우정|팀|같은 편|연대|협조|관계|유대|연결|파트너|동료|지원|신뢰|손잡|함께|거래|이해관계/,          nudge: "협력 구도가 아직 부족해. 누가 왜 손잡는지, 이해관계는 어떻게 얽히는지, 신뢰와 배신의 가능성은 어디 있는지. 대립과 협력이 교차하는 복합적 관계망을 설계해야 해." },
+    { id: "locations", label: "주요 장소",     keywords: /장소|공간|배경|건물|도시|마을|학교|회사|궁전|숲|지하|거리|실내|실외|색채|조명|구조|인테리어|건축/,      nudge: "이야기에 등장하는 주요 장소들을 지금 설계해야 해. 장소마다: 이름·유형·색채 팔레트·건축 구조·조명(시간대별)·분위기·이야기에서의 역할. 이미지 프롬프트로 바로 쓸 수 있을 수준으로." },
     { id: "rules",     label: "세계 규칙",     keywords: /규칙|법칙|마법|능력|시스템|체계|작동|원리|금기|제약|힘|파워|기술|과학|설정의 법|구조|질서|사회|권력|비밀/,  nudge: "세계 규칙이 아직 충분하지 않아. 이 세계의 권력 구조, 숨겨진 비밀, 일반인이 모르는 규칙들, 그리고 주인공이 맞닥뜨릴 제약과 금기까지 구체적으로 설계해야 해." },
   ],
   2: [ // 시놉시스
@@ -184,8 +185,8 @@ const STAGE_AGENDA: Record<number, Array<{
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const STAGES = [
-  { id: 1 as const, name: "세계관",     topic: "세계관 — 시대·배경·핵심 인물·대립협력 구도·세계 규칙",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"시대/배경","key_characters":[{"name":"이름","role":"역할(주인공/빌런/조력자)","brief":"한 줄 설명"}],"conflict_structure":"대립 구도 (누가 누구와 왜)","alliance_structure":"협력 구도 (누가 같은 편이고 왜)","world_rules":["규칙1","규칙2","규칙3"]}' },
-  { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·해결 방향",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","resolution_hint":"해결 방향"}' },
+  { id: 1 as const, name: "세계관",     topic: "세계관 — 시대·배경·핵심 인물(디자인 가능 수준)·주요 장소·대립협력 구도·세계 규칙",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"시대/배경 (구체적 장소명·역사적 맥락 포함)","atmosphere":"분위기·톤 (독자가 느낄 감정)","key_characters":[{"name":"이름","role":"역할(주인공/빌런/조력자)","age":"나이/나이대","gender":"성별","face":"얼굴 특징 (이목구비·인상·표정 습관)","height":"키 (구체적 수치 또는 묘사)","build":"체형 (근육형/마른형 등)","outfit":"복장 (주로 입는 옷·색상·특징 아이템)","personality":"성격 (3가지 이상)","motivation":"동기 (무엇을 원하고 왜)","backstory":"내면의 상처나 비밀","speech":"말투 (구체적 말하는 방식·자주 쓰는 표현)"}],"key_locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사 (색채·재질·규모)","lighting":"조명 특성","atmosphere":"분위기","significance":"이야기에서의 역할"}],"conflict_structure":"대립 구도 (누가 누구와 왜)","alliance_structure":"협력 구도 (누가 같은 편이고 왜)","world_rules":["규칙1","규칙2","규칙3"]}' },
+  { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막·해결 방향·등장인물 요약·주요 장소 목록",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 줄 요약","premise":"전제","conflict":"핵심 갈등","act1":"기(起) — 도입·사건 발단","act2":"승(承) — 갈등 심화","act3":"전(轉) — 위기·반전","act4":"결(結) — 클라이맥스·해결 방향","key_characters_brief":[{"name":"이름","role":"역할","one_line":"한 줄 특징"}],"key_locations_brief":[{"name":"장소명","role":"이야기에서의 역할"}],"theme":"핵심 테마·메시지"}' },
   { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
   { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
   { id: 5 as const, name: "소품·장비",  topic: "소품·장비·도구 — 탈것·무기·특수 아이템·장비·일상용품 등 이야기에서 중요한 모든 물건의 시각적 설계",  tag: "PROPS", color: "#e879f9", schema: '{"props":[{"name":"소품명","type":"유형(탈것/무기/장비/아이템/일상용품)","visual":"시각적 묘사 (색상·형태·재질·크기)","condition":"상태 (낡음/새것/특별히 장식됨 등)","function":"기능/용도","story_role":"이야기에서의 역할","symbolic_meaning":"상징적 의미","owner":"주요 소유자/사용자"}]}' },
@@ -322,8 +323,8 @@ function buildPhase1Context(p1: P1Data): string {
 // ─── Prompt builders (단계별 독립 API 호출 + 이전 결과 컨텍스트) ──────────────
 
 const STAGE_PROMPTS: Record<StageId, string> = {
-  1: "세계관 — 시놉시스를 쓸 수 있는 기초를 만드는 단계. 반드시 다음 순서로 충분히 깊이 다뤄야 해 (각 주제별로 A4 반 장 분량 이상):\n① 시대·배경: 언제 어디서 일어나는 이야기인지. 구체적인 공간 이름, 역사적 맥락, 그 공간만의 냄새와 질감까지\n② 핵심 인물: 이름·직업·나이·출신·내면의 상처·욕망·숨기는 것까지. 왜 이 인물인지 설득력 있게\n③ 대립 구도: 누가 누구와 왜 대립하는지. 갈등의 뿌리, 세력 간 역학, 단순 선악 이상의 복잡성\n④ 협력 구도: 누가 왜 손잡는지. 이해관계, 신뢰/배신 가능성, 복합적 관계망\n⑤ 세계 규칙: 권력 구조, 숨겨진 비밀, 일반인이 모르는 법칙, 주인공이 맞닥뜨릴 제약\n비주얼·연출 얘기는 이 단계에서 하지 마. 그건 나중 단계야.",
-  2: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막 구조·해결 방향. 장기 연재 로드맵을 짤 수 있을 만큼 구체적으로.",
+  1: "세계관 — 이 결과물이 실제 이미지 생성 재료로 쓰인다. 추상적 묘사는 쓸모없어. 반드시 다음을 충분히 다뤄야 해:\n① 시대·배경: 구체적인 지명, 역사적 맥락, 그 공간의 냄새·질감·공기감까지\n② 핵심 인물: 이름·나이·성별·얼굴 생김새(이목구비·인상)·키·체형·복장·헤어·내면의 상처·욕망·말투. 이미지 생성 프롬프트로 바로 쓸 수 있는 수준으로\n③ 주요 장소: 이름·유형·색채·건축 구조·조명·분위기. 배경 그림을 그릴 수 있는 수준으로\n④ 대립 구도: 누가 누구와 왜 대립하는지. 갈등의 뿌리, 세력 간 역학\n⑤ 협력 구도: 누가 왜 손잡는지. 이해관계, 신뢰/배신 가능성\n⑥ 세계 규칙: 권력 구조, 숨겨진 비밀, 주인공이 맞닥뜨릴 제약",
+  2: "시놉시스 — 로그라인·전제·핵심 갈등·기승전결 4막 구조·해결 방향·등장인물 목록·주요 장소 목록. 이후 캐릭터/장소/소품 설계를 위해 시놉시스에 나온 모든 인물과 장소를 빠짐없이 언급해야 해.",
   3: "등장인물 전체 목록 — 주인공·빌런·조력자·단역까지 이 이야기에 등장하는 모든 인물. 이름·역할·성별·나이·얼굴·키·체형·복장·성격·말투·동기·내면의 상처·세계관 역할. 이미지 생성 프롬프트로 바로 쓸 수 있을 만큼 시각적으로 구체적으로. 시놉시스에 이름이 나온 인물은 한 명도 빠지면 안 돼.",
   4: "장소 전체 목록 — 1화라도 등장하는 모든 장소. 이름·유형·건축 구조·조명·색채·소리·분위기·서사적 의미·상징. 영화 프로덕션 디자이너가 현장을 지을 수 있을 만큼 구체적으로. 스쳐 지나가는 배경도 시각적 정체성이 있어야 해.",
   5: "소품·장비·도구 전체 목록 — 탈것·무기·특수 아이템·장비·일상용품·상징물. 이야기에서 단 한 번이라도 의미 있게 등장하는 모든 물건. 색상·형태·재질·상태·크기, 소유자와의 관계까지. 영화 프랍 디자이너가 실제로 제작할 수 있는 수준으로.",
@@ -340,20 +341,66 @@ function formatStageSummary(stageId: StageId, data: Record<string, unknown>): st
         const rules = Array.isArray(data.world_rules)
           ? (data.world_rules as string[]).map((r, i) => `  ${i + 1}. ${r}`).join("\n")
           : data.world_rules ? `  ${String(data.world_rules)}` : "";
+        const chars = Array.isArray(data.key_characters)
+          ? (data.key_characters as Record<string, string>[]).map(c =>
+              [
+                `  ▸ ${c.name ?? "?"}${c.role ? ` (${c.role})` : ""}${c.age ? ` · ${c.age}` : ""}${c.gender ? ` · ${c.gender}` : ""}`,
+                c.face && `    얼굴: ${c.face}`,
+                (c.height || c.build) && `    체형: ${[c.height, c.build].filter(Boolean).join(", ")}`,
+                c.outfit && `    복장: ${c.outfit}`,
+                c.personality && `    성격: ${c.personality}`,
+                c.motivation && `    동기: ${c.motivation}`,
+                c.backstory && `    배경: ${c.backstory}`,
+                c.speech && `    말투: ${c.speech}`,
+              ].filter(Boolean).join("\n")
+            ).join("\n")
+          : "";
+        const locs = Array.isArray(data.key_locations)
+          ? (data.key_locations as Record<string, string>[]).map(l =>
+              [
+                `  ▸ ${l.name ?? "?"}${l.type ? ` (${l.type})` : ""}`,
+                l.visual && `    시각: ${l.visual}`,
+                l.lighting && `    조명: ${l.lighting}`,
+                l.atmosphere && `    분위기: ${l.atmosphere}`,
+                l.significance && `    역할: ${l.significance}`,
+              ].filter(Boolean).join("\n")
+            ).join("\n")
+          : "";
         return [
           data.era            && `시대/배경: ${data.era}`,
           data.atmosphere     && `분위기: ${data.atmosphere}`,
+          chars               && `핵심 인물:\n${chars}`,
+          locs                && `주요 장소:\n${locs}`,
           rules               && `세계 규칙:\n${rules}`,
+          data.conflict_structure && `대립 구도: ${data.conflict_structure}`,
+          data.alliance_structure && `협력 구도: ${data.alliance_structure}`,
           data.special_elements && `특수 설정: ${data.special_elements}`,
         ].filter(Boolean).join("\n");
       }
-      case 2:
+      case 2: {
+        const charsBrief = Array.isArray(data.key_characters_brief)
+          ? (data.key_characters_brief as Record<string, string>[]).map(c =>
+              `  ▸ ${c.name ?? "?"}${c.role ? ` (${c.role})` : ""}${c.one_line ? ` — ${c.one_line}` : ""}`
+            ).join("\n")
+          : "";
+        const locsBrief = Array.isArray(data.key_locations_brief)
+          ? (data.key_locations_brief as Record<string, string>[]).map(l =>
+              `  ▸ ${l.name ?? "?"}${l.role ? ` — ${l.role}` : ""}`
+            ).join("\n")
+          : "";
         return [
           data.logline         && `로그라인: ${data.logline}`,
           data.premise         && `전제: ${data.premise}`,
           data.conflict        && `핵심 갈등: ${data.conflict}`,
-          data.resolution_hint && `해결 방향: ${data.resolution_hint}`,
+          data.act1            && `기(起): ${data.act1}`,
+          data.act2            && `승(承): ${data.act2}`,
+          data.act3            && `전(轉): ${data.act3}`,
+          data.act4            && `결(結): ${data.act4}`,
+          charsBrief           && `등장인물:\n${charsBrief}`,
+          locsBrief            && `주요 장소:\n${locsBrief}`,
+          data.theme           && `테마: ${data.theme}`,
         ].filter(Boolean).join("\n");
+      }
       case 3:
         if (Array.isArray(data.characters)) {
           return (data.characters as Record<string, string>[]).map(c =>
@@ -554,38 +601,51 @@ ${stage.schema}
 // ─── 단계별 상세 요약 프롬프트 (fallback용) ──────────────────────────────────────
 
 const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
-  1: `다음 토론에서 합의된 세계관을 A4 용지 2~3장 분량으로 상세히 정리해주세요.
-이 문서는 이후 모든 단계(시놉시스·캐릭터·장소·복선)에서 참고할 세계관 바이블입니다.
+  1: `다음 토론에서 합의된 세계관을 A4 용지 3~4장 분량으로 상세히 정리해주세요.
+이 문서는 이후 모든 단계(시놉시스·캐릭터·장소·소품·이미지 생성)에서 참고할 세계관 바이블입니다.
+캐릭터와 장소는 이미지로 바로 그릴 수 있는 수준으로 작성하세요.
 
 반드시 포함할 내용 (각 항목을 충분히 서술):
+
 ■ 시대와 배경
-  - 구체적인 시대 (몇 세기, 근미래, 판타지 세계 등)
+  - 구체적인 시대 (몇 세기, 근미래, 판타지 세계 등) + 지명
   - 지리적 배경과 문명 수준
   - 사회 구조와 계급 체계
   - 역사적 맥락 (어떤 사건이 이 세계를 만들었는가)
+  - 세계의 분위기와 톤 (독자가 느낄 감정)
 
-■ 세계의 핵심 규칙과 법칙
-  - 마법/기술/초능력 등 특수 시스템 (상세히)
-  - 사회 질서와 법률
-  - 일반인의 일상생활 방식
+■ 핵심 인물 프로필 (각 인물마다)
+  - 이름, 나이, 성별, 역할
+  - 얼굴: 이목구비 특징, 인상, 표정 습관 (이미지 생성에 쓸 수 있도록)
+  - 키와 체형 (구체적 묘사)
+  - 복장: 주로 입는 옷, 색상, 특징적 아이템, 헤어스타일
+  - 성격 (3가지 이상 핵심 특성)
+  - 동기: 무엇을 원하고 왜 원하는가
+  - 내면의 상처나 숨기는 비밀
+  - 말투: 구체적 말하는 방식, 자주 쓰는 표현
 
-■ 세계의 분위기와 톤
-  - 전반적인 무드 (어둡고 절망적, 희망적, 혼돈 등)
-  - 시각적 이미지 (색감, 건축, 풍경)
-  - 독자가 느껴야 할 감정
+■ 주요 장소 (각 장소마다)
+  - 이름, 유형, 세계관에서의 위치
+  - 시각적 묘사: 색채, 재질, 규모 (이미지로 그릴 수 있도록)
+  - 건축/공간 구조
+  - 조명과 분위기 (시간대별 변화 포함)
+  - 이야기에서의 역할과 상징
 
-■ 특수 설정과 독창적 요소
-  - 이 세계만의 고유한 개념/규칙
-  - 다른 작품과 차별화되는 설정
+■ 대립·갈등 구도
+  - 누가 누구와 왜 대립하는지
+  - 세력 간 역학 관계
 
-■ 세계의 문제와 갈등 구조
-  - 세계 전체가 직면한 근본적 문제
-  - 다양한 세력/집단 간의 갈등 구도
+■ 협력·연대 구도
+  - 누가 왜 손잡는지, 이해관계
 
-서술형 문장으로 풍부하게 작성하세요. 목록보다 문단 형식을 섞어서.`,
+■ 세계 규칙과 법칙
+  - 마법/기술/능력 체계 (상세히)
+  - 사회 질서, 금기, 숨겨진 규칙
+
+서술형 문장으로 풍부하게 작성하세요.`,
 
   2: `다음 토론에서 합의된 시놉시스를 A4 용지 2~3장 분량으로 상세히 정리해주세요.
-이 문서는 이후 캐릭터·장소·복선 설계의 기반이 됩니다.
+이 문서는 이후 캐릭터·장소·소품 설계와 이미지 생성의 기반이 됩니다.
 
 반드시 포함할 내용 (각 항목을 충분히 서술):
 ■ 로그라인 (한 줄 핵심 요약)
@@ -595,25 +655,25 @@ const STAGE_SUMMARY_PROMPTS: Record<StageId, string> = {
   - 주인공의 초기 상태와 일상
   - 사건의 도화선이 되는 계기
 
-■ 주요 등장인물 관계도 (캐릭터 설정 전 큰 그림)
-  - 주인공과 주변 인물의 관계 구도
-  - 대립 구조
+■ 등장인물 목록 (시놉시스에 이름이 나온 모든 인물)
+  - 이름, 역할, 한 줄 특징
+  - 주인공과의 관계
+
+■ 주요 장소 목록 (이야기에 등장하는 모든 장소)
+  - 장소명, 이야기에서의 역할
 
 ■ 핵심 갈등
   - 내적 갈등 (주인공 내면)
   - 외적 갈등 (주인공 vs 적대 세력/환경)
   - 갈등이 고조되는 방식
 
-■ 이야기의 기승전결 4막 구조
+■ 기승전결 4막 구조
   - 기(起): 도입부와 사건 발단
   - 승(承): 갈등 심화와 전개
   - 전(轉): 위기와 반전
   - 결(結): 클라이맥스와 해결 방향
 
 ■ 핵심 테마와 메시지
-  - 이 이야기가 독자에게 전달할 주제
-
-■ 예상 분위기와 타겟 독자층
 
 서술형 문장으로 풍부하게 작성하세요.`,
 
@@ -858,8 +918,78 @@ function StageResultCard({ result, onViewDebate, isViewingDebate }: { key?: Stag
           <pre style={{ fontSize:12, color:`${c}dd`, lineHeight:1.75, whiteSpace:"pre-wrap" as const, margin:0, fontFamily:"inherit" }}>{result.summary}</pre>
         </div>
       )}
-      {result.stageId === 1 && <>{row("시대/배경", data.era)}{row("분위기", data.atmosphere)}{row("세계 규칙", data.world_rules)}{row("특수 설정", data.special_elements)}</>}
-      {result.stageId === 2 && <>{row("로그라인", data.logline)}{row("전제", data.premise)}{row("갈등", data.conflict)}{row("해결 방향", data.resolution_hint)}</>}
+      {result.stageId === 1 && (
+        <>
+          {row("시대/배경", data.era)}
+          {row("분위기", data.atmosphere)}
+          {row("대립 구도", data.conflict_structure)}
+          {row("협력 구도", data.alliance_structure)}
+          {Array.isArray(data.key_characters) && (data.key_characters as Record<string,string>[]).length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>핵심 인물</div>
+              {(data.key_characters as Record<string,string>[]).map((ch, i) => (
+                <div key={i} style={{ marginBottom:8, paddingBottom:8, borderBottom:"1px solid #1e1e2a" }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>
+                    {ch.name} <span style={{ fontSize:11, color:"#7878a0" }}>({ch.role})</span>
+                    {ch.age && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>{ch.age}{ch.gender ? ` · ${ch.gender}` : ""}</span>}
+                  </div>
+                  {row("얼굴", ch.face)}{row("체형/복장", [ch.height, ch.build, ch.outfit].filter(Boolean).join(" · ") || undefined)}{row("성격", ch.personality)}{row("동기", ch.motivation)}{row("배경/상처", ch.backstory)}{row("말투", ch.speech)}
+                </div>
+              ))}
+            </div>
+          )}
+          {Array.isArray(data.key_locations) && (data.key_locations as Record<string,string>[]).length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>주요 장소</div>
+              {(data.key_locations as Record<string,string>[]).map((l, i) => (
+                <div key={i} style={{ marginBottom:6, paddingBottom:6, borderBottom:"1px solid #1e1e2a" }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#eeeef5", marginBottom:4 }}>
+                    {l.name}{l.type && <span style={{ fontSize:11, color:"#7878a0", marginLeft:6 }}>({l.type})</span>}
+                  </div>
+                  {row("시각", l.visual)}{row("조명/분위기", [l.lighting, l.atmosphere].filter(Boolean).join(" · ") || undefined)}{row("역할", l.significance)}
+                </div>
+              ))}
+            </div>
+          )}
+          {row("세계 규칙", data.world_rules)}
+          {row("특수 설정", data.special_elements)}
+        </>
+      )}
+      {result.stageId === 2 && (
+        <>
+          {row("로그라인", data.logline)}
+          {row("전제", data.premise)}
+          {row("핵심 갈등", data.conflict)}
+          {data.act1 && row("기(起)", data.act1)}
+          {data.act2 && row("승(承)", data.act2)}
+          {data.act3 && row("전(轉)", data.act3)}
+          {data.act4 && row("결(結)", data.act4)}
+          {row("테마", data.theme)}
+          {Array.isArray(data.key_characters_brief) && (data.key_characters_brief as Record<string,string>[]).length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>등장인물</div>
+              {(data.key_characters_brief as Record<string,string>[]).map((c, i) => (
+                <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:3 }}>
+                  <span style={{ color:"#eeeef5", fontWeight:600 }}>{c.name}</span>
+                  {c.role && <span style={{ color:"#7878a0", marginLeft:6 }}>({c.role})</span>}
+                  {c.one_line && <span style={{ color:"#64748b" }}> — {c.one_line}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {Array.isArray(data.key_locations_brief) && (data.key_locations_brief as Record<string,string>[]).length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#4a4a68", marginBottom:6, textTransform:"uppercase", letterSpacing:"0.06em" }}>주요 장소</div>
+              {(data.key_locations_brief as Record<string,string>[]).map((l, i) => (
+                <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:3 }}>
+                  <span style={{ color:"#eeeef5", fontWeight:600 }}>{l.name}</span>
+                  {l.role && <span style={{ color:"#64748b" }}> — {l.role}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
       {result.stageId === 3 && Array.isArray(data.characters) && (data.characters as Record<string,string>[]).map((ch, i) => (
         <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom:"1px solid #2a2a3d" }}>
           <div style={{ fontSize:13, fontWeight:700, color:"#eeeef5", marginBottom:6 }}>
