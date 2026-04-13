@@ -883,8 +883,33 @@ async function extractStageData(
     }
   }
 
-  // data: 구조화 JSON 우선, 없으면 내러티브를 raw_summary로
-  const data: Record<string, unknown> = structured ?? (narrative ? { raw_summary: narrative } : { raw_summary: "(추출 실패)" });
+  // data: 구조화 JSON 우선, 없으면 내러티브에서 기본 필드 파싱 시도, 최후엔 raw_summary
+  let data: Record<string, unknown>;
+  if (structured) {
+    data = structured;
+  } else if (narrative) {
+    // 내러티브 텍스트에서 JSON 재추출 시도 (■ 섹션 기반 파싱)
+    // Stage 1 전용: key_characters, key_locations 이름 목록만이라도 복원
+    if (stage.id === 1) {
+      const charSection = narrative.match(/■[^■]*인물[^■]*([\s\S]*?)(?=\n■|$)/);
+      const locSection  = narrative.match(/■[^■]*장소[^■]*([\s\S]*?)(?=\n■|$)/);
+      const extractNames = (block: string | null): Record<string,string>[] => {
+        if (!block) return [];
+        return [...block.matchAll(/\*\*([^*]+)\*\*/g)].map(m => ({ name: m[1].trim() }));
+      };
+      const chars = extractNames(charSection ? charSection[0] : null);
+      const locs  = extractNames(locSection  ? locSection[0]  : null);
+      data = {
+        raw_summary: narrative,
+        ...(chars.length ? { key_characters: chars } : {}),
+        ...(locs.length  ? { key_locations:  locs  } : {}),
+      };
+    } else {
+      data = { raw_summary: narrative };
+    }
+  } else {
+    data = { raw_summary: "(추출 실패)" };
+  }
 
   // summary: 내러티브 우선 (가장 상세), 없으면 JSON 기반 포맷
   const summary = narrative || formatStageSummary(stage.id, data);
@@ -1195,10 +1220,19 @@ function StageReportInChat({
       return "📋";
     };
 
-    // ■ 기준 분할
-    const sections = text.split(/\n(?=■)/).map(s => s.trim()).filter(Boolean);
+    // ■ 기준 분할 — ■ 없으면 markdown ## 헤더 기준, 그것도 없으면 단락
+    const hasBullet = text.includes("■");
+    const hasMarkdown = !hasBullet && /(?:^|\n)#{1,3}\s/m.test(text);
+    const rawSections = hasBullet
+      ? text.split(/\n(?=■)/).map(s => s.trim()).filter(Boolean)
+      : hasMarkdown
+        ? text.split(/\n(?=#{1,3}\s)/).map(s => s.trim()).filter(Boolean)
+        : [text.trim()].filter(Boolean);
 
-    if (sections.length <= 1) {
+    // 실제로 섹션 헤더(■ 또는 ##)로 시작하는 항목만 유효 섹션
+    const validSections = rawSections.filter(s => s.startsWith("■") || /^#{1,3}\s/.test(s));
+
+    if (validSections.length === 0) {
       // 섹션 없으면 단락 단위로 렌더
       return (
         <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", border:`1px solid ${c}20` }}>
@@ -1211,11 +1245,15 @@ function StageReportInChat({
       );
     }
 
+    // 유효 섹션이 1개여도 카드로 렌더
+    const sections = validSections;
+
     return (
       <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
         {sections.map((section, idx) => {
           const lines = section.split('\n');
-          const title = clean(lines[0].replace(/^■\s*/, ""));
+          const titleRaw = lines[0];
+          const title = clean(titleRaw.replace(/^■\s*/, "").replace(/^#{1,3}\s*/, ""));
           const bodyLines = lines.slice(1).filter(l => l.trim());
           const icon = getIcon(title);
 
@@ -1459,7 +1497,7 @@ function StageReportInChat({
           <>
             {chars.length > 0
               ? chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)
-              : data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>
+              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary))
             }
           </>
         );
@@ -1471,7 +1509,7 @@ function StageReportInChat({
           <>
             {locs.length > 0
               ? locs.map((loc, i) => <LocCard key={i} loc={loc} cardColor={c} />)
-              : data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>
+              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary))
             }
           </>
         );
@@ -1499,7 +1537,7 @@ function StageReportInChat({
                   </div>
                 </div>
               ))
-              : data.raw_summary && <div style={{ background:"#10101c", borderRadius:10, padding:"14px 16px", fontSize:13, color:"#c8d0e0", lineHeight:1.8, whiteSpace:"pre-wrap" as const }}>{str(data.raw_summary)}</div>
+              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary))
             }
           </>
         );
