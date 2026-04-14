@@ -696,6 +696,27 @@ ${imageSearchGuide}
 - 대사만. 이름 접두어 없음. 마크다운 금지. JSON 금지.`;
 }
 
+// 세계관(Stage1) + 시놉시스(Stage2) 컨텍스트를 하나로 합쳐 추출 프롬프트에 제공
+// — 미언급 시각 세부사항 추론 기준으로 활용
+function buildBibleContext(stageResults: StageResult[]): string | undefined {
+  const s1 = stageResults.find(r => r.stageId === 1);
+  const s2 = stageResults.find(r => r.stageId === 2);
+  const parts: string[] = [];
+  if (s1?.summary) parts.push(`[세계관]\n${s1.summary.slice(0, 600)}`);
+  if (s2?.summary) parts.push(`[시놉시스]\n${s2.summary.slice(0, 800)}`);
+  // 시놉시스 JSON의 캐릭터 시각 데이터 (appearance, image_prompt) 추가
+  const s2chars = Array.isArray(s2?.data?.characters)
+    ? (s2!.data.characters as Record<string, string>[])
+    : [];
+  if (s2chars.length) {
+    const charLines = s2chars.map(c =>
+      `${c.name ?? ""}(${c.role ?? ""}): ${[c.appearance, c.image_prompt].filter(Boolean).join(" / ")}`
+    ).join("\n");
+    parts.push(`[시놉시스 캐릭터 시각 데이터]\n${charLines}`);
+  }
+  return parts.length ? parts.join("\n\n") : undefined;
+}
+
 function buildExtractionPrompt(
   stageId: StageId,
   genre: string,
@@ -708,10 +729,16 @@ function buildExtractionPrompt(
     ? `\n[제작 바이블 원칙 — 반드시 준수]\n` +
       `- 시놉시스·세계관에 이름/언급이 있는 모든 항목을 포함\n` +
       `- 토론에서 덜 다뤄진 항목도 기본 정보로 추가 (누락 금지)\n` +
-      `- 한 번이라도 등장하면 반드시 리스트업\n`
+      `- 한 번이라도 등장하면 반드시 리스트업\n` +
+      `\n[시각적 완전성 원칙 — 이미지 생성용]\n` +
+      `- "미확정", "토론에서 미확정", "불명", "미정", "논의 필요" 등의 값은 절대 사용 금지\n` +
+      `- 토론에서 명시적으로 언급되지 않은 시각적 세부사항(얼굴·체형·복장·색상 등)은\n` +
+      `  장르(${genre})·세계관·시놉시스 맥락에 어울리도록 구체적으로 창작하여 채울 것\n` +
+      `- 모든 시각적 필드는 이미지 생성 AI에 바로 입력할 수 있는 수준으로 작성\n` +
+      `- 빈 문자열("")도 금지 — 반드시 의미 있는 묘사로 채울 것\n`
     : "";
   const synopsisNote = (isBibleStage && synopsisContext)
-    ? `\n[시놉시스 — 이 내용에 등장하는 항목을 기준으로 완전성 검증]\n${synopsisContext.slice(0, 1500)}\n`
+    ? `\n[세계관·시놉시스 컨텍스트 — 미언급 세부사항 추론 기준으로 활용]\n${synopsisContext.slice(0, 2500)}\n`
     : "";
 
   return `다음 토론에서 "${stage.name}" 관련 합의된 내용을 JSON으로 정리하세요.
@@ -949,7 +976,9 @@ async function extractStageData(
         for await (const chunk of streamClaude({
           apiKey,
           model: "claude-sonnet-4-6",
-          systemPrompt: "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
+          systemPrompt: isBibleStage
+            ? "웹툰 캐릭터·세계관 디자인 전문가입니다. 토론 내용을 JSON으로 변환하되, 명시적으로 논의되지 않은 시각적 세부사항(얼굴·체형·복장·색상 등)은 장르와 세계관에 어울리게 창의적으로 채웁니다. '미확정'·'불명' 같은 값은 절대 사용하지 않으며, 이미지 생성 AI에 바로 활용 가능한 수준으로 모든 시각 필드를 구체적으로 작성합니다. JSON 외에는 아무것도 출력하지 마세요."
+            : "토론 결과를 정확한 JSON으로 변환하는 전문가입니다. 지정된 형식 외에 아무것도 출력하지 마세요.",
           messages: [{ role: "user", content: buildExtractionPrompt(stage.id, genre, slicedDebate, synopsisContext) }],
           maxTokens: (stage.id === 3 || stage.id === 4) ? 4000 : 2000,
         })) fullText += chunk;
@@ -2941,7 +2970,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       if (apiKey) {
         const debateText = convRef.current.join("\n");
         const extractId = addMsg("producer", "결과 정리 중...", true);
-        const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+        const synopsisCtx = buildBibleContext(stageResultsRef.current);
         const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
         updateMsg(extractId, "", false);
         setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
@@ -4060,7 +4089,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
     const debateText = convRef.current.join("\n");
     const extractId = addMsg("producer", "결과 정리 중...", true);
-    const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+    const synopsisCtx = buildBibleContext(stageResultsRef.current);
 
     const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
 
@@ -4217,7 +4246,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (!debateText) return;
 
     // 재추출
-    const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+    const synopsisCtx = buildBibleContext(stageResultsRef.current);
     const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
 
     // 해당 스테이지 결과 교체
