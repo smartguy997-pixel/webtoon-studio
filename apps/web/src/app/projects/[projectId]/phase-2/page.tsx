@@ -2347,13 +2347,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let userTurnCount = 0;
     let wrapUpProposed = false;
     let wrapUpProposedAt = 0;
+    let wrapUpRejectedTurn = -999; // 사용자가 마무리 거부한 턴 — 거부 후 최소 N턴 대기용
     let naturalExit = false;
     // 이 스테이지의 아젠다 항목 수 × 최소 턴 + 여유
     const stageAgenda = STAGE_AGENDA[stage.id] ?? [];
     const minTurnsForStage = MIN_TURNS_BY_STAGE[stage.id] ?? MIN_TURNS_PER_TOPIC_P2;
     // Stage 1: 5개 프레임워크 × 3 + 20 = 35턴 상한 (오케스트레이터가 전환 관리)
     const WRAP_UP_AFTER = stage.id === 1 ? 35 : stageAgenda.length * minTurnsForStage + 10;
-    const WRAP_UP_AUTO_MS = 30_000;
+    const WRAP_UP_AUTO_MS = stage.id === 1 ? 30_000 : 60_000; // 바이블 스테이지는 60초
     // 아젠다 추적 (스테이지마다 초기화)
     const coveredAgenda = new Set<string>();
     const agendaTurns: Record<string, number> = {};
@@ -2791,7 +2792,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]")).length;
 
-        // 자동 마무리: wrapUp 제안 후 30초 동안 응답 없으면 자동 종료
+        // 자동 마무리: wrapUp 제안 후 WRAP_UP_AUTO_MS 동안 응답 없으면 자동 종료
+        // (사용자가 거부 메시지를 보내면 타이머 리셋 — pendingUserMsgRef 체크로 포착)
         if (wrapUpProposed && !pendingUserMsgRef.current && Date.now() - wrapUpProposedAt > WRAP_UP_AUTO_MS) {
           addMsg("producer", "그럼 이 단계 확인하고 넘어갈게요.", false);
           transcript.push(`[총괄프로듀서]: 그럼 이 단계 확인하고 넘어갈게요.`);
@@ -2799,6 +2801,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           await sleep(1500);
           naturalExit = true;
           break debateLoop;
+        }
+        // 사용자 메시지가 도착하면 wrapUp 타이머 리셋 (타임아웃 직전 메시지도 반영)
+        if (wrapUpProposed && pendingUserMsgRef.current) {
+          wrapUpProposedAt = Date.now();
         }
 
         // 에이전트 간 대기 (9~15초), 사용자 입력 폴링
@@ -2827,6 +2833,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (wrapUpProposed) {
             if (AGREE_RE.test(pendingMsg.trim())) { naturalExit = true; break debateLoop; }
             wrapUpProposed = false;
+            wrapUpRejectedTurn = agentTurnsSoFar; // 거부 시점 기록 — 이후 10턴 대기
           }
           matchedCmd = matchCommandP2(pendingMsg);
           if (matchedCmd?.handler === "end") { naturalExit = true; break debateLoop; }
@@ -2924,13 +2931,20 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             : (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2
         );
 
-        if (!wrapUpProposed && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging))) {
+        // 마무리 재제안: 사용자 거부 후 최소 10턴 경과해야 다시 제안 가능
+        const turnsAfterRejection = agentTurnsSoFar - wrapUpRejectedTurn;
+        if (!wrapUpProposed
+            && turnsAfterRejection >= 10
+            && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging))) {
           wrapUpProposed = true;
           wrapUpProposedAt = Date.now();
           const coveredLabels = stageAgenda.map(i => i.label);
+          const uncoveredLabels = stageAgenda.filter(i => !coveredAgenda.has(i.id)).map(i => i.label);
           const wrapUpIntro = stage.id === 1
             ? `5개 프레임워크 — "${coveredLabels.join('", "')}" — 모두 충분히 다뤘어.`
-            : `이 단계의 항목들 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
+            : uncoveredLabels.length > 0
+              ? `"${uncoveredLabels.join('", "')}" 항목이 아직 남아 있는데, 충분히 다뤄진 것 같아.`
+              : `이 단계의 항목들 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
           await runSingleAgent("producer",
             `${historyText}${wrapUpIntro} 프로듀서로서 이 단계를 마무리하자고 자연스럽게 제안해줘. 1~2문장.`,
             180);
