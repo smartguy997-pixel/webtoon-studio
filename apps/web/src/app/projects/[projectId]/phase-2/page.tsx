@@ -2089,6 +2089,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const styleRunningRef = useRef(false);
   const styleConvRef = useRef<string[]>([]);
   const pendingDebateStartRef = useRef<number | null>(null); // 뷰 모드 → 다음 단계 자동 시작용
+  const pendingResumeRef = useRef<number | null>(null);      // 페이지 재로드 시 진행 중 토론 자동 재개용
   const pendingStyleMsgRef = useRef<string | null>(null);
   const imageItemsRef = useRef<ImageItem[]>([]);
   const imageTargetStageIdxRef = useRef<number>(0);
@@ -2165,7 +2166,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 transcript: JSON.parse(savedConv) as string[],
                 msgs: JSON.parse(savedMsgs) as Msg[],
               };
-              setDebatePhase("paused");
+              pendingResumeRef.current = idx; // "이어하기" 버튼 대신 자동 재개
             } else {
               setDebatePhase("confirmed");
             }
@@ -2190,19 +2191,31 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs));
   }, [msgs, projectId]);
 
-  // 뷰 모드에서 다음 단계 버튼 → 자동 토론 시작
+  // 뷰 모드에서 다음 단계 버튼 → 자동 토론 시작 / 페이지 재로드 시 진행 중 토론 자동 재개
   useEffect(() => {
-    if (pendingDebateStartRef.current === null) return;
-    const idx = pendingDebateStartRef.current;
-    pendingDebateStartRef.current = null;
-    setMsgs([]);
-    convRef.current = [];
-    resumeDataRef.current = null; // pendingDebateStart는 항상 새 토론 — 이전 저장 데이터 무시
-    runningRef.current = false;   // 혹시 stuck된 상태 초기화
-    abortRef.current = false;
-    setCurrentStageIdx(idx);
-    setDebatePhase("idle");
-    void runDebate(idx);
+    // 뷰 모드에서 "다음 단계 시작" 클릭 → 새 토론
+    if (pendingDebateStartRef.current !== null) {
+      const idx = pendingDebateStartRef.current;
+      pendingDebateStartRef.current = null;
+      setMsgs([]);
+      convRef.current = [];
+      resumeDataRef.current = null; // pendingDebateStart는 항상 새 토론 — 이전 저장 데이터 무시
+      runningRef.current = false;   // 혹시 stuck된 상태 초기화
+      abortRef.current = false;
+      setCurrentStageIdx(idx);
+      setDebatePhase("idle");
+      void runDebate(idx);
+      return;
+    }
+    // 페이지 재로드 시 진행 중 토론이 있으면 자동 재개 (이어하기 버튼 클릭 불필요)
+    if (pendingResumeRef.current !== null) {
+      const idx = pendingResumeRef.current;
+      pendingResumeRef.current = null;
+      // resumeDataRef.current는 init에서 이미 세팅됨 — runDebate가 트랜스크립트 복원
+      runningRef.current = false;
+      abortRef.current = false;
+      void runDebate(idx);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);  // mount 시 1회만 실행
 
