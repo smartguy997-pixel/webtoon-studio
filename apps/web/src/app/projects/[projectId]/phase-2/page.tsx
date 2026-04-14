@@ -2375,11 +2375,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let wrapUpProposedAt = 0;
     let wrapUpRejectedTurn = -999; // 사용자가 마무리 거부한 턴 — 거부 후 최소 N턴 대기용
     let naturalExit = false;
+    let charTransitionCount = 0; // Stage 3: 캐릭터 전환 횟수 추적
     // 이 스테이지의 아젠다 항목 수 × 최소 턴 + 여유
     const stageAgenda = STAGE_AGENDA[stage.id] ?? [];
     const minTurnsForStage = MIN_TURNS_BY_STAGE[stage.id] ?? MIN_TURNS_PER_TOPIC_P2;
     // Stage 1: 5개 프레임워크 × 3 + 20 = 35턴 상한 (오케스트레이터가 전환 관리)
+    // Stage 3: 캐릭터 하나당 WRAP_UP_AFTER턴, 최대 3캐릭터 × WRAP_UP_AFTER를 최종 한도로
     const WRAP_UP_AFTER = stage.id === 1 ? 35 : stageAgenda.length * minTurnsForStage + 10;
+    // Stage 3 한정: 3번 캐릭터 전환 후에만 진짜 마무리 (=캐릭터 여러 명 충분히 논의)
+    const FINAL_WRAP_UP_AFTER = stage.id === 3 ? WRAP_UP_AFTER * 3 : WRAP_UP_AFTER;
     const WRAP_UP_AUTO_MS = stage.id === 1 ? 30_000 : 60_000; // 바이블 스테이지는 60초
     // 아젠다 추적 (스테이지마다 초기화)
     const coveredAgenda = new Set<string>();
@@ -2962,18 +2966,46 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         // 마무리 재제안: 사용자 거부 후 최소 10턴 경과해야 다시 제안 가능
         const turnsAfterRejection = agentTurnsSoFar - wrapUpRejectedTurn;
-        if (!wrapUpProposed
-            && turnsAfterRejection >= 10
-            && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging))) {
+
+        // ── Stage 3 캐릭터 전환 ──
+        // allCovered or WRAP_UP_AFTER 도달 시: 단계 종료 대신 다음 캐릭터로 전환
+        // FINAL_WRAP_UP_AFTER 초과 후에만 진짜 마무리 제안
+        const wrapUpConditionMet = !wrapUpProposed && turnsAfterRejection >= 10
+          && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging));
+
+        if (stage.id === 3 && wrapUpConditionMet && agentTurnsSoFar < FINAL_WRAP_UP_AFTER) {
+          // 캐릭터 전환: 아젠다 초기화하고 다음 인물로
+          charTransitionCount++;
+          coveredAgenda.clear();
+          Object.keys(agendaTurns).forEach(k => { agendaTurns[k] = 0; });
+          setCoveredAgendaIds([]);
+          setAgendaTurnCounts({});
+          // 다음 캐릭터가 WRAP_UP_AFTER 턴을 온전히 받도록 rejection point를 앞으로 당김
+          wrapUpRejectedTurn = agentTurnsSoFar + WRAP_UP_AFTER - 10;
+          // 지금까지 다룬 캐릭터 이름 추출 (Stage 2 우선, 없으면 Stage 1)
+          const s2chars = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.data?.characters as Array<{name:string}>|undefined;
+          const s1chars = stageResultsRef.current.find((r: StageResult) => r.stageId === 1)?.data?.key_characters as Array<{name:string}>|undefined;
+          const prevChars: string[] = (s2chars ?? s1chars ?? []).map((c:{name:string}) => c.name);
+          const prevCharLine = prevChars.length > 0 ? `지금까지 나온 인물: ${prevChars.join(", ")}. 이 중 ${charTransitionCount}번째 인물 설계가 마무리됐어.` : "";
+          await runSingleAgent("producer",
+            `${historyText}${prevCharLine} 프로듀서로서: 방금 논의한 캐릭터를 한 줄로 정리하고, "이 캐릭터 설계 잘됐어. 다음 인물로 넘어가자" 흐름으로 자연스럽게 전환해줘. 단계를 끝내는 게 아니라 다음 캐릭터로 이어가는 흐름. 1~2문장.`,
+            180);
+          lastSpeaker = "producer";
+          continue;
+        }
+
+        if (wrapUpConditionMet && !(stage.id === 3 && agentTurnsSoFar < FINAL_WRAP_UP_AFTER)) {
           wrapUpProposed = true;
           wrapUpProposedAt = Date.now();
           const coveredLabels = stageAgenda.map(i => i.label);
           const uncoveredLabels = stageAgenda.filter(i => !coveredAgenda.has(i.id)).map(i => i.label);
           const wrapUpIntro = stage.id === 1
             ? `5개 프레임워크 — "${coveredLabels.join('", "')}" — 모두 충분히 다뤘어.`
-            : uncoveredLabels.length > 0
-              ? `"${uncoveredLabels.join('", "')}" 항목이 아직 남아 있는데, 충분히 다뤄진 것 같아.`
-              : `이 단계의 항목들 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
+            : stage.id === 3
+              ? `캐릭터 ${charTransitionCount}명 설계를 마쳤어.`
+              : uncoveredLabels.length > 0
+                ? `"${uncoveredLabels.join('", "')}" 항목이 아직 남아 있는데, 충분히 다뤄진 것 같아.`
+                : `이 단계의 항목들 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
           await runSingleAgent("producer",
             `${historyText}${wrapUpIntro} 프로듀서로서 이 단계를 마무리하자고 자연스럽게 제안해줘. 1~2문장.`,
             180);
