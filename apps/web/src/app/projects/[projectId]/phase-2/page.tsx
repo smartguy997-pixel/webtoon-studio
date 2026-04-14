@@ -2118,7 +2118,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const styleRunningRef = useRef(false);
   const styleConvRef = useRef<string[]>([]);
   const pendingDebateStartRef = useRef<number | null>(null); // 뷰 모드 → 다음 단계 자동 시작용
-  const pendingResumeRef = useRef<number | null>(null);      // 페이지 재로드 시 진행 중 토론 자동 재개용
+  const pendingResumeRef = useRef<number | null>(null);      // 페이지 재로드·이어서 토론 자동 재개용
   const pendingStyleMsgRef = useRef<string | null>(null);
   const imageItemsRef = useRef<ImageItem[]>([]);
   const imageTargetStageIdxRef = useRef<number>(0);
@@ -2169,7 +2169,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
       const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
       if (savedData) {
-        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]>; pendingDebateStart?: number };
+        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]>; pendingDebateStart?: number; pendingResume?: number };
         if (parsed.stageResults?.length) {
           stageResultsRef.current = parsed.stageResults;
           setStageResults(parsed.stageResults);
@@ -2184,6 +2184,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             void _pd;
             try { localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify(rest)); } catch { /* ignore */ }
           }
+          // pendingResume: 뷰 모드에서 "이어서 토론" 버튼 눌렀을 때 자동 재개 플래그
+          if (typeof parsed.pendingResume === "number") {
+            pendingResumeRef.current = parsed.pendingResume;
+            const { pendingResume: _pr, ...restPR } = parsed;
+            void _pr;
+            try { localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify(restPR)); } catch { /* ignore */ }
+          }
           if (idx >= STAGES.length) {
             setDebatePhase("done");
           } else {
@@ -2195,7 +2202,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 transcript: JSON.parse(savedConv) as string[],
                 msgs: JSON.parse(savedMsgs) as Msg[],
               };
-              pendingResumeRef.current = idx; // "이어하기" 버튼 대신 자동 재개
+              pendingResumeRef.current = idx; // "이어하기" 버튼 대신 자동 재개 (crash recovery + view mode resume 공통)
             } else {
               setDebatePhase("confirmed");
             }
@@ -2220,9 +2227,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs));
   }, [msgs, projectId]);
 
-  // 뷰 모드에서 다음 단계 버튼 → 자동 토론 시작 / 페이지 재로드 시 진행 중 토론 자동 재개
+  // 뷰 모드에서 다음 단계 버튼 → 자동 토론 시작 / 페이지 재로드·이어서 토론 → 자동 재개
   useEffect(() => {
-    // 뷰 모드에서 "다음 단계 시작" 클릭 → 새 토론
     if (pendingDebateStartRef.current !== null) {
       const idx = pendingDebateStartRef.current;
       pendingDebateStartRef.current = null;
@@ -2236,13 +2242,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       void runDebate(idx);
       return;
     }
-    // 페이지 재로드 시 진행 중 토론이 있으면 자동 재개 (이어하기 버튼 클릭 불필요)
     if (pendingResumeRef.current !== null) {
       const idx = pendingResumeRef.current;
       pendingResumeRef.current = null;
-      // resumeDataRef.current는 init에서 이미 세팅됨 — runDebate가 트랜스크립트 복원
       runningRef.current = false;
       abortRef.current = false;
+      // resumeDataRef.current은 init useEffect에서 이미 설정됨 (p2_conv_/p2_msgs_ 복원)
       void runDebate(idx);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4431,7 +4436,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(histMsgs));
       const saved = localStorage.getItem(`wts_phase2_${projectId}`);
       const parsed = saved ? JSON.parse(saved) as Record<string, unknown> : {};
-      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({ ...parsed, currentStageIdx: stageIdx }));
+      localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({ ...parsed, currentStageIdx: stageIdx, pendingResume: stageIdx }));
     } catch { /* ignore */ }
     window.location.href = `/projects/${projectId}/phase-2`;
   }, [projectId, stageHistoryMsgs]);
@@ -4910,7 +4915,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 result={latestResult}
                 stage={stageObj}
                 onNextStage={() => handleNextStage(resolvedIdx)}
-                onContinueDebate={() => { void runDebate(resolvedIdx); }}
+                onContinueDebate={() => {
+                  // 이전 토론 컨텍스트 복원 후 이어서 토론
+                  const histMsgs = stageHistoryMsgs[resolvedIdx] ?? msgsRef.current;
+                  if (histMsgs.length > 0) {
+                    const trans = histMsgs
+                      .filter((m: Msg) => !m.streaming && m.text)
+                      .map((m: Msg) => `[${AGENTS[m.agent as AgentId]?.label ?? "사용자"}]: ${m.text}`);
+                    resumeDataRef.current = { transcript: trans, msgs: histMsgs };
+                  }
+                  runningRef.current = false;
+                  abortRef.current = false;
+                  void runDebate(resolvedIdx);
+                }}
                 nextStageName={nextStageName}
                 onReanalyze={() => handleReanalyze(resolvedIdx)}
               />
