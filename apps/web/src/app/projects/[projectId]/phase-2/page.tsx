@@ -725,11 +725,17 @@ function buildExtractionPrompt(
 ): string {
   const stage = STAGES.find(s => s.id === stageId)!;
   const isBibleStage = stageId === 3 || stageId === 4 || stageId === 5;
+  const locationFilter = (stageId === 2 || stageId === 4)
+    ? `\n[장소 선별 원칙 — 엄격히 준수]\n` +
+      `- 고유한 이름이 있는 구체적 장소만 포함 (예: "증곡동 폐차장 골목", "이서연의 반지하방", "성진고 옥상")\n` +
+      `- "거리풍경", "3층 건물", "공원", "실내", "복도" 같은 일반 묘사·건축 설명은 절대 포함 금지\n` +
+      `- 스토리에서 반복 등장하거나 중요한 사건이 일어나는 '이름 붙은' 공간만 리스트업\n`
+    : "";
   const bibleNote = isBibleStage
     ? `\n[제작 바이블 원칙 — 반드시 준수]\n` +
-      `- 시놉시스·세계관에 이름/언급이 있는 모든 항목을 포함\n` +
+      `- 등장인물: 시놉시스·세계관에 이름이 확정된 인물만 포함. 역할명(주인공/빌런/조력자)이 있으면 반드시 포함\n` +
       `- 토론에서 덜 다뤄진 항목도 기본 정보로 추가 (누락 금지)\n` +
-      `- 한 번이라도 등장하면 반드시 리스트업\n` +
+      `${locationFilter}` +
       `\n[시각적 완전성 원칙 — 이미지 생성용]\n` +
       `- "미확정", "토론에서 미확정", "불명", "미정", "논의 필요" 등의 값은 절대 사용 금지\n` +
       `- 토론에서 명시적으로 언급되지 않은 시각적 세부사항(얼굴·체형·복장·색상 등)은\n` +
@@ -3030,6 +3036,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (stage.id === 1) {
             chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
             locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
+          } else if (stage.id === 2) {
+            // 시놉시스 확정 시 등장인물 + 장소 즉시 누적
+            chars = [...new Set([...chars, ...names(data.characters, "name")])];
+            locs  = [...new Set([...locs,  ...names(data.locations,  "name")])];
           } else if (stage.id === 3) {
             chars = [...new Set([...chars, ...names(data.characters, "name")])];
           } else if (stage.id === 4) {
@@ -3061,23 +3071,39 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Asset List Review: 에셋 목록 확인 (Stage 2 완료 후, 스타일 전) ──
   const runAssetListReview = useCallback(async () => {
-    // editableAssets는 이미 각 스테이지 확정 시 누적됨 — synopsisAssetsRef는 AI fallback
-    // setEditableAssets는 이미 최신 상태이므로 덮어쓰지 않음 (synopsisAssets가 있을 때만 병합)
-    if (synopsisAssetsRef.current) {
-      const syn = synopsisAssetsRef.current;
-      setEditableAssets((prev: SynopsisAssets) => ({
-        characters: [...new Set([...prev.characters, ...syn.characters])],
-        locations:  [...new Set([...prev.locations,  ...syn.locations])],
-        props:      [...new Set([...prev.props,      ...syn.props])],
-      }));
-    }
+    // stageResults에서 직접 등장인물·장소 재빌드 (최신 상태 보장)
+    const ns = (arr: unknown, key: string): string[] =>
+      Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
+    const s1d = stageResultsRef.current.find(r => r.stageId === 1)?.data;
+    const s2d = stageResultsRef.current.find(r => r.stageId === 2)?.data;
+    setEditableAssets((prev: SynopsisAssets) => {
+      const merged: SynopsisAssets = {
+        characters: [...new Set([
+          ...prev.characters,
+          ...ns(s1d?.key_characters, "name"),
+          ...ns(s2d?.characters,     "name"),
+          ...(synopsisAssetsRef.current?.characters ?? []),
+        ])],
+        locations: [...new Set([
+          ...prev.locations,
+          ...ns(s1d?.key_locations, "name"),
+          ...ns(s2d?.locations,     "name"),
+          ...(synopsisAssetsRef.current?.locations ?? []),
+        ])],
+        props: [...new Set([
+          ...prev.props,
+          ...(synopsisAssetsRef.current?.props ?? []),
+        ])],
+      };
+      return merged;
+    });
     setAssetListPhase("reviewing");
 
     // Producer announces the asset list review
     setMsgs([]);
     convRef.current = [];
     const msgId = addMsg("producer", "", true);
-    const text = "시놉시스에서 에셋 목록을 뽑았어. 이걸 기준으로 캐릭터/장소/소품을 설계할 거야. 빠진 거 있으면 추가해줘.";
+    const text = "시놉시스에서 에셋 목록을 뽑았어. 등장인물/장소/소품 세 파트로 나눴어. 빠진 거 있으면 추가하고, 불필요한 거 있으면 × 눌러서 제거해줘.";
     for (let i = 2; i < text.length; i += 2) {
       await new Promise<void>(r => setTimeout(r, 80));
       setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: text.slice(0, i), streaming: true } : m));
@@ -5247,8 +5273,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   빠진 항목 추가 또는 불필요한 항목 삭제 후 확정하세요. Runway 프롬프트가 있는 항목은 이미지 생성에 바로 사용 가능합니다.
                 </div>
 
-                {/* ── 캐릭터 ── */}
-                <SectionHdr label="캐릭터" color="#fb923c" count={editableAssets.characters.length} />
+                {/* ── 등장인물 ── */}
+                <SectionHdr label="등장인물" color="#fb923c" count={editableAssets.characters.length} />
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {editableAssets.characters.map((name, i) => {
                     const s2c = s2charsA.find(c => c.name === name);
@@ -5301,7 +5327,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                     );
                   })}
                 </div>
-                <AddRow value={newCharInput} onChange={setNewCharInput} placeholder="+ 캐릭터 이름 추가 (Enter)" color="#fb923c"
+                <AddRow value={newCharInput} onChange={setNewCharInput} placeholder="+ 등장인물 이름 추가 (Enter)" color="#fb923c"
                   onAdd={() => { if (newCharInput.trim()) { setEditableAssets(a => ({ ...a, characters: [...a.characters, newCharInput.trim()] })); setNewCharInput(""); } }} />
 
                 {/* ── 장소 ── */}
