@@ -4979,7 +4979,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const coveredCount = stageAgendaItems.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
           const totalCount = stageAgendaItems.length;
 
-          // 항목 상태
+          // 항목 상태 — 완료/진행중/언급/미시작
           const itemStatus = (item: AgendaItem): "done" | "active" | "seen" | "none" => {
             if (coveredAgendaIds.includes(item.id)) return "done";
             const t = agendaTurnCounts[item.id] ?? 0;
@@ -4987,160 +4987,148 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             if (t > 0) return "seen";
             return "none";
           };
-          const statusColor: Record<string, string> = {
-            done: "#34d399", active: "#7c6cfc", seen: "#3d3d60", none: "#1a1a2e",
-          };
-          const statusBorder: Record<string, string> = {
-            done: "rgba(52,211,153,0.5)", active: "rgba(124,108,252,0.5)", seen: "rgba(61,61,96,0.6)", none: "rgba(255,255,255,0.05)",
-          };
+          const dotBg: Record<string, string>  = { done: "#34d399", active: "#7c6cfc", seen: "#3d3d60", none: "#18182a" };
+          const dotBdr: Record<string, string> = { done: "rgba(52,211,153,0.5)", active: "rgba(124,108,252,0.5)", seen: "rgba(61,61,96,0.7)", none: "rgba(255,255,255,0.04)" };
+          const textCol: Record<string, string> = { done: "#34d399", active: "#a5b4fc", seen: "#3d3d60", none: "#252540" };
 
-          // "이름 — 필드" 패턴으로 그룹화
+          // 시놉시스 스텝 활성 여부
+          const isSynActive = (id: string) => isSynStep && (
+            (id === "step_learning" && synopsisStep === "learning") ||
+            (id === "step_persona"  && synopsisStep === "persona")  ||
+            (id === "step_logline"  && synopsisStep === "logline")  ||
+            (id === "step_synopsis" && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
+          );
+
+          // 그룹화: "이름 — 필드" 패턴이면 이름 기준으로 묶고, 없으면 항목 자체가 그룹
           const groupMap = new Map<string, AgendaItem[]>();
           for (const item of stageAgendaItems) {
             const dashIdx = item.label.indexOf(" — ");
-            const gk = dashIdx >= 0 ? item.label.slice(0, dashIdx) : "__flat__";
+            const gk = dashIdx >= 0 ? item.label.slice(0, dashIdx) : item.id; // 플랫: 항목 id가 그룹 키
             if (!groupMap.has(gk)) groupMap.set(gk, []);
             groupMap.get(gk)!.push(item);
           }
-          const isGrouped = !groupMap.has("__flat__") && groupMap.size > 0;
+          // sub-field가 있는 그룹 = 캐릭터/장소 모드
+          const hasSubFields = Array.from(groupMap.values()).some((items: AgendaItem[]) => items.length > 1);
+
+          // 그룹 헤더 레이블 (그룹키가 item.id면 item.label 사용)
+          const groupLabel = (gk: string, items: AgendaItem[]) =>
+            items.length === 1 && items[0].id === gk ? items[0].label : gk;
 
           return (
             <div style={{ background: "rgba(8,8,18,0.7)", borderBottom: "1px solid rgba(99,102,241,0.1)" }}>
 
-              {isGrouped ? (
-                /* ━━━ 그룹 모드 (캐릭터·장소별) ━━━ */
-                <>
-                  {/* 요약 헤더 — 클릭으로 카드 펼침 */}
-                  <div
-                    onClick={() => setAgendaExpanded((v: boolean) => !v)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 14px", cursor: "pointer", userSelect: "none" }}
-                  >
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc" }}>
-                      {STAGES[currentStageIdx]?.name ?? "토론"}
-                    </span>
-                    {/* 엔티티별 미니 진행바 */}
-                    <div style={{ display: "flex", gap: 5, flex: 1, alignItems: "center", overflowX: "auto" }}>
-                      {Array.from(groupMap.entries()).map(([gk, items]) => {
-                        const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
-                        const pct = items.length > 0 ? (done / items.length) * 100 : 0;
-                        const allDone = done === items.length;
-                        return (
-                          <div key={gk} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                            <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#6b6b9a", fontWeight: allDone ? 700 : 400, whiteSpace: "nowrap" as const }}>
-                              {allDone ? "✓ " : ""}{gk}
-                            </span>
-                            <div style={{ width: 40, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0 }}>
-                              <div style={{
-                                height: "100%", borderRadius: 99, transition: "width 0.4s",
-                                background: allDone ? "#34d399" : pct > 0 ? "#7c6cfc" : "transparent",
-                                width: `${pct}%`,
-                              }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#4a4a6a", fontWeight: 700, flexShrink: 0 }}>
-                      {coveredCount}/{totalCount}
-                    </span>
-                    <span style={{ fontSize: 9, color: "#2e2e4a", flexShrink: 0 }}>{agendaExpanded ? "▲" : "▼"}</span>
-                  </div>
+              {/* ── 요약 헤더: 엔티티/항목별 미니 진행바 ── */}
+              <div
+                onClick={() => setAgendaExpanded((v: boolean) => !v)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 14px 6px", cursor: "pointer", userSelect: "none" }}
+              >
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc", flexShrink: 0 }}>
+                  {STAGES[currentStageIdx]?.name ?? "토론"}
+                </span>
 
-                  {/* 펼침: 엔티티별 필드 카드 */}
-                  {agendaExpanded && (
-                    <div style={{ display: "flex", gap: 8, padding: "0 14px 10px", overflowX: "auto" }}>
-                      {Array.from(groupMap.entries()).map(([gk, items]) => {
-                        const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
-                        const allDone = done === items.length;
-                        return (
-                          <div key={gk} style={{
-                            flexShrink: 0, minWidth: 130,
-                            borderRadius: 10, overflow: "hidden",
-                            border: `1px solid ${allDone ? "rgba(52,211,153,0.25)" : "rgba(99,102,241,0.18)"}`,
-                            background: allDone ? "rgba(52,211,153,0.05)" : "rgba(18,18,32,0.8)",
-                          }}>
-                            {/* 카드 헤더 */}
-                            <div style={{
-                              display: "flex", alignItems: "center", justifyContent: "space-between",
-                              padding: "7px 10px 5px",
-                              background: allDone ? "rgba(52,211,153,0.08)" : "rgba(99,102,241,0.07)",
-                              borderBottom: `1px solid ${allDone ? "rgba(52,211,153,0.15)" : "rgba(99,102,241,0.12)"}`,
-                            }}>
-                              <span style={{ fontSize: 12, fontWeight: 800, color: allDone ? "#34d399" : "#c4c4e8" }}>{gk}</span>
-                              <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#4a4a6a" }}>{done}/{items.length}</span>
-                            </div>
-                            {/* 필드 목록 */}
-                            <div style={{ padding: "6px 8px", display: "flex", flexDirection: "column" as const, gap: 3 }}>
-                              {items.map((item: AgendaItem) => {
-                                const st = itemStatus(item);
-                                const subLabel = item.label.includes(" — ") ? item.label.split(" — ")[1] : item.label;
-                                return (
-                                  <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                    <div style={{
-                                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                                      background: statusColor[st],
-                                      border: `1px solid ${statusBorder[st]}`,
-                                      transition: "background 0.3s",
-                                    }} />
-                                    <span style={{
-                                      fontSize: 10,
-                                      color: st === "done" ? "#34d399" : st === "active" ? "#a5b4fc" : st === "seen" ? "#3d3d60" : "#2a2a40",
-                                      fontWeight: st === "done" ? 700 : 400,
-                                    }}>{subLabel}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
+                {/* 카드별 미니 진행바 */}
+                <div style={{ display: "flex", gap: 6, flex: 1, alignItems: "center", overflowX: "auto", minWidth: 0 }}>
+                  {Array.from(groupMap.entries()).map(([gk, items]) => {
+                    const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
+                    const pct  = items.length > 0 ? (done / items.length) * 100 : 0;
+                    const allDone = done === items.length;
+                    const synAct = !hasSubFields && isSynActive(gk);
+                    const lbl = groupLabel(gk, items);
+                    return (
+                      <div key={gk} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        <span style={{
+                          fontSize: 10, whiteSpace: "nowrap" as const, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
+                          color: allDone ? "#34d399" : synAct ? "#6ee7b7" : "#5a5a7a",
+                          fontWeight: allDone || synAct ? 700 : 400,
+                        }}>
+                          {allDone ? "✓" : synAct ? "▶" : ""}{lbl}
+                        </span>
+                        {hasSubFields && (
+                          <div style={{ width: 36, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.05)", overflow: "hidden", flexShrink: 0 }}>
+                            <div style={{ height: "100%", borderRadius: 99, transition: "width 0.4s",
+                              background: allDone ? "#34d399" : pct > 0 ? "#7c6cfc" : "transparent",
+                              width: `${pct}%` }} />
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* ━━━ 플랫 모드 (스테이지 1·2) ━━━ */
-                <>
-                  <div
-                    onClick={() => setAgendaExpanded((v: boolean) => !v)}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", cursor: "pointer", userSelect: "none" }}
-                  >
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc" }}>{STAGES[currentStageIdx]?.name ?? "토론"}</span>
-                    <div style={{ flex: 1, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
-                      <div style={{ height: "100%", borderRadius: 99, background: coveredCount === totalCount ? "#34d399" : "#7c6cfc",
-                        width: totalCount > 0 ? `${(coveredCount / totalCount) * 100}%` : "0%", transition: "width 0.4s" }} />
-                    </div>
-                    <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#4a4a6a", fontWeight: 700 }}>{coveredCount}/{totalCount}</span>
-                    <span style={{ fontSize: 9, color: "#2e2e4a" }}>{agendaExpanded ? "▲" : "▼"}</span>
-                  </div>
-                  {agendaExpanded && (
-                    <div style={{ display: "flex", gap: 4, padding: "0 14px 8px", flexWrap: "wrap" as const }}>
-                      {stageAgendaItems.map((item: AgendaItem) => {
-                        const st = itemStatus(item);
-                        const isActive = isSynStep && (
-                          (item.id === "step_learning" && synopsisStep === "learning") ||
-                          (item.id === "step_persona"  && synopsisStep === "persona") ||
-                          (item.id === "step_logline"  && synopsisStep === "logline") ||
-                          (item.id === "step_synopsis" && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
-                        );
-                        return (
-                          <div key={item.id} style={{
-                            display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 99, fontSize: 10,
-                            background: st === "done" ? "rgba(52,211,153,0.1)" : isActive ? "rgba(52,211,153,0.06)" : st === "active" ? "rgba(124,108,252,0.1)" : "rgba(255,255,255,0.02)",
-                            border: `1px solid ${st === "done" ? "rgba(52,211,153,0.3)" : isActive ? "rgba(52,211,153,0.2)" : st === "active" ? "rgba(124,108,252,0.3)" : "rgba(255,255,255,0.05)"}`,
-                            color: st === "done" ? "#34d399" : isActive ? "#6ee7b7" : st === "active" ? "#a5b4fc" : "#2a2a40",
-                            fontWeight: st === "done" || isActive ? 700 : 400,
-                          }}>
-                            <span style={{ fontSize: 8 }}>{st === "done" ? "✓" : isActive ? "▶" : "·"}</span>
-                            <span>{item.label}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#3a3a5a", fontWeight: 700, flexShrink: 0 }}>
+                  {coveredCount}/{totalCount}
+                </span>
+                <span style={{ fontSize: 9, color: "#252540", flexShrink: 0 }}>{agendaExpanded ? "▲" : "▼"}</span>
+              </div>
+
+              {/* ── 펼침: 카드 목록 ── */}
+              {agendaExpanded && (
+                <div style={{ display: "flex", gap: 8, padding: "0 14px 10px", overflowX: "auto" }}>
+                  {Array.from(groupMap.entries()).map(([gk, items]) => {
+                    const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
+                    const allDone = done === items.length;
+                    const isSingle = items.length === 1;
+                    const singleItem = isSingle ? items[0] : null;
+                    const singleSt = singleItem ? itemStatus(singleItem) : "none";
+                    const synAct = isSingle && isSynActive(gk);
+                    const cardSt = synAct ? "active" : (allDone ? "done" : (done > 0 ? "active" : "none"));
+                    const lbl = groupLabel(gk, items);
+
+                    return (
+                      <div key={gk} style={{
+                        flexShrink: 0,
+                        minWidth: isSingle ? 100 : 130,
+                        borderRadius: 10, overflow: "hidden",
+                        border: `1px solid ${allDone ? "rgba(52,211,153,0.25)" : synAct ? "rgba(52,211,153,0.2)" : "rgba(99,102,241,0.16)"}`,
+                        background: allDone ? "rgba(52,211,153,0.05)" : synAct ? "rgba(52,211,153,0.03)" : "rgba(16,16,28,0.85)",
+                      }}>
+                        {/* 카드 헤더 */}
+                        <div style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: isSingle ? "8px 10px" : "6px 10px 5px",
+                          background: allDone ? "rgba(52,211,153,0.07)" : synAct ? "rgba(52,211,153,0.04)" : "rgba(99,102,241,0.06)",
+                          borderBottom: isSingle ? "none" : `1px solid ${allDone ? "rgba(52,211,153,0.12)" : "rgba(99,102,241,0.1)"}`,
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            {isSingle && (
+                              <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, transition: "background 0.3s",
+                                background: synAct ? "#34d399" : dotBg[singleSt],
+                                border: `1px solid ${synAct ? "rgba(52,211,153,0.6)" : dotBdr[singleSt]}` }} />
+                            )}
+                            <span style={{
+                              fontSize: 11, fontWeight: 700,
+                              color: allDone ? "#34d399" : synAct ? "#6ee7b7" : cardSt === "active" ? "#a5b4fc" : "#9090b0",
+                            }}>{synAct ? "▶ " : ""}{lbl}</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
+                          {!isSingle && (
+                            <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#3a3a5a" }}>{done}/{items.length}</span>
+                          )}
+                        </div>
+                        {/* 서브 필드 목록 (그룹형만) */}
+                        {!isSingle && (
+                          <div style={{ padding: "6px 10px 7px", display: "flex", flexDirection: "column" as const, gap: 4 }}>
+                            {items.map((item: AgendaItem) => {
+                              const st = itemStatus(item);
+                              const subLbl = item.label.includes(" — ") ? item.label.split(" — ")[1] : item.label;
+                              return (
+                                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, transition: "background 0.3s",
+                                    background: dotBg[st], border: `1px solid ${dotBdr[st]}` }} />
+                                  <span style={{ fontSize: 10, color: textCol[st], fontWeight: st === "done" ? 700 : 400 }}>
+                                    {subLbl}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
 
-              {/* 블랙리스트 태그 — 항상 표시 */}
+              {/* 블랙리스트 태그 */}
               {rejectedItems.length > 0 && (
                 <div style={{ display: "flex", gap: 4, padding: "0 14px 6px", flexWrap: "wrap" as const }}>
                   {rejectedItems.map((w: string) => (
