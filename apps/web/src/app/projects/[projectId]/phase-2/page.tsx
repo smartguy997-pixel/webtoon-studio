@@ -2194,6 +2194,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     pendingDebateStartRef.current = null;
     setMsgs([]);
     convRef.current = [];
+    resumeDataRef.current = null; // pendingDebateStart는 항상 새 토론 — 이전 저장 데이터 무시
+    runningRef.current = false;   // 혹시 stuck된 상태 초기화
+    abortRef.current = false;
     setCurrentStageIdx(idx);
     setDebatePhase("idle");
     void runDebate(idx);
@@ -5241,8 +5244,23 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 <div style={{ fontSize:11, color:"#64748b", marginTop:3 }}>이어하기를 누르면 중단된 지점부터 재개됩니다</div>
               </div>
               <div style={{ display:"flex", gap:8 }}>
-                <button className={s.btnGating} style={{ width:"auto", padding:"10px 16px" }} onClick={() => void runDebate(currentStageIdx)}>이어하기 →</button>
-                <button className={s.btnRestart} onClick={() => { resumeDataRef.current = null; void runDebate(currentStageIdx); }}>새로 시작</button>
+                <button className={s.btnGating} style={{ width:"auto", padding:"10px 16px" }} onClick={() => {
+                  runningRef.current = false;
+                  abortRef.current = false;
+                  void runDebate(currentStageIdx);
+                }}>이어하기 →</button>
+                <button className={s.btnRestart} onClick={() => {
+                  resumeDataRef.current = null;
+                  runningRef.current = false;
+                  abortRef.current = false;
+                  loglineResolverRef.current = null;
+                  synopsisStepRef.current = "idle";
+                  try {
+                    localStorage.removeItem(`p2_conv_${currentStageIdx}_${projectId}`);
+                    localStorage.removeItem(`p2_msgs_${currentStageIdx}_${projectId}`);
+                  } catch { /* ignore */ }
+                  void runDebate(currentStageIdx);
+                }}>새로 시작</button>
               </div>
             </div>
           )}
