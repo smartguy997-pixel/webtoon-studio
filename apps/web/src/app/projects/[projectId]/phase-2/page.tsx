@@ -647,6 +647,25 @@ interface SynopsisAssets {
   props: string[];
 }
 
+// ── 에셋 정제: characters에 섞인 장소·시대·개념 항목을 올바른 카테고리로 재분류 ──
+function sanitizeAssets(raw: SynopsisAssets): SynopsisAssets {
+  const LOC_KW   = /골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|층|마을|학교|병원|건물|식당|분식|카페|폐자장|공장|시장|역(?!\w)|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|가게|점포|센터|연구소|사무실|작업장|창고|지하|옥상|뒷골목|주택|빌딩|본부|기지|술집|주점|포장마차|편의점|노점/;
+  const TIME_KW  = /^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/;
+  const CONC_KW  = /의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/;
+
+  const isLoc    = (s: string) => LOC_KW.test(s);
+  const isTime   = (s: string) => TIME_KW.test(s);
+  const isConcept= (s: string) => CONC_KW.test(s);
+  const isChar   = (s: string) => !isLoc(s) && !isTime(s) && !isConcept(s);
+
+  // characters에서 장소처럼 생긴 것 → locations로, 나머지 비정상 → 제거
+  const promotedLocs = raw.characters.filter(c => isLoc(c));
+  const cleanChars   = raw.characters.filter(c => isChar(c));
+  const cleanLocs    = [...new Set([...raw.locations, ...promotedLocs])];
+
+  return { characters: cleanChars, locations: cleanLocs, props: raw.props };
+}
+
 // 에이전트 1명이 이전 토론을 읽고 반응하는 단일 역할 프롬프트
 function buildSingleAgentPrompt(
   stageId: StageId,
@@ -2330,7 +2349,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       // 에셋 리스트 복원
       const savedAssets = localStorage.getItem(`wts_asset_list_${projectId}`);
       if (savedAssets) {
-        const parsed = JSON.parse(savedAssets) as SynopsisAssets;
+        const parsed = sanitizeAssets(JSON.parse(savedAssets) as SynopsisAssets);
         synopsisAssetsRef.current = parsed;
         setEditableAssets(parsed);
         setAssetListPhase("confirmed");
@@ -3253,7 +3272,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const s1d = stageResultsRef.current.find(r => r.stageId === 1)?.data;
     const s2d = stageResultsRef.current.find(r => r.stageId === 2)?.data;
     setEditableAssets((prev: SynopsisAssets) => {
-      const merged: SynopsisAssets = {
+      const raw: SynopsisAssets = {
         characters: [...new Set([
           ...prev.characters,
           ...ns(s1d?.key_characters, "name"),
@@ -3271,7 +3290,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           ...(synopsisAssetsRef.current?.props ?? []),
         ])],
       };
-      return merged;
+      return sanitizeAssets(raw);
     });
     setAssetListPhase("reviewing");
 
@@ -4525,7 +4544,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         props: [...new Set([...ns(s5d?.props, "name")])],
       };
     };
-    const newAssets = rebuildAssets(newResults);
+    const newAssets = sanitizeAssets(rebuildAssets(newResults));
     setEditableAssets(() => {
       localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(newAssets));
       synopsisAssetsRef.current = newAssets;
