@@ -3056,6 +3056,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       while (true) {
         if (abortRef.current) break;
         if (apiDone && displayed >= fullText.length) break;
+        // 사용자가 메시지를 보내면 현재 발언 즉시 완성 후 종료
+        if (pendingUserMsgRef.current) {
+          const waitFlush = Date.now();
+          while (!apiDone && Date.now() - waitFlush < 10000) await sleep(100);
+          displayed = fullText.length;
+          updateMsg(msgId, fullText.slice(0, displayed), true);
+          break;
+        }
         if (displayed < fullText.length) {
           displayed = Math.min(displayed + CHARS, fullText.length);
           updateMsg(msgId, fullText.slice(0, displayed), true);
