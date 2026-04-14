@@ -195,6 +195,10 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
   const ns = (arr: unknown): Array<{ name: string }> =>
     Array.isArray(arr) ? (arr as Array<{ name: string }>).filter(x => x?.name) : [];
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // 캐릭터/장소 이름이 recentLines에 있을 때만 해당 항목 체크되도록
+  // (?=.*이름) AND (?=.*필드 키워드) 방식으로 동시 존재 확인
+  const both = (name: string, fields: string) =>
+    new RegExp(`(?=.*${esc(name)})(?=.*(?:${fields}))`);
 
   const s1 = stageResults.find(r => r.stageId === 1)?.data;
   const s2 = stageResults.find(r => r.stageId === 2)?.data;
@@ -202,30 +206,80 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
   if (stageId === 3) {
     const chars = ns(s2?.characters).length > 0 ? ns(s2?.characters) : ns(s1?.key_characters);
     if (chars.length > 0) {
-      return chars.map(c => ({
-        id: `char_${c.name}`,
-        label: c.name,
-        keywords: new RegExp(esc(c.name)),
-        nudge: `${c.name} 캐릭터를 필수 항목까지 완성하자. ` +
-          `①성별·나이대·키·몸무게 ②체형(근육질/마른/보통 등) ③주요 복장(색상·소재까지) ` +
-          `④얼굴 묘사(이목구비·눈빛·표정 습관) ⑤성격 특징 3가지 이상 ` +
-          `⑥다른 인물과의 관계(조력자·연인·가족 등) ⑦갈등 관계(누구와 왜 대립하는지) — 빠진 항목 채워줘.`,
-      }));
+      const items: AgendaItem[] = [];
+      for (const c of chars) {
+        const n = c.name;
+        items.push(
+          {
+            id: `char_${n}_body`,
+            label: `${n} — 신체`,
+            keywords: both(n, "성별|나이대|나이|키|cm|몸무게|kg|체형|근육질|마른체형|보통체형|통통|왜소"),
+            nudge: `${n}의 신체 정보가 빠져 있어. 성별·나이대·키·몸무게·체형(근육질/마른/보통 등)을 지금 정해줘.`,
+          },
+          {
+            id: `char_${n}_face`,
+            label: `${n} — 얼굴`,
+            keywords: both(n, "얼굴|이목구비|눈|코|입|피부|인상|표정|눈빛|헤어|머리카락"),
+            nudge: `${n}의 얼굴 묘사가 없어. 이목구비·눈빛·피부·인상·표정 습관·헤어 스타일까지 구체적으로 묘사해줘.`,
+          },
+          {
+            id: `char_${n}_outfit`,
+            label: `${n} — 복장`,
+            keywords: both(n, "복장|옷|패션|스타일|의상|착용|입고|색상|소재|코트|자켓|셔츠|청바지|원피스"),
+            nudge: `${n}의 주요 복장이 아직 정의 안 됐어. 색상·소재·스타일을 구체적으로 잡아줘.`,
+          },
+          {
+            id: `char_${n}_personality`,
+            label: `${n} — 성격`,
+            keywords: both(n, "성격|특징|성향|무표정|내성적|외향적|활발|차분|냉정|다정|고집|예민|쿨|따뜻|도도|소심"),
+            nudge: `${n}의 성격 특징이 부족해. 최소 3가지 이상 구체적으로 정의해줘 (예: 무표정하고 세상사에 관심 없음, 의외로 다정함).`,
+          },
+          {
+            id: `char_${n}_relation`,
+            label: `${n} — 관계`,
+            keywords: both(n, "관계|조력자|연인|사랑하는|친구|가족|스승|동료|파트너|사이|케미"),
+            nudge: `${n}과 다른 인물들의 관계가 정의 안 됐어. 누가 조력자이고 누구와 어떤 사이인지 명확히 해줘.`,
+          },
+          {
+            id: `char_${n}_conflict`,
+            label: `${n} — 갈등`,
+            keywords: both(n, "갈등|대립|적|경쟁|반목|충돌|라이벌|적대|원수|싸움|대결"),
+            nudge: `${n}의 갈등 관계가 빠져 있어. 누구와 왜 대립하고 어떻게 전개되는지 정해줘.`,
+          },
+        );
+      }
+      return items;
     }
   }
 
   if (stageId === 4) {
     const locs = ns(s2?.locations).length > 0 ? ns(s2?.locations) : ns(s1?.key_locations);
     if (locs.length > 0) {
-      return locs.map(l => ({
-        id: `loc_${l.name}`,
-        label: l.name,
-        keywords: new RegExp(esc(l.name)),
-        nudge: `${l.name} 장소를 필수 항목까지 완성하자. ` +
-          `①야외/실내/건물 구분 ②장소 역할(대결 장소·안식처·사건 현장 등) ` +
-          `③구체적 시각 묘사 — 시간대·날씨·세부 요소·역사적 배경을 그림처럼 묘사해줘 ` +
-          `(예: "1980년대 쌍문동 좁은 골목, 밤, 가로등 하나, 연탄재와 쓰레기, 멀리 북한산 실루엣").`,
-      }));
+      const items: AgendaItem[] = [];
+      for (const l of locs) {
+        const n = l.name;
+        items.push(
+          {
+            id: `loc_${n}_type`,
+            label: `${n} — 유형·역할`,
+            keywords: both(n, "야외|실내|건물|복합|유형|역할|기능|용도|대결|안식처|사건 현장|배경 장소"),
+            nudge: `${n}의 유형(야외/실내/건물)과 역할(대결 장소·안식처·사건 현장 등)을 정의해야 해.`,
+          },
+          {
+            id: `loc_${n}_visual`,
+            label: `${n} — 시각 묘사`,
+            keywords: both(n, "묘사|풍경|가로등|조명|낡은|어두운|밝은|연탄|골목|밤|새벽|낮|오후|비|눈|날씨|역사|연대"),
+            nudge: `${n}의 구체적 시각 묘사가 없어. 시간대·날씨·세부 요소·역사적 배경을 그림처럼 묘사해줘. 예: "1980년대 쌍문동 좁은 골목, 밤, 가로등 하나, 연탄재와 쓰레기, 멀리 북한산 실루엣".`,
+          },
+          {
+            id: `loc_${n}_arch`,
+            label: `${n} — 공간 구조`,
+            keywords: both(n, "구조|건축|공간|규모|크기|층|레이아웃|재질|형태|넓이|좁은|긴|원형|사각"),
+            nudge: `${n}의 공간 구조를 잡아야 해. 크기·층수·재질·레이아웃·특이한 구조물 등.`,
+          },
+        );
+      }
+      return items;
     }
   }
 
@@ -235,8 +289,8 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
       return props.map(p => ({
         id: `prop_${p.name}`,
         label: p.name,
-        keywords: new RegExp(esc(p.name)),
-        nudge: `${p.name} 소품을 구체적으로 설계하자. 형태·색상·재질·크기·상태(낡음/새것 등)·이야기에서의 역할·상징적 의미·소유자까지.`,
+        keywords: both(p.name, "형태|색상|재질|크기|상태|낡은|새것|역할|상징|소유"),
+        nudge: `${p.name} 소품을 구체적으로 설계하자. 형태·색상·재질·크기·상태·이야기 역할·상징·소유자까지.`,
       }));
     }
   }
@@ -2123,6 +2177,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [apiError, setApiError] = useState<string | null>(null);
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<string[]>([]); // 완료된 아젠다 항목
   const [agendaTurnCounts, setAgendaTurnCounts] = useState<Record<string, number>>({}); // 항목별 누적 턴수
+  const [activeStageAgenda, setActiveStageAgenda] = useState<AgendaItem[]>([]); // 현재 토론의 실제 아젠다 (동적)
   const [debateModel, setDebateModel] = useState<DebateModelP2>("claude-sonnet-4-6"); // 모델 선택
   const [rejectedItems, setRejectedItems] = useState<string[]>([]); // 블랙리스트
   const rejectedItemsRef = useRef<string[]>([]);
@@ -2441,9 +2496,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let wrapUpProposedAt = 0;
     let wrapUpRejectedTurn = -999; // 사용자가 마무리 거부한 턴 — 거부 후 최소 N턴 대기용
     let naturalExit = false;
-    // Stage 3/4/5: 이전 단계 결과에서 동적 아젠다 빌드 (캐릭터·장소·소품 각각 항목화)
+    // Stage 3/4/5: 이전 단계 결과에서 동적 아젠다 빌드 (캐릭터/장소별 필수 항목 세분화)
     // Stage 1/2: 정적 아젠다 유지
     const stageAgenda = buildDynamicAgenda(stage.id, stageResultsRef.current);
+    setActiveStageAgenda(stageAgenda); // UI 체크리스트에 반영
     const minTurnsForStage = MIN_TURNS_BY_STAGE[stage.id] ?? MIN_TURNS_PER_TOPIC_P2;
     // WRAP_UP_AFTER: 안전망(hard cap)용 — 항목당 최대 12턴 × 아젠다 수
     // allCovered && converging이 실질적 1차 트리거이며, WRAP_UP_AFTER는 무한 토론 방지용
@@ -4871,7 +4927,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         {/* 아젠다 체크리스트 + 블랙리스트 — 토론 중일 때만 표시 */}
         {debatePhase === "running" && (() => {
           const currentStageId = STAGES[currentStageIdx]?.id;
-          const stageAgendaItems = STAGE_AGENDA[currentStageId] ?? [];
+          // 동적 아젠다 우선, 없으면 정적 아젠다 폴백
+          const stageAgendaItems = activeStageAgenda.length > 0 ? activeStageAgenda : (STAGE_AGENDA[currentStageId] ?? []);
           const minTurnsUI = MIN_TURNS_BY_STAGE[currentStageId] ?? MIN_TURNS_PER_TOPIC_P2;
           return (
             <div style={{
