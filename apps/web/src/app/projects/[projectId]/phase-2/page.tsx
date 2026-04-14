@@ -3240,6 +3240,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           180);
         if (abortRef.current) throw new Error("abort");
 
+        // ─ Step 3.5: 등장인물 명시적 확정 (extractStageData 캐릭터 추출용) ──
+        // 지금까지 논의된 인물들을 구조화된 목록으로 정리해 transcript에 남긴다.
+        // extractStageData(Stage 2)가 이 목록을 기반으로 characters 배열을 생성한다.
+        await runSingleAgent("character",
+          `${histText()}지금까지 논의된 내용을 바탕으로, 이 이야기에 등장하는 핵심 인물들을 확정해서 정리해줘.\n` +
+          `아래 형식으로 빠짐없이 목록화해줘 (마크다운 금지):\n\n` +
+          `[확정 등장인물 목록]\n` +
+          `1. [이름/번호+별칭] — [역할: 주인공/빌런/조력자/단역] — [성별·나이대] — [핵심 특성 한 줄]\n` +
+          `2. ...\n\n` +
+          `이름이 없으면 번호나 역할명으로 표기 (예: "029번 요원 — 빌런"). 지금까지 언급된 모든 주요 인물을 포함해.`,
+          500);
+        if (abortRef.current) throw new Error("abort");
+
         // ─ Step 4: 시놉시스 완성 (10~12턴) ──────────────────────────────────
         synopsisStepRef.current = "completing";
         setSynopsisStep("completing");
@@ -3306,10 +3319,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         }
         if (abortRef.current) throw new Error("abort");
 
-        // 에셋 리스트 확정 요청
+        // 에셋 리스트 확정 요청 (등장인물 이름 명시 필수)
         await runSingleAgent("producer",
-          `${histText()}시놉시스 완성됐어. 이제 이미지 생성을 위해 이야기에 등장하는 모든 인물, 장소, 소품, 핵심 장면 목록을 간략히 정리해줘. 각각 이름 + 한 줄 시각적 특징. 마크다운 금지.`,
-          400);
+          `${histText()}시놉시스 완성됐어. 아래 형식으로 최종 에셋 목록을 정리해줘 (마크다운 금지):\n\n` +
+          `[등장인물] 각 인물: 이름(번호/별칭 포함) — 역할 — 외형 한 줄\n` +
+          `[장소] 각 장소: 장소명 — 시각적 특징 한 줄\n` +
+          `[소품] 각 소품: 소품명 — 용도·특징 한 줄\n\n` +
+          `등장인물 이름은 반드시 실명 또는 "번호+역할명"으로 표기. 지금까지 논의된 모든 인물을 빠짐없이 포함해.`,
+          500);
         if (abortRef.current) throw new Error("abort");
 
         naturalExit = true;
