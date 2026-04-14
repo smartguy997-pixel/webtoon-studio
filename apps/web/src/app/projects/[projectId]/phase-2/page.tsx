@@ -2400,13 +2400,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       transcript = [...resumeDataRef.current.transcript];
       setMsgs(resumeDataRef.current.msgs);
       resumeDataRef.current = null;
-      // 이어하기 시작: 기존 에이전트 턴 수를 "거부 기준점"으로 설정
-      // → 새로 추가되는 첫 10턴은 마무리 제안 차단 (resume 직후 즉시 wrap-up 방지)
-      wrapUpRejectedTurn = transcript.filter(l => !l.startsWith("[사용자]")).length;
     } else {
       transcript = [];
     }
     convRef.current = transcript;
+    // 이 runDebate 세션 시작 시점의 에이전트 턴 수 → WRAP_UP_AFTER는 여기서부터 카운트
+    const agentTurnsAtSessionStart = transcript.filter(l => !l.startsWith("[사용자]")).length;
+    // 이어하기 시: rejection 기준점을 시작점으로 설정 (첫 WRAP_UP_AFTER 새 턴은 마무리 차단)
+    if (agentTurnsAtSessionStart > 0) {
+      wrapUpRejectedTurn = agentTurnsAtSessionStart;
+    }
 
     // Phase 2 에이전트 동적 선택
     const P2_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "editor"];
@@ -2956,9 +2959,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
         // 마무리 조건 체크 — 모든 아젠다 완료 or WRAP_UP_AFTER 턴 초과
         const allCovered = stageAgenda.length > 0 && coveredAgenda.size >= stageAgenda.length;
+        // 이번 runDebate 세션에서 새로 추가된 에이전트 턴 수 (이어하기 시 기존 턴 제외)
+        const newTurnsSinceStart = agentTurnsSoFar - agentTurnsAtSessionStart;
         // Stage 1: 최소 10턴 이상 + 모든 항목 완료 시 수렴 신호 1개만 있어도 마무리
         const minTurnsForConverge = stage.id === 1 ? 10 : 8;
-        const converging = agentTurnsSoFar >= minTurnsForConverge && (
+        const converging = newTurnsSinceStart >= minTurnsForConverge && (
           stage.id === 1
             ? (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계|좋아|됐어|완성/g) ?? []).length >= 1
             : (recentLines.match(/정리|결론|충분|이 정도|마무리|확인|다음 단계/g) ?? []).length >= 2
@@ -2968,12 +2973,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         const turnsAfterRejection = agentTurnsSoFar - wrapUpRejectedTurn;
 
         // ── Stage 3 캐릭터 전환 ──
-        // allCovered or WRAP_UP_AFTER 도달 시: 단계 종료 대신 다음 캐릭터로 전환
-        // FINAL_WRAP_UP_AFTER 초과 후에만 진짜 마무리 제안
+        // allCovered or WRAP_UP_AFTER 신규턴 도달 시: 단계 종료 대신 다음 캐릭터로 전환
+        // FINAL_WRAP_UP_AFTER 신규턴 초과 후에만 진짜 마무리 제안
+        // ※ newTurnsSinceStart 기준이므로 이어하기 시 기존 누적 턴은 카운트 안 됨
         const wrapUpConditionMet = !wrapUpProposed && turnsAfterRejection >= 10
-          && (agentTurnsSoFar >= WRAP_UP_AFTER || (allCovered && converging));
+          && (newTurnsSinceStart >= WRAP_UP_AFTER || (allCovered && converging));
 
-        if (stage.id === 3 && wrapUpConditionMet && agentTurnsSoFar < FINAL_WRAP_UP_AFTER) {
+        if (stage.id === 3 && wrapUpConditionMet && newTurnsSinceStart < FINAL_WRAP_UP_AFTER) {
           // 캐릭터 전환: 아젠다 초기화하고 다음 인물로
           charTransitionCount++;
           coveredAgenda.clear();
@@ -2994,7 +3000,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           continue;
         }
 
-        if (wrapUpConditionMet && !(stage.id === 3 && agentTurnsSoFar < FINAL_WRAP_UP_AFTER)) {
+        if (wrapUpConditionMet && !(stage.id === 3 && newTurnsSinceStart < FINAL_WRAP_UP_AFTER)) {
           wrapUpProposed = true;
           wrapUpProposedAt = Date.now();
           const coveredLabels = stageAgenda.map(i => i.label);
