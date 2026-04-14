@@ -1863,19 +1863,26 @@ function StageReportInChat({
         {/* ── 액션 버튼 ── */}
         <div style={{ display:"flex", flexDirection:"column" as const, gap:8, marginTop:20 }}>
           {isViewMode ? (
-            /* 뷰 모드: 이어서 토론 / 새로 토론하기 */
-            <div style={{ display:"flex", gap:10 }}>
+            /* 뷰 모드: 새로 토론 / 이어서 토론 / 다음 단계 */
+            <>
               <button
-                onClick={onNewDebate}
-                style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #3a2a2a", color:"#f87171", transition:"all 0.15s" }}>
-                🗑 새로 토론
+                onClick={onNextStage}
+                style={{ width:"100%", padding:"13px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
+                {nextBtnLabel}
               </button>
-              <button
-                onClick={onContinueDebate}
-                style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
-                ↩ 이어서 토론
-              </button>
-            </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <button
+                  onClick={onNewDebate}
+                  style={{ flex:1, padding:"10px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #3a2a2a", color:"#f87171", transition:"all 0.15s" }}>
+                  🗑 새로 토론
+                </button>
+                <button
+                  onClick={onContinueDebate}
+                  style={{ flex:2, padding:"10px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid #2a2a3d", color:"#94a3b8" }}>
+                  ↩ 이어서 토론
+                </button>
+              </div>
+            </>
           ) : (
             /* 인라인 모드: 계속 토론 / 다음 단계 */
             <div style={{ display:"flex", gap:10 }}>
@@ -4363,7 +4370,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               <StageReportInChat
                 result={viewResult}
                 stage={viewStageObj}
-                onNextStage={() => { window.location.href = `/projects/${projectId}/phase-2`; }}
+                onNextStage={() => handleNextStage(stageIdx)}
                 onContinueDebate={() => handleResumeStageFromView(stageIdx)}
                 onNewDebate={() => handleRestartStageFromView(stageIdx)}
                 nextStageName={stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null}
