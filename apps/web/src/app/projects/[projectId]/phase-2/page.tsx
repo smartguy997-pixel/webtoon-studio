@@ -4801,68 +4801,148 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               );
               const propData = (s5?.props as Record<string,string>[] | undefined) ?? [];
 
-              const AssetCard = ({ item, color }: { item: Record<string, string>; color: string }) => {
-                const hasDetail = !!(item.face || item.outfit || item.personality || item.visual || item.atmosphere || item.one_line || item.motivation || item.significance || item.description);
+              // ── 공통 필드 렌더 헬퍼 ──
+              const F = ({ label, val, c }: { label: string; val?: string; c: string }) =>
+                val ? <div style={{ fontSize: 11, color: "#8080a0", lineHeight: 1.55, marginBottom: 1 }}><span style={{ color: c, fontWeight: 700, marginRight: 5 }}>{label}</span>{val}</div> : null;
+
+              // ── 섹션 헤더 ──
+              const SectionHead = ({ icon, label, color, count }: { icon: string; label: string; color: string; count: number }) => (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 12px", paddingBottom: 8, borderBottom: `1px solid ${color}25` }}>
+                  <span style={{ fontSize: 16 }}>{icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color, letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{label}</span>
+                  <span style={{ fontSize: 11, color, background: `${color}18`, borderRadius: 99, padding: "1px 9px", fontWeight: 700 }}>{count}</span>
+                </div>
+              );
+
+              // ── 캐릭터 카드 ──
+              const CharAssetCard = ({ it }: { it: Record<string,string> }) => {
+                const c = "#fb923c";
+                const initials = (it.name ?? "?").slice(0, 2);
                 return (
-                  <div style={{ background: "#12121e", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${color}22` }}>
-                    <div style={{ background: `linear-gradient(90deg, ${color}18, transparent)`, borderBottom: `1px solid ${color}20`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${color}25`, border: `1px solid ${color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color, flexShrink: 0 }}>
-                        {(item.name ?? "?").slice(0, 2)}
-                      </div>
+                  <div style={{ background: "#0f0f1c", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${c}20` }}>
+                    {/* 헤더 */}
+                    <div style={{ background: `linear-gradient(90deg,${c}15,transparent)`, borderBottom: `1px solid ${c}15`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: `${c}20`, border: `2px solid ${c}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: c, flexShrink: 0 }}>{initials}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9" }}>
-                          {item.name}
-                          {item.role && <span style={{ fontSize: 11, color, marginLeft: 8, fontWeight: 700, background: `${color}18`, padding: "1px 6px", borderRadius: 99 }}>{item.role}</span>}
-                          {item.type && <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>{item.type}</span>}
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+                          {it.name}
+                          {it.role && <span style={{ fontSize: 10, fontWeight: 700, color: c, background: `${c}18`, padding: "1px 7px", borderRadius: 99 }}>{it.role}</span>}
                         </div>
-                        {(item.one_line ?? item.characteristics) && (
-                          <div style={{ fontSize: 11, color: "#9a9abf", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                            {item.one_line ?? item.characteristics}
-                          </div>
+                        {(it.age || it.gender) && (
+                          <div style={{ fontSize: 11, color: "#4a4a6a", marginTop: 2 }}>{[it.gender, it.age].filter(Boolean).join(" · ")}</div>
                         )}
                       </div>
-                      {!hasDetail && <span style={{ fontSize: 10, color: "#2a2a3d", flexShrink: 0 }}>기본 정보</span>}
                     </div>
-                    {hasDetail && (
-                      <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column" as const, gap: 3 }}>
-                        {item.face && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>얼굴</span>{item.face}</div>}
-                        {item.outfit && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>복장</span>{item.outfit}</div>}
-                        {item.personality && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>성격</span>{item.personality}</div>}
-                        {item.motivation && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>동기</span>{item.motivation}</div>}
-                        {item.visual && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>시각</span>{item.visual}</div>}
-                        {item.atmosphere && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>분위기</span>{item.atmosphere}</div>}
-                        {item.significance && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>의미</span>{item.significance}</div>}
-                        {item.function && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>기능</span>{item.function}</div>}
+                    {/* 신체 */}
+                    {(it.height || it.weight || it.build) && (
+                      <div style={{ padding: "8px 14px 0", borderBottom: "1px solid #1a1a28" }}>
+                        <div style={{ fontSize: 9, color: "#3a3a58", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 3 }}>신체</div>
+                        <div style={{ fontSize: 11, color: "#6060808", paddingBottom: 8 }}>{[it.height, it.weight, it.build].filter(Boolean).join(" · ")}</div>
                       </div>
                     )}
+                    {/* 세부 */}
+                    <div style={{ padding: "8px 14px 10px" }}>
+                      <F label="얼굴" val={it.face || it.appearance} c={c} />
+                      <F label="복장" val={it.outfit} c={c} />
+                      <F label="성격" val={it.personality} c={c} />
+                      <F label="동기" val={it.motivation} c={c} />
+                      <F label="관계" val={it.relation} c={c} />
+                      <F label="말투" val={it.speech} c={c} />
+                      {!it.face && !it.outfit && !it.personality && !it.motivation && !it.relation && (
+                        <div style={{ fontSize: 11, color: "#2e2e48", fontStyle: "italic" }}>캐릭터 설계 단계에서 구체화</div>
+                      )}
+                    </div>
                   </div>
                 );
               };
 
-              // editableAssets names와 상세 데이터 매핑 (이름 기준)
-              const Section = ({ label, color, items, names }: { label: string; color: string; items: Record<string,string>[]; names: string[] }) => {
-                // 이름 목록 = editableAssets names ∪ 상세 데이터 이름 (누락 없이)
-                const allNames = [...new Set([...names, ...items.map(it => it.name).filter(Boolean)])];
-                const resolved = allNames.map(n => items.find(it => it.name === n) ?? { name: n });
+              // ── 장소 카드 ──
+              const LocAssetCard = ({ it }: { it: Record<string,string> }) => {
+                const c = "#a78bfa";
+                const locType = it.location_type || it.type || "";
+                const icon = /야외|거리|공원|산|바다|들판/.test(locType) ? "🌿" : /건물|빌딩|아파트|학교|병원|관청/.test(locType) ? "🏢" : "🏠";
                 return (
-                  <div style={{ marginBottom: 24 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                      {label}
-                      <span style={{ background: `${color}20`, color, borderRadius: 99, padding: "1px 8px", fontSize: 10 }}>{resolved.length}</span>
+                  <div style={{ background: "#0f0f1c", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${c}20` }}>
+                    <div style={{ background: `linear-gradient(90deg,${c}12,transparent)`, borderBottom: `1px solid ${c}15`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: `${c}18`, border: `1px solid ${c}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9" }}>{it.name}</div>
+                        <div style={{ display: "flex", gap: 5, marginTop: 3, flexWrap: "wrap" as const }}>
+                          {locType && <span style={{ fontSize: 10, color: c, background: `${c}15`, padding: "1px 7px", borderRadius: 99 }}>{locType}</span>}
+                          {(it.role || it.significance) && <span style={{ fontSize: 10, color: "#64748b" }}>{it.role || it.significance}</span>}
+                        </div>
+                      </div>
                     </div>
-                    {resolved.length === 0
-                      ? <div style={{ fontSize: 12, color: "#3a3a52", padding: "8px 0" }}>(없음)</div>
-                      : resolved.map((it, i) => <AssetCard key={i} item={it} color={color} />)
-                    }
+                    <div style={{ padding: "8px 14px 10px" }}>
+                      <F label="시각" val={it.visual} c={c} />
+                      <F label="조명" val={it.lighting} c={c} />
+                      <F label="분위기" val={it.atmosphere} c={c} />
+                      <F label="구조" val={it.architecture} c={c} />
+                      <F label="상징" val={it.symbolic_meaning} c={c} />
+                      {!it.visual && !it.atmosphere && !it.lighting && (
+                        <div style={{ fontSize: 11, color: "#2e2e48", fontStyle: "italic" }}>장소 설계 단계에서 구체화</div>
+                      )}
+                    </div>
                   </div>
                 );
               };
+
+              // ── 소품 카드 ──
+              const PropAssetCard = ({ it }: { it: Record<string,string> }) => {
+                const c = "#e879f9";
+                return (
+                  <div style={{ background: "#0f0f1c", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${c}20` }}>
+                    <div style={{ background: `linear-gradient(90deg,${c}10,transparent)`, borderBottom: `1px solid ${c}15`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: `${c}15`, border: `1px solid ${c}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>🎒</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9" }}>{it.name}</div>
+                        <div style={{ display: "flex", gap: 5, marginTop: 3, flexWrap: "wrap" as const }}>
+                          {it.type && <span style={{ fontSize: 10, color: c, background: `${c}12`, padding: "1px 7px", borderRadius: 99 }}>{it.type}</span>}
+                          {it.owner && <span style={{ fontSize: 10, color: "#64748b" }}>소유: {it.owner}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ padding: "8px 14px 10px" }}>
+                      <F label="시각" val={it.visual} c={c} />
+                      <F label="역할" val={it.story_role} c={c} />
+                      <F label="상징" val={it.symbolic_meaning} c={c} />
+                      {!it.visual && !it.story_role && (
+                        <div style={{ fontSize: 11, color: "#2e2e48", fontStyle: "italic" }}>소품 설계 단계에서 구체화</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              };
+
+              // 이름 기준 resolved 목록
+              const resolve = (names: string[], items: Record<string,string>[]) => {
+                const allNames = [...new Set([...names, ...items.map(it => it.name).filter(Boolean)])];
+                return allNames.map(n => items.find(it => it.name === n) ?? { name: n });
+              };
+              const chars   = resolve(editableAssets.characters, charData);
+              const locs    = resolve(editableAssets.locations,  locData);
+              const propRes = resolve(editableAssets.props,      propData);
 
               return (
                 <div>
-                  <Section label="캐릭터" color="#fb923c" items={charData} names={editableAssets.characters} />
-                  <Section label="장소" color="#a78bfa" items={locData} names={editableAssets.locations} />
-                  <Section label="소품·장비" color="#e879f9" items={propData} names={editableAssets.props} />
+                  {/* 등장인물 */}
+                  <SectionHead icon="👤" label="등장인물" color="#fb923c" count={chars.length} />
+                  {chars.length === 0
+                    ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
+                    : chars.map((it, i) => <CharAssetCard key={i} it={it} />)
+                  }
+                  {/* 장소 */}
+                  <SectionHead icon="🗺" label="장소" color="#a78bfa" count={locs.length} />
+                  {locs.length === 0
+                    ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
+                    : locs.map((it, i) => <LocAssetCard key={i} it={it} />)
+                  }
+                  {/* 소품 */}
+                  <SectionHead icon="🎒" label="소품·장비" color="#e879f9" count={propRes.length} />
+                  {propRes.length === 0
+                    ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
+                    : propRes.map((it, i) => <PropAssetCard key={i} it={it} />)
+                  }
                 </div>
               );
             })()}
