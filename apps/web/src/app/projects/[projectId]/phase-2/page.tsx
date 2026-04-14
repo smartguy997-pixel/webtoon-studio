@@ -647,25 +647,6 @@ interface SynopsisAssets {
   props: string[];
 }
 
-// ── 에셋 정제: characters에 섞인 장소·시대·개념 항목을 올바른 카테고리로 재분류 ──
-function sanitizeAssets(raw: SynopsisAssets): SynopsisAssets {
-  const LOC_KW   = /골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|층|마을|학교|병원|건물|식당|분식|카페|폐자장|공장|시장|역(?!\w)|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|가게|점포|센터|연구소|사무실|작업장|창고|지하|옥상|뒷골목|주택|빌딩|본부|기지|술집|주점|포장마차|편의점|노점/;
-  const TIME_KW  = /^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/;
-  const CONC_KW  = /의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/;
-
-  const isLoc    = (s: string) => LOC_KW.test(s);
-  const isTime   = (s: string) => TIME_KW.test(s);
-  const isConcept= (s: string) => CONC_KW.test(s);
-  const isChar   = (s: string) => !isLoc(s) && !isTime(s) && !isConcept(s);
-
-  // characters에서 장소처럼 생긴 것 → locations로, 나머지 비정상 → 제거
-  const promotedLocs = raw.characters.filter(c => isLoc(c));
-  const cleanChars   = raw.characters.filter(c => isChar(c));
-  const cleanLocs    = [...new Set([...raw.locations, ...promotedLocs])];
-
-  return { characters: cleanChars, locations: cleanLocs, props: raw.props };
-}
-
 // 에이전트 1명이 이전 토론을 읽고 반응하는 단일 역할 프롬프트
 function buildSingleAgentPrompt(
   stageId: StageId,
@@ -1748,7 +1729,13 @@ function StageReportInChat({
     switch (result.stageId) {
 
       case 1: { // 세계관 — 5개 프레임워크
-        const chars = arr(data.key_characters) as Record<string,string>[];
+        const _rawChars1 = arr(data.key_characters) as Record<string,string>[];
+        const chars = _rawChars1.filter(ch => {
+          const n = ch.name ?? "";
+          return !/골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|층|마을|학교|병원|건물|식당|분식|카페|폐자장|공장|시장|역(?!\w)|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|가게|점포|센터|연구소|사무실|작업장|창고|지하|옥상|뒷골목|주택|빌딩|본부|기지|술집|주점|포장마차|편의점|노점/.test(n)
+            && !/^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/.test(n)
+            && !/의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/.test(n);
+        });
         const locs  = arr(data.key_locations)  as Record<string,string>[];
         const hasStructured = data.era || data.core_space || data.power_hierarchy || data.theme || chars.length > 0;
         // raw_summary만 있으면 narrative 카드 렌더
@@ -1832,7 +1819,13 @@ function StageReportInChat({
         const protagonist  = data.protagonist as Record<string,string> | null ?? null;
         const storyArc     = data.story_arc   as Record<string,string> | null ?? null;
         const worldRules   = Array.isArray(data.world_rules) ? (data.world_rules as string[]) : [];
-        const chars        = arr(data.characters)  as Record<string,string>[];
+        const _rawChars2   = arr(data.characters)  as Record<string,string>[];
+        const chars        = _rawChars2.filter(ch => {
+          const n = ch.name ?? "";
+          return !/골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|층|마을|학교|병원|건물|식당|분식|카페|폐자장|공장|시장|역(?!\w)|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|가게|점포|센터|연구소|사무실|작업장|창고|지하|옥상|뒷골목|주택|빌딩|본부|기지|술집|주점|포장마차|편의점|노점/.test(n)
+            && !/^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/.test(n)
+            && !/의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/.test(n);
+        });
         const locs         = arr(data.locations)   as Record<string,string>[];
         const props2       = arr(data.props)        as Record<string,string>[];
         const keyScenes    = arr(data.key_scenes)   as Record<string,string>[];
@@ -2270,6 +2263,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [newCharInput, setNewCharInput] = useState("");
   const [newLocInput, setNewLocInput] = useState("");
   const [newPropInput, setNewPropInput] = useState("");
+  // 에셋 상세 모달
+  const [assetModal, setAssetModal] = useState<{ type: "char" | "loc" | "prop"; item: Record<string,string> } | null>(null);
 
   // ── 스타일 정의 State (Stage 2 완료 후 삽입) ──
   type StylePhase = "idle" | "debating" | "reviewing" | "generating" | "confirmed";
@@ -2349,7 +2344,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       // 에셋 리스트 복원
       const savedAssets = localStorage.getItem(`wts_asset_list_${projectId}`);
       if (savedAssets) {
-        const parsed = sanitizeAssets(JSON.parse(savedAssets) as SynopsisAssets);
+        const parsed = JSON.parse(savedAssets) as SynopsisAssets;
         synopsisAssetsRef.current = parsed;
         setEditableAssets(parsed);
         setAssetListPhase("confirmed");
@@ -3272,7 +3267,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const s1d = stageResultsRef.current.find(r => r.stageId === 1)?.data;
     const s2d = stageResultsRef.current.find(r => r.stageId === 2)?.data;
     setEditableAssets((prev: SynopsisAssets) => {
-      const raw: SynopsisAssets = {
+      const merged: SynopsisAssets = {
         characters: [...new Set([
           ...prev.characters,
           ...ns(s1d?.key_characters, "name"),
@@ -3290,7 +3285,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           ...(synopsisAssetsRef.current?.props ?? []),
         ])],
       };
-      return sanitizeAssets(raw);
+      return merged;
     });
     setAssetListPhase("reviewing");
 
@@ -4544,7 +4539,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         props: [...new Set([...ns(s5d?.props, "name")])],
       };
     };
-    const newAssets = sanitizeAssets(rebuildAssets(newResults));
+    const newAssets = rebuildAssets(newResults);
     setEditableAssets(() => {
       localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(newAssets));
       synopsisAssetsRef.current = newAssets;
@@ -4820,114 +4815,53 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               );
               const propData = (s5?.props as Record<string,string>[] | undefined) ?? [];
 
-              // ── 공통 필드 렌더 헬퍼 ──
-              const F = ({ label, val, c }: { label: string; val?: string; c: string }) =>
-                val ? <div style={{ fontSize: 11, color: "#8080a0", lineHeight: 1.55, marginBottom: 1 }}><span style={{ color: c, fontWeight: 700, marginRight: 5 }}>{label}</span>{val}</div> : null;
-
               // ── 섹션 헤더 ──
               const SectionHead = ({ icon, label, color, count }: { icon: string; label: string; color: string; count: number }) => (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 12px", paddingBottom: 8, borderBottom: `1px solid ${color}25` }}>
-                  <span style={{ fontSize: 16 }}>{icon}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 10px", paddingBottom: 8, borderBottom: `1px solid ${color}20` }}>
+                  <span style={{ fontSize: 15 }}>{icon}</span>
                   <span style={{ fontSize: 13, fontWeight: 800, color, letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{label}</span>
-                  <span style={{ fontSize: 11, color, background: `${color}18`, borderRadius: 99, padding: "1px 9px", fontWeight: 700 }}>{count}</span>
+                  <span style={{ fontSize: 11, color, background: `${color}15`, borderRadius: 99, padding: "1px 9px", fontWeight: 700 }}>{count}</span>
                 </div>
               );
 
-              // ── 캐릭터 카드 ──
-              const CharAssetCard = ({ it }: { it: Record<string,string> }) => {
-                const c = "#fb923c";
-                const initials = (it.name ?? "?").slice(0, 2);
+              // ── 컴팩트 카드 (클릭 → 모달) ──
+              const CompactCard = ({ it, color, type, icon }: { it: Record<string,string>; color: string; type: "char"|"loc"|"prop"; icon?: string }) => {
+                const preview = it.face || it.appearance || it.visual || it.personality || it.story_role || "";
+                const sub = type === "char"
+                  ? [it.gender, it.age, it.build].filter(Boolean).join(" · ")
+                  : type === "loc"
+                  ? it.location_type || it.type || ""
+                  : it.type || "";
                 return (
-                  <div style={{ background: "#0f0f1c", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${c}20` }}>
-                    {/* 헤더 */}
-                    <div style={{ background: `linear-gradient(90deg,${c}15,transparent)`, borderBottom: `1px solid ${c}15`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: "50%", background: `${c}20`, border: `2px solid ${c}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: c, flexShrink: 0 }}>{initials}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
-                          {it.name}
-                          {it.role && <span style={{ fontSize: 10, fontWeight: 700, color: c, background: `${c}18`, padding: "1px 7px", borderRadius: 99 }}>{it.role}</span>}
+                  <div onClick={() => setAssetModal({ type, item: it })} style={{
+                    background: "#0f0f1c", borderRadius: 10, overflow: "hidden", marginBottom: 8,
+                    border: `1px solid ${color}1e`, cursor: "pointer", transition: "border-color 0.2s",
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = `${color}50`)}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = `${color}1e`)}
+                  >
+                    <div style={{ padding: "9px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                      {type === "char" ? (
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${color}20`, border: `1.5px solid ${color}45`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color, flexShrink: 0 }}>
+                          {(it.name ?? "?").slice(0, 2)}
                         </div>
-                        {(it.age || it.gender) && (
-                          <div style={{ fontSize: 11, color: "#4a4a6a", marginTop: 2 }}>{[it.gender, it.age].filter(Boolean).join(" · ")}</div>
+                      ) : (
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}15`, border: `1px solid ${color}35`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>{it.name}</span>
+                          {it.role && <span style={{ fontSize: 10, color, background: `${color}15`, padding: "1px 6px", borderRadius: 99 }}>{it.role}</span>}
+                          {type !== "char" && sub && <span style={{ fontSize: 10, color: "#5a5a7a" }}>{sub}</span>}
+                        </div>
+                        {type === "char" && sub && <div style={{ fontSize: 11, color: "#4a4a6a", marginTop: 1 }}>{sub}</div>}
+                        {preview && (
+                          <div style={{ fontSize: 11, color: "#4a4a68", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, maxWidth: "100%" }}>
+                            {preview.slice(0, 60)}{preview.length > 60 ? "…" : ""}
+                          </div>
                         )}
                       </div>
-                    </div>
-                    {/* 신체 */}
-                    {(it.height || it.weight || it.build) && (
-                      <div style={{ padding: "8px 14px 0", borderBottom: "1px solid #1a1a28" }}>
-                        <div style={{ fontSize: 9, color: "#3a3a58", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 3 }}>신체</div>
-                        <div style={{ fontSize: 11, color: "#6060808", paddingBottom: 8 }}>{[it.height, it.weight, it.build].filter(Boolean).join(" · ")}</div>
-                      </div>
-                    )}
-                    {/* 세부 */}
-                    <div style={{ padding: "8px 14px 10px" }}>
-                      <F label="얼굴" val={it.face || it.appearance} c={c} />
-                      <F label="복장" val={it.outfit} c={c} />
-                      <F label="성격" val={it.personality} c={c} />
-                      <F label="동기" val={it.motivation} c={c} />
-                      <F label="관계" val={it.relation} c={c} />
-                      <F label="말투" val={it.speech} c={c} />
-                      {!it.face && !it.outfit && !it.personality && !it.motivation && !it.relation && (
-                        <div style={{ fontSize: 11, color: "#2e2e48", fontStyle: "italic" }}>캐릭터 설계 단계에서 구체화</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              };
-
-              // ── 장소 카드 ──
-              const LocAssetCard = ({ it }: { it: Record<string,string> }) => {
-                const c = "#a78bfa";
-                const locType = it.location_type || it.type || "";
-                const icon = /야외|거리|공원|산|바다|들판/.test(locType) ? "🌿" : /건물|빌딩|아파트|학교|병원|관청/.test(locType) ? "🏢" : "🏠";
-                return (
-                  <div style={{ background: "#0f0f1c", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${c}20` }}>
-                    <div style={{ background: `linear-gradient(90deg,${c}12,transparent)`, borderBottom: `1px solid ${c}15`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: `${c}18`, border: `1px solid ${c}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{icon}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9" }}>{it.name}</div>
-                        <div style={{ display: "flex", gap: 5, marginTop: 3, flexWrap: "wrap" as const }}>
-                          {locType && <span style={{ fontSize: 10, color: c, background: `${c}15`, padding: "1px 7px", borderRadius: 99 }}>{locType}</span>}
-                          {(it.role || it.significance) && <span style={{ fontSize: 10, color: "#64748b" }}>{it.role || it.significance}</span>}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ padding: "8px 14px 10px" }}>
-                      <F label="시각" val={it.visual} c={c} />
-                      <F label="조명" val={it.lighting} c={c} />
-                      <F label="분위기" val={it.atmosphere} c={c} />
-                      <F label="구조" val={it.architecture} c={c} />
-                      <F label="상징" val={it.symbolic_meaning} c={c} />
-                      {!it.visual && !it.atmosphere && !it.lighting && (
-                        <div style={{ fontSize: 11, color: "#2e2e48", fontStyle: "italic" }}>장소 설계 단계에서 구체화</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              };
-
-              // ── 소품 카드 ──
-              const PropAssetCard = ({ it }: { it: Record<string,string> }) => {
-                const c = "#e879f9";
-                return (
-                  <div style={{ background: "#0f0f1c", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${c}20` }}>
-                    <div style={{ background: `linear-gradient(90deg,${c}10,transparent)`, borderBottom: `1px solid ${c}15`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 8, background: `${c}15`, border: `1px solid ${c}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>🎒</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: "#f1f5f9" }}>{it.name}</div>
-                        <div style={{ display: "flex", gap: 5, marginTop: 3, flexWrap: "wrap" as const }}>
-                          {it.type && <span style={{ fontSize: 10, color: c, background: `${c}12`, padding: "1px 7px", borderRadius: 99 }}>{it.type}</span>}
-                          {it.owner && <span style={{ fontSize: 10, color: "#64748b" }}>소유: {it.owner}</span>}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ padding: "8px 14px 10px" }}>
-                      <F label="시각" val={it.visual} c={c} />
-                      <F label="역할" val={it.story_role} c={c} />
-                      <F label="상징" val={it.symbolic_meaning} c={c} />
-                      {!it.visual && !it.story_role && (
-                        <div style={{ fontSize: 11, color: "#2e2e48", fontStyle: "italic" }}>소품 설계 단계에서 구체화</div>
-                      )}
+                      <span style={{ fontSize: 11, color: "#2a2a40", flexShrink: 0 }}>›</span>
                     </div>
                   </div>
                 );
@@ -4948,19 +4882,23 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   <SectionHead icon="👤" label="등장인물" color="#fb923c" count={chars.length} />
                   {chars.length === 0
                     ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
-                    : chars.map((it, i) => <CharAssetCard key={i} it={it} />)
+                    : chars.map((it, i) => <CompactCard key={i} it={it} color="#fb923c" type="char" />)
                   }
                   {/* 장소 */}
                   <SectionHead icon="🗺" label="장소" color="#a78bfa" count={locs.length} />
                   {locs.length === 0
                     ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
-                    : locs.map((it, i) => <LocAssetCard key={i} it={it} />)
+                    : locs.map((it, i) => {
+                        const locType = it.location_type || it.type || "";
+                        const icon = /야외|거리|공원|산|바다/.test(locType) ? "🌿" : /건물|빌딩|학교|병원/.test(locType) ? "🏢" : "🏠";
+                        return <CompactCard key={i} it={it} color="#a78bfa" type="loc" icon={icon} />;
+                      })
                   }
                   {/* 소품 */}
                   <SectionHead icon="🎒" label="소품·장비" color="#e879f9" count={propRes.length} />
                   {propRes.length === 0
                     ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
-                    : propRes.map((it, i) => <PropAssetCard key={i} it={it} />)
+                    : propRes.map((it, i) => <CompactCard key={i} it={it} color="#e879f9" type="prop" icon="🎒" />)
                   }
                 </div>
               );
@@ -5078,7 +5016,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const coveredCount = stageAgendaItems.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
           const totalCount = stageAgendaItems.length;
 
-          // 항목 상태 — 완료/진행중/언급/미시작
+          // 항목 상태
           const itemStatus = (item: AgendaItem): "done" | "active" | "seen" | "none" => {
             if (coveredAgendaIds.includes(item.id)) return "done";
             const t = agendaTurnCounts[item.id] ?? 0;
@@ -5086,148 +5024,160 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             if (t > 0) return "seen";
             return "none";
           };
-          const dotBg: Record<string, string>  = { done: "#34d399", active: "#7c6cfc", seen: "#3d3d60", none: "#18182a" };
-          const dotBdr: Record<string, string> = { done: "rgba(52,211,153,0.5)", active: "rgba(124,108,252,0.5)", seen: "rgba(61,61,96,0.7)", none: "rgba(255,255,255,0.04)" };
-          const textCol: Record<string, string> = { done: "#34d399", active: "#a5b4fc", seen: "#3d3d60", none: "#252540" };
+          const statusColor: Record<string, string> = {
+            done: "#34d399", active: "#7c6cfc", seen: "#3d3d60", none: "#1a1a2e",
+          };
+          const statusBorder: Record<string, string> = {
+            done: "rgba(52,211,153,0.5)", active: "rgba(124,108,252,0.5)", seen: "rgba(61,61,96,0.6)", none: "rgba(255,255,255,0.05)",
+          };
 
-          // 시놉시스 스텝 활성 여부
-          const isSynActive = (id: string) => isSynStep && (
-            (id === "step_learning" && synopsisStep === "learning") ||
-            (id === "step_persona"  && synopsisStep === "persona")  ||
-            (id === "step_logline"  && synopsisStep === "logline")  ||
-            (id === "step_synopsis" && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
-          );
-
-          // 그룹화: "이름 — 필드" 패턴이면 이름 기준으로 묶고, 없으면 항목 자체가 그룹
+          // "이름 — 필드" 패턴으로 그룹화
           const groupMap = new Map<string, AgendaItem[]>();
           for (const item of stageAgendaItems) {
             const dashIdx = item.label.indexOf(" — ");
-            const gk = dashIdx >= 0 ? item.label.slice(0, dashIdx) : item.id; // 플랫: 항목 id가 그룹 키
+            const gk = dashIdx >= 0 ? item.label.slice(0, dashIdx) : "__flat__";
             if (!groupMap.has(gk)) groupMap.set(gk, []);
             groupMap.get(gk)!.push(item);
           }
-          // sub-field가 있는 그룹 = 캐릭터/장소 모드
-          const hasSubFields = Array.from(groupMap.values()).some((items: AgendaItem[]) => items.length > 1);
-
-          // 그룹 헤더 레이블 (그룹키가 item.id면 item.label 사용)
-          const groupLabel = (gk: string, items: AgendaItem[]) =>
-            items.length === 1 && items[0].id === gk ? items[0].label : gk;
+          const isGrouped = !groupMap.has("__flat__") && groupMap.size > 0;
 
           return (
             <div style={{ background: "rgba(8,8,18,0.7)", borderBottom: "1px solid rgba(99,102,241,0.1)" }}>
 
-              {/* ── 요약 헤더: 엔티티/항목별 미니 진행바 ── */}
-              <div
-                onClick={() => setAgendaExpanded((v: boolean) => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 14px 6px", cursor: "pointer", userSelect: "none" }}
-              >
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc", flexShrink: 0 }}>
-                  {STAGES[currentStageIdx]?.name ?? "토론"}
-                </span>
-
-                {/* 카드별 미니 진행바 */}
-                <div style={{ display: "flex", gap: 6, flex: 1, alignItems: "center", overflowX: "auto", minWidth: 0 }}>
-                  {Array.from(groupMap.entries()).map(([gk, items]) => {
-                    const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
-                    const pct  = items.length > 0 ? (done / items.length) * 100 : 0;
-                    const allDone = done === items.length;
-                    const synAct = !hasSubFields && isSynActive(gk);
-                    const lbl = groupLabel(gk, items);
-                    return (
-                      <div key={gk} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                        <span style={{
-                          fontSize: 10, whiteSpace: "nowrap" as const, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis",
-                          color: allDone ? "#34d399" : synAct ? "#6ee7b7" : "#5a5a7a",
-                          fontWeight: allDone || synAct ? 700 : 400,
-                        }}>
-                          {allDone ? "✓" : synAct ? "▶" : ""}{lbl}
-                        </span>
-                        {hasSubFields && (
-                          <div style={{ width: 36, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.05)", overflow: "hidden", flexShrink: 0 }}>
-                            <div style={{ height: "100%", borderRadius: 99, transition: "width 0.4s",
-                              background: allDone ? "#34d399" : pct > 0 ? "#7c6cfc" : "transparent",
-                              width: `${pct}%` }} />
+              {isGrouped ? (
+                /* ━━━ 그룹 모드 (캐릭터·장소별) ━━━ */
+                <>
+                  {/* 요약 헤더 — 클릭으로 카드 펼침 */}
+                  <div
+                    onClick={() => setAgendaExpanded((v: boolean) => !v)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 14px", cursor: "pointer", userSelect: "none" }}
+                  >
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc" }}>
+                      {STAGES[currentStageIdx]?.name ?? "토론"}
+                    </span>
+                    {/* 엔티티별 미니 진행바 */}
+                    <div style={{ display: "flex", gap: 5, flex: 1, alignItems: "center", overflowX: "auto" }}>
+                      {Array.from(groupMap.entries()).map(([gk, items]) => {
+                        const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
+                        const pct = items.length > 0 ? (done / items.length) * 100 : 0;
+                        const allDone = done === items.length;
+                        return (
+                          <div key={gk} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                            <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#6b6b9a", fontWeight: allDone ? 700 : 400, whiteSpace: "nowrap" as const }}>
+                              {allDone ? "✓ " : ""}{gk}
+                            </span>
+                            <div style={{ width: 40, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0 }}>
+                              <div style={{
+                                height: "100%", borderRadius: 99, transition: "width 0.4s",
+                                background: allDone ? "#34d399" : pct > 0 ? "#7c6cfc" : "transparent",
+                                width: `${pct}%`,
+                              }} />
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                    <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#4a4a6a", fontWeight: 700, flexShrink: 0 }}>
+                      {coveredCount}/{totalCount}
+                    </span>
+                    <span style={{ fontSize: 9, color: "#2e2e4a", flexShrink: 0 }}>{agendaExpanded ? "▲" : "▼"}</span>
+                  </div>
 
-                <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#3a3a5a", fontWeight: 700, flexShrink: 0 }}>
-                  {coveredCount}/{totalCount}
-                </span>
-                <span style={{ fontSize: 9, color: "#252540", flexShrink: 0 }}>{agendaExpanded ? "▲" : "▼"}</span>
-              </div>
-
-              {/* ── 펼침: 카드 목록 ── */}
-              {agendaExpanded && (
-                <div style={{ display: "flex", gap: 8, padding: "0 14px 10px", overflowX: "auto" }}>
-                  {Array.from(groupMap.entries()).map(([gk, items]) => {
-                    const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
-                    const allDone = done === items.length;
-                    const isSingle = items.length === 1;
-                    const singleItem = isSingle ? items[0] : null;
-                    const singleSt = singleItem ? itemStatus(singleItem) : "none";
-                    const synAct = isSingle && isSynActive(gk);
-                    const cardSt = synAct ? "active" : (allDone ? "done" : (done > 0 ? "active" : "none"));
-                    const lbl = groupLabel(gk, items);
-
-                    return (
-                      <div key={gk} style={{
-                        flexShrink: 0,
-                        minWidth: isSingle ? 100 : 130,
-                        borderRadius: 10, overflow: "hidden",
-                        border: `1px solid ${allDone ? "rgba(52,211,153,0.25)" : synAct ? "rgba(52,211,153,0.2)" : "rgba(99,102,241,0.16)"}`,
-                        background: allDone ? "rgba(52,211,153,0.05)" : synAct ? "rgba(52,211,153,0.03)" : "rgba(16,16,28,0.85)",
-                      }}>
-                        {/* 카드 헤더 */}
-                        <div style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          padding: isSingle ? "8px 10px" : "6px 10px 5px",
-                          background: allDone ? "rgba(52,211,153,0.07)" : synAct ? "rgba(52,211,153,0.04)" : "rgba(99,102,241,0.06)",
-                          borderBottom: isSingle ? "none" : `1px solid ${allDone ? "rgba(52,211,153,0.12)" : "rgba(99,102,241,0.1)"}`,
-                        }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            {isSingle && (
-                              <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, transition: "background 0.3s",
-                                background: synAct ? "#34d399" : dotBg[singleSt],
-                                border: `1px solid ${synAct ? "rgba(52,211,153,0.6)" : dotBdr[singleSt]}` }} />
-                            )}
-                            <span style={{
-                              fontSize: 11, fontWeight: 700,
-                              color: allDone ? "#34d399" : synAct ? "#6ee7b7" : cardSt === "active" ? "#a5b4fc" : "#9090b0",
-                            }}>{synAct ? "▶ " : ""}{lbl}</span>
+                  {/* 펼침: 엔티티별 필드 카드 */}
+                  {agendaExpanded && (
+                    <div style={{ display: "flex", gap: 8, padding: "0 14px 10px", overflowX: "auto" }}>
+                      {Array.from(groupMap.entries()).map(([gk, items]) => {
+                        const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
+                        const allDone = done === items.length;
+                        return (
+                          <div key={gk} style={{
+                            flexShrink: 0, minWidth: 130,
+                            borderRadius: 10, overflow: "hidden",
+                            border: `1px solid ${allDone ? "rgba(52,211,153,0.25)" : "rgba(99,102,241,0.18)"}`,
+                            background: allDone ? "rgba(52,211,153,0.05)" : "rgba(18,18,32,0.8)",
+                          }}>
+                            {/* 카드 헤더 */}
+                            <div style={{
+                              display: "flex", alignItems: "center", justifyContent: "space-between",
+                              padding: "7px 10px 5px",
+                              background: allDone ? "rgba(52,211,153,0.08)" : "rgba(99,102,241,0.07)",
+                              borderBottom: `1px solid ${allDone ? "rgba(52,211,153,0.15)" : "rgba(99,102,241,0.12)"}`,
+                            }}>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: allDone ? "#34d399" : "#c4c4e8" }}>{gk}</span>
+                              <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#4a4a6a" }}>{done}/{items.length}</span>
+                            </div>
+                            {/* 필드 목록 */}
+                            <div style={{ padding: "6px 8px", display: "flex", flexDirection: "column" as const, gap: 3 }}>
+                              {items.map((item: AgendaItem) => {
+                                const st = itemStatus(item);
+                                const subLabel = item.label.includes(" — ") ? item.label.split(" — ")[1] : item.label;
+                                return (
+                                  <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                    <div style={{
+                                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                                      background: statusColor[st],
+                                      border: `1px solid ${statusBorder[st]}`,
+                                      transition: "background 0.3s",
+                                    }} />
+                                    <span style={{
+                                      fontSize: 10,
+                                      color: st === "done" ? "#34d399" : st === "active" ? "#a5b4fc" : st === "seen" ? "#3d3d60" : "#2a2a40",
+                                      fontWeight: st === "done" ? 700 : 400,
+                                    }}>{subLabel}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                          {!isSingle && (
-                            <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#3a3a5a" }}>{done}/{items.length}</span>
-                          )}
-                        </div>
-                        {/* 서브 필드 목록 (그룹형만) */}
-                        {!isSingle && (
-                          <div style={{ padding: "6px 10px 7px", display: "flex", flexDirection: "column" as const, gap: 4 }}>
-                            {items.map((item: AgendaItem) => {
-                              const st = itemStatus(item);
-                              const subLbl = item.label.includes(" — ") ? item.label.split(" — ")[1] : item.label;
-                              return (
-                                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, transition: "background 0.3s",
-                                    background: dotBg[st], border: `1px solid ${dotBdr[st]}` }} />
-                                  <span style={{ fontSize: 10, color: textCol[st], fontWeight: st === "done" ? 700 : 400 }}>
-                                    {subLbl}
-                                  </span>
-                                </div>
-                              );
-                            })}
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* ━━━ 플랫 모드 (스테이지 1·2) ━━━ */
+                <>
+                  <div
+                    onClick={() => setAgendaExpanded((v: boolean) => !v)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", cursor: "pointer", userSelect: "none" }}
+                  >
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc" }}>{STAGES[currentStageIdx]?.name ?? "토론"}</span>
+                    <div style={{ flex: 1, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", borderRadius: 99, background: coveredCount === totalCount ? "#34d399" : "#7c6cfc",
+                        width: totalCount > 0 ? `${(coveredCount / totalCount) * 100}%` : "0%", transition: "width 0.4s" }} />
+                    </div>
+                    <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#4a4a6a", fontWeight: 700 }}>{coveredCount}/{totalCount}</span>
+                    <span style={{ fontSize: 9, color: "#2e2e4a" }}>{agendaExpanded ? "▲" : "▼"}</span>
+                  </div>
+                  {agendaExpanded && (
+                    <div style={{ display: "flex", gap: 4, padding: "0 14px 8px", flexWrap: "wrap" as const }}>
+                      {stageAgendaItems.map((item: AgendaItem) => {
+                        const st = itemStatus(item);
+                        const isActive = isSynStep && (
+                          (item.id === "step_learning" && synopsisStep === "learning") ||
+                          (item.id === "step_persona"  && synopsisStep === "persona") ||
+                          (item.id === "step_logline"  && synopsisStep === "logline") ||
+                          (item.id === "step_synopsis" && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
+                        );
+                        return (
+                          <div key={item.id} style={{
+                            display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 99, fontSize: 10,
+                            background: st === "done" ? "rgba(52,211,153,0.1)" : isActive ? "rgba(52,211,153,0.06)" : st === "active" ? "rgba(124,108,252,0.1)" : "rgba(255,255,255,0.02)",
+                            border: `1px solid ${st === "done" ? "rgba(52,211,153,0.3)" : isActive ? "rgba(52,211,153,0.2)" : st === "active" ? "rgba(124,108,252,0.3)" : "rgba(255,255,255,0.05)"}`,
+                            color: st === "done" ? "#34d399" : isActive ? "#6ee7b7" : st === "active" ? "#a5b4fc" : "#2a2a40",
+                            fontWeight: st === "done" || isActive ? 700 : 400,
+                          }}>
+                            <span style={{ fontSize: 8 }}>{st === "done" ? "✓" : isActive ? "▶" : "·"}</span>
+                            <span>{item.label}</span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
 
-              {/* 블랙리스트 태그 */}
+              {/* 블랙리스트 태그 — 항상 표시 */}
               {rejectedItems.length > 0 && (
                 <div style={{ display: "flex", gap: 4, padding: "0 14px 6px", flexWrap: "wrap" as const }}>
                   {rejectedItems.map((w: string) => (
@@ -5958,6 +5908,119 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           </>)}
         </div>
       </div>
+
+      {/* ── 에셋 모달 오버레이 ─────────────────────────────────────────────── */}
+      {assetModal && (() => {
+        const { type, item } = assetModal;
+        const color = type === "char" ? "#fb923c" : type === "loc" ? "#a78bfa" : "#e879f9";
+        const typeLabel = type === "char" ? "등장인물" : type === "loc" ? "장소" : "소품·장비";
+
+        const MField = ({ label, val }: { label: string; val?: string }) =>
+          val ? (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 13, color: "#d4dce8", lineHeight: 1.7 }}>{val}</div>
+            </div>
+          ) : null;
+
+        const charFields: [string, string][] = [
+          ["외형·얼굴", item.face ?? item.appearance ?? ""],
+          ["성별", item.gender ?? ""],
+          ["나이", item.age ?? ""],
+          ["체형", item.build ?? ""],
+          ["헤어", item.hair ?? ""],
+          ["패션", item.fashion ?? ""],
+          ["성격", item.personality ?? ""],
+          ["역할", item.role ?? ""],
+          ["목표", item.goal ?? item.want ?? ""],
+          ["내면의 상처", item.wound ?? item.backstory ?? ""],
+          ["말투", item.speech_style ?? ""],
+          ["관계", item.relation ?? ""],
+          ["서사적 역할", item.story_role ?? ""],
+        ];
+        const locFields: [string, string][] = [
+          ["유형", item.location_type ?? item.type ?? ""],
+          ["시각 묘사", item.visual ?? item.appearance ?? ""],
+          ["조명", item.lighting ?? ""],
+          ["색채", item.color_palette ?? ""],
+          ["분위기", item.atmosphere ?? ""],
+          ["공간 구조", item.architecture ?? ""],
+          ["소리·냄새", item.sound ?? ""],
+          ["서사적 의미", item.significance ?? item.role ?? ""],
+          ["상징", item.symbolic_meaning ?? ""],
+        ];
+        const propFields: [string, string][] = [
+          ["유형", item.type ?? ""],
+          ["시각 묘사", item.visual ?? item.appearance ?? ""],
+          ["서사적 역할", item.story_role ?? item.significance ?? item.role ?? ""],
+          ["소유자", item.owner ?? ""],
+        ];
+        const fields = type === "char" ? charFields : type === "loc" ? locFields : propFields;
+
+        return (
+          <div
+            onClick={() => setAssetModal(null)}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: "#0d0d1b", border: `1px solid ${color}35`, borderRadius: 16,
+                width: "100%", maxWidth: 520, maxHeight: "80vh", overflow: "hidden",
+                display: "flex", flexDirection: "column",
+              }}
+            >
+              {/* 헤더 */}
+              <div style={{
+                padding: "16px 20px", background: `${color}10`, borderBottom: `1px solid ${color}25`,
+                display: "flex", alignItems: "center", gap: 12,
+              }}>
+                {type === "char" ? (
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: `${color}25`, border: `2px solid ${color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color, flexShrink: 0 }}>
+                    {(item.name ?? "?").slice(0, 2)}
+                  </div>
+                ) : (
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: `${color}20`, border: `1px solid ${color}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                    {type === "loc" ? "🗺" : "🎒"}
+                  </div>
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 2 }}>{typeLabel}</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#f1f5f9" }}>{item.name}</div>
+                  {item.role && <div style={{ fontSize: 11, color: `${color}bb`, marginTop: 1 }}>{item.role}</div>}
+                </div>
+                <button
+                  onClick={() => setAssetModal(null)}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}
+                >✕</button>
+              </div>
+
+              {/* 바디 */}
+              <div style={{ padding: "18px 20px", overflowY: "auto", flex: 1 }}>
+                {fields.map(([label, val]) =>
+                  val ? <MField key={label} label={label} val={val} /> : null
+                )}
+                {/* Runway 프롬프트 복사 */}
+                {item.image_prompt && (
+                  <div style={{ marginTop: 8, background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, fontWeight: 800, color, textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 4 }}>Runway 프롬프트</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.55, fontFamily: "monospace" }}>{item.image_prompt}</div>
+                    </div>
+                    <button
+                      onClick={() => void navigator.clipboard.writeText(item.image_prompt ?? "")}
+                      style={{ background: `${color}18`, border: `1px solid ${color}35`, borderRadius: 6, color, fontSize: 10, fontWeight: 700, padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+                    >복사</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
