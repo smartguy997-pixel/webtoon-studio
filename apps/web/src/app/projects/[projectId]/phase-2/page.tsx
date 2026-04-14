@@ -2705,6 +2705,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           } else if (pendingDebateStartRef.current !== null) {
             // pendingDebateStart가 있으면 auto-start effect가 즉시 토론 시작 — confirmed 렌더 스킵
             setDebatePhase("idle");
+          } else if (pendingResumeRef.current !== null) {
+            // pendingResume(이어서 토론)도 마찬가지 — confirmed 렌더 없이 바로 재개
+            setDebatePhase("idle");
           } else {
             // 진행 중인 토론이 저장되어 있으면 "이어하기" 상태로
             const savedConv = localStorage.getItem(`p2_conv_${idx}_${projectId}`);
