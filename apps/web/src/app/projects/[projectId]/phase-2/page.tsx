@@ -2030,13 +2030,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
 
   // ── 시놉시스 4단계 워크플로우 State ──
-  type SynopsisStep = "idle" | "learning" | "persona" | "logline" | "completing";
+  type SynopsisStep = "idle" | "learning" | "persona" | "logline" | "completing" | "completing_wait";
   const [synopsisStep, setSynopsisStep] = useState<SynopsisStep>("idle");
   const [synopsisLoglines, setSynopsisLoglines] = useState<string[]>([]);
   const [selectedLogline, setSelectedLogline] = useState<string>("");
+  const [step4CountDown, setStep4CountDown] = useState(0); // Step 4 대기 카운트다운 (초)
   const synopsisStepRef = useRef<SynopsisStep>("idle");
   // logline 선택을 기다리는 Promise resolver
   const loglineResolverRef = useRef<((logline: string) => void) | null>(null);
+  // Step 4 "다음 에이전트" 수동 진행 resolver
+  const step4ProceedRef = useRef<(() => void) | null>(null);
 
   // ── 에셋 리스트 단계 State (Stage 2 완료 후 스타일 전 삽입) ──
   type AssetListPhase = "idle" | "reviewing" | "confirmed";
@@ -2632,23 +2635,54 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           { agent: "editor"      as AgentId, prompt: `${histText()}솔직히 말해봐 — 이 시놉시스에서 진부하거나 식상한 부분이 어디야? 그리고 어떻게 신선하게 바꿀 수 있어? 2~3문장.` },
         ];
 
-        for (const { agent, prompt } of synopsisTopics) {
+        const STEP4_WAIT_SEC = 30; // 사용자 개입 대기 시간 (초)
+        for (let ti = 0; ti < synopsisTopics.length; ti++) {
           if (abortRef.current) break;
-          // 사용자 입력 폴링 (6초)
-          const ws = Date.now();
-          while (Date.now() - ws < 6000) {
-            if (abortRef.current || pendingUserMsgRef.current) break;
-            await sleep(200);
+          const { agent, prompt } = synopsisTopics[ti];
+
+          // ─ 첫 번째 턴 이후만 사용자 개입 대기 ─
+          if (ti > 0) {
+            // completing_wait 상태: "다음 에이전트 →" 버튼 + 카운트다운 표시
+            synopsisStepRef.current = "completing_wait";
+            setSynopsisStep("completing_wait");
+
+            // 30초 카운트다운 + 사용자 proceed 대기
+            const proceeded = await new Promise<string | null>((resolve) => {
+              step4ProceedRef.current = () => resolve(null); // 버튼 클릭 → null
+              let remaining = STEP4_WAIT_SEC;
+              setStep4CountDown(remaining);
+              const timer = setInterval(() => {
+                if (abortRef.current) { clearInterval(timer); step4ProceedRef.current = null; resolve(null); return; }
+                // 사용자 메시지 확인
+                const um = pendingUserMsgRef.current;
+                if (um) {
+                  clearInterval(timer);
+                  pendingUserMsgRef.current = null;
+                  step4ProceedRef.current = null;
+                  setStep4CountDown(0);
+                  resolve(um);
+                  return;
+                }
+                remaining--;
+                setStep4CountDown(remaining);
+                if (remaining <= 0) { clearInterval(timer); step4ProceedRef.current = null; setStep4CountDown(0); resolve(null); }
+              }, 1000);
+            });
+
+            synopsisStepRef.current = "completing";
+            setSynopsisStep("completing");
+
+            // 사용자 메시지가 있으면 에이전트에게 전달
+            if (proceeded && !abortRef.current) {
+              transcript.push(`[사용자]: ${proceeded}`);
+              convRef.current = transcript;
+              await runSingleAgent("scenario",
+                `${histText()}사용자가 "${proceeded}" 라고 했어. 이 의견을 충분히 반영해서 시놉시스 논의를 이어가줘.`,
+                300);
+            }
           }
-          const pendingMsg2 = pendingUserMsgRef.current;
-          if (pendingMsg2) {
-            pendingUserMsgRef.current = null;
-            transcript.push(`[사용자]: ${pendingMsg2}`);
-            convRef.current = transcript;
-            await runSingleAgent("scenario",
-              `${histText()}사용자가 "${pendingMsg2}" 라고 했어. 이 의견을 충분히 반영해서 시놉시스 논의를 이어가줘.`,
-              300);
-          }
+
+          if (abortRef.current) break;
           await runSingleAgent(agent, prompt, 400);
         }
         if (abortRef.current) throw new Error("abort");
@@ -4127,6 +4161,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       } else if (assetListPhase === "confirmed" && stylePhase === "idle") {
         setStylePhase("debating");
         void runStyleDebate();
+      } else if (assetListPhase === "confirmed" && stylePhase === "confirmed") {
+        // 에셋 + 스타일 이미 완료 (페이지 재로드 등) → 바로 캐릭터 설정 토론 시작
+        setCurrentStageIdx(2);
+        setDebatePhase("idle");
+        void runDebate(2);
       }
       return;
     }
@@ -4304,6 +4343,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     // synopsis step 초기화
     synopsisStepRef.current = "idle";
     loglineResolverRef.current = null;
+    step4ProceedRef.current = null;
     setMsgs([]);
     setStageResults(keptResults);
     setStageHistoryMsgs(keptHistory);
@@ -4311,6 +4351,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setSynopsisStep("idle");
     setSynopsisLoglines([]);
     setSelectedLogline("");
+    setStep4CountDown(0);
     setDebatePhase("idle");
   }, [projectId, currentStageIdx, stageHistoryMsgs]);
 
@@ -4659,7 +4700,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   (item.id === "step_learning"  && synopsisStep === "learning") ||
                   (item.id === "step_persona"   && synopsisStep === "persona") ||
                   (item.id === "step_logline"   && synopsisStep === "logline") ||
-                  (item.id === "step_synopsis"  && synopsisStep === "completing")
+                  (item.id === "step_synopsis"  && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
                 );
                 return (
                   <div key={item.id} style={{
@@ -4767,6 +4808,31 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               </div>
               <div style={{ marginTop:12, fontSize:11, color:"#4a5568" }}>
                 또는 채팅창에 직접 로그라인을 입력해도 됩니다
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 4 사용자 개입 대기 UI ── */}
+          {synopsisStep === "completing_wait" && (
+            <div style={{ margin:"12px 0", background:"#0e0e1a", border:"1px solid rgba(124,108,252,0.3)", borderRadius:14, padding:"16px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                <div>
+                  <div style={{ fontSize:12, fontWeight:800, color:"#a5b4fc", letterSpacing:"0.06em", marginBottom:4 }}>
+                    💬 의견이 있으면 지금 입력하세요
+                  </div>
+                  <div style={{ fontSize:11, color:"#64748b" }}>
+                    채팅창에 입력하거나 {step4CountDown > 0 ? `${step4CountDown}초 후` : "지금"} 다음 에이전트로 자동 진행됩니다
+                  </div>
+                </div>
+                <button
+                  onClick={() => { if (step4ProceedRef.current) { step4ProceedRef.current(); step4ProceedRef.current = null; } }}
+                  style={{
+                    flexShrink:0, background:"linear-gradient(135deg,#7c6cfc,#a78bfa)",
+                    border:"none", borderRadius:10, color:"#fff", fontSize:13, fontWeight:700,
+                    padding:"10px 20px", cursor:"pointer", whiteSpace:"nowrap" as const,
+                  }}>
+                  다음 에이전트 → {step4CountDown > 0 ? `(${step4CountDown})` : ""}
+                </button>
               </div>
             </div>
           )}
