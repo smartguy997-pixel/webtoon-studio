@@ -3026,29 +3026,51 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         Date.now() - waitDedup < 60000
       ) { await sleep(200); }
       const msgId = addMsg(agentId, "", true);
-      let text = "";
-      try {
-        for await (const chunk of streamClaude({
-          apiKey: key,
-          model: debateModel,
-          systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current, p1DataRef.current, rejectedItemsRef.current, synopsisAssetsRef.current),
-          messages: [{ role: "user", content: userContent }],
-          maxTokens: tokens,
-          tools: [],
-        })) {
-          if (abortRef.current) break;
-          text += chunk;
-          // 실시간 스트리밍: 청크가 올 때마다 즉시 UI 업데이트
-          updateMsg(msgId, text, true);
+      let fullText = "";
+      let apiDone = false;
+      let fetchError: string | null = null;
+
+      // 백그라운드에서 API 패치 (버퍼 채우기)
+      void (async () => {
+        try {
+          for await (const chunk of streamClaude({
+            apiKey: key,
+            model: debateModel,
+            systemPrompt: buildSingleAgentPrompt(stage.id, genre, agentId, stageResultsRef.current, p1DataRef.current, rejectedItemsRef.current, synopsisAssetsRef.current),
+            messages: [{ role: "user", content: userContent }],
+            maxTokens: tokens,
+            tools: [],
+          })) {
+            if (abortRef.current) break;
+            fullText += chunk;
+          }
+        } catch (err) {
+          fetchError = err instanceof Error ? err.message : String(err);
         }
-      } catch (err) {
+        apiDone = true;
+      })();
+
+      // 타이핑 효과: 버퍼를 2자씩 100ms 속도로 소비 (자연스러운 읽기 속도)
+      const CHARS = 2; const TICK = 100;
+      let displayed = 0;
+      while (true) {
+        if (abortRef.current) break;
+        if (apiDone && displayed >= fullText.length) break;
+        if (displayed < fullText.length) {
+          displayed = Math.min(displayed + CHARS, fullText.length);
+          updateMsg(msgId, fullText.slice(0, displayed), true);
+        }
+        await sleep(TICK);
+      }
+
+      // 오류 처리
+      if (fetchError) {
         setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId));
-        const raw = err instanceof Error ? err.message : String(err);
-        if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
+        if (!fetchError.includes("abort") && !abortRef.current) setApiError(`API 오류: ${fetchError}`);
         return;
       }
-      // 스트리밍 완료 후 마크다운 클린업 적용
-      const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
+      // 완료 후 마크다운 클린업 적용
+      const clean = fullText.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
       if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); return; }
       updateMsg(msgId, clean, false);
       transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
