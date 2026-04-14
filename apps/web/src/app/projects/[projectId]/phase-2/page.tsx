@@ -3050,8 +3050,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         apiDone = true;
       })();
 
-      // 타이핑 효과: 버퍼를 2자씩 100ms 속도로 소비 (자연스러운 읽기 속도)
-      const CHARS = 2; const TICK = 100;
+      // 타이핑 효과: 버퍼를 1자씩 100ms 속도로 소비 (자연스러운 읽기 속도)
+      const CHARS = 1; const TICK = 100;
       let displayed = 0;
       while (true) {
         if (abortRef.current) break;
