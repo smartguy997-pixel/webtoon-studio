@@ -3425,47 +3425,106 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }, [genre, addMsg, updateMsg, projectId]);
 
-  // ── Asset List Review: 에셋 목록 확인 (Stage 2 완료 후, 스타일 전) ──
+  // ── Asset List Review: Claude가 직접 분류·정제 (Stage 2 완료 후) ──
   const runAssetListReview = useCallback(async () => {
-    // stageResults에서 직접 등장인물·장소 재빌드 (최신 상태 보장)
-    const ns = (arr: unknown, key: string): string[] =>
-      Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
-    const s1d = stageResultsRef.current.find(r => r.stageId === 1)?.data;
-    const s2d = stageResultsRef.current.find(r => r.stageId === 2)?.data;
-    setEditableAssets((prev: SynopsisAssets) => {
-      const merged: SynopsisAssets = {
-        characters: [...new Set([
-          ...prev.characters,
-          ...ns(s1d?.key_characters, "name").filter(isRealCharacter),
-          ...ns(s2d?.characters,     "name").filter(isRealCharacter),
-          ...(synopsisAssetsRef.current?.characters ?? []).filter(isRealCharacter),
-        ])],
-        locations: [...new Set([
-          ...prev.locations,
-          ...ns(s1d?.key_locations, "name"),
-          ...ns(s2d?.locations,     "name"),
-          ...(synopsisAssetsRef.current?.locations ?? []),
-        ])],
-        props: [...new Set([
-          ...prev.props,
-          ...(synopsisAssetsRef.current?.props ?? []),
-        ])],
-      };
-      return merged;
-    });
     setAssetListPhase("reviewing");
-
-    // Producer announces the asset list review
     setMsgs([]);
     convRef.current = [];
-    const msgId = addMsg("producer", "", true);
-    const text = "시놉시스에서 에셋 목록을 뽑았어. 등장인물/장소/소품 세 파트로 나눴어. 빠진 거 있으면 추가하고, 불필요한 거 있으면 × 눌러서 제거해줘.";
+
+    const apiKey = getAnthropicKey();
+    const s1d = stageResultsRef.current.find(r => r.stageId === 1)?.data;
+    const s2d = stageResultsRef.current.find(r => r.stageId === 2)?.data;
+    const s1sum = stageResultsRef.current.find(r => r.stageId === 1)?.summary ?? "";
+    const s2sum = stageResultsRef.current.find(r => r.stageId === 2)?.summary ?? "";
+
+    const msgId = addMsg("producer", "에셋 목록 분류 중...", true);
+
+    // Claude가 세계관+시놉시스 데이터에서 실제 인물/장소/소품만 추출·정제
+    let extracted: SynopsisAssets = { characters: [], locations: [], props: [] };
+
+    if (apiKey) {
+      const raw = JSON.stringify({ stage1: s1d, stage2: s2d });
+      const ctx = [s1sum, s2sum].filter(Boolean).join("\n\n");
+      let jsonText = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey,
+          model: "claude-sonnet-4-6",
+          systemPrompt:
+            "웹툰 기획 에셋 분류 전문가. 주어진 데이터에서 실제 인물·장소·소품을 정확하게 추출·분류한다. " +
+            "반드시 JSON만 출력. 설명·마크다운 없이.",
+          messages: [{
+            role: "user",
+            content:
+              `아래 세계관·시놉시스 데이터에서 이미지 생성에 필요한 에셋을 분류해줘.\n\n` +
+              `[요약]\n${ctx}\n\n[원본 JSON]\n${raw.slice(0, 6000)}\n\n` +
+              `규칙:\n` +
+              `- characters: 실제 개인 인물(이름이 있는 사람·존재)만. 사회계층(최상층/중산층 등), 조직명, 인용구, 서술문, 목표설명, 추상개념 절대 포함 금지\n` +
+              `- locations: 실제 물리적 장소(거리명·건물명·지역명 등)만. 추상적 상태·이념·사회현상 금지\n` +
+              `- props: 이야기에서 중요한 소품·장비·아이템만. 없으면 빈 배열\n` +
+              `- 각 항목은 "이름만" (설명 없이, 짧게)\n` +
+              `- 중복 제거, 실제 등장하는 것만\n\n` +
+              `출력 형식 (JSON만):\n` +
+              `{"characters":["이름1","이름2"],"locations":["장소1","장소2"],"props":["소품1"]}`,
+          }],
+          maxTokens: 600,
+          tools: [],
+        })) { jsonText += chunk; }
+      } catch { /* fallback to regex filter */ }
+
+      const m = jsonText.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          const parsed = JSON.parse(m[0]) as { characters?: string[]; locations?: string[]; props?: string[] };
+          extracted = {
+            characters: (parsed.characters ?? []).filter(isRealCharacter),
+            locations:  (parsed.locations  ?? []),
+            props:      (parsed.props      ?? []),
+          };
+        } catch { /* ignore parse error */ }
+      }
+    }
+
+    // Claude 추출 결과가 없으면 기존 regex 필터 폴백
+    if (extracted.characters.length === 0 && extracted.locations.length === 0) {
+      const ns = (arr: unknown, key: string): string[] =>
+        Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
+      extracted = {
+        characters: [...new Set([
+          ...ns(s1d?.key_characters, "name").filter(isRealCharacter),
+          ...ns(s2d?.characters, "name").filter(isRealCharacter),
+        ])],
+        locations: [...new Set([
+          ...ns(s1d?.key_locations, "name"),
+          ...ns(s2d?.locations, "name"),
+        ])],
+        props: [],
+      };
+    }
+
+    // 기존 확정된 항목과 합산 (사용자가 이미 추가한 것 보존)
+    const prev = synopsisAssetsRef.current ?? { characters: [], locations: [], props: [] };
+    const merged: SynopsisAssets = {
+      characters: [...new Set([...extracted.characters, ...prev.characters.filter(isRealCharacter)])],
+      locations:  [...new Set([...extracted.locations,  ...prev.locations])],
+      props:      [...new Set([...extracted.props,      ...prev.props])],
+    };
+    synopsisAssetsRef.current = merged;
+    localStorage.setItem(`wts_asset_list_${projectId}`, JSON.stringify(merged));
+    setEditableAssets(merged);
+
+    // 프로듀서 공지
+    const charCount = merged.characters.length;
+    const locCount  = merged.locations.length;
+    const propCount = merged.props.length;
+    const text = `에셋 정리 완료. 등장인물 ${charCount}명, 장소 ${locCount}곳, 소품 ${propCount}개. 빠진 거 있으면 추가하고, 불필요한 건 × 눌러서 빼줘.`;
+    setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: "", streaming: true } : m));
     for (let i = 2; i < text.length; i += 2) {
-      await new Promise<void>(r => setTimeout(r, 80));
+      await new Promise<void>(r => setTimeout(r, 60));
       setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: text.slice(0, i), streaming: true } : m));
     }
     setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text, streaming: false } : m));
-  }, [addMsg]);
+  }, [addMsg, projectId]);
 
   // ── Style Definition: 스타일 토론 (Stage 2 완료 후) ──
   const runStyleDebate = useCallback(async () => {
