@@ -4686,6 +4686,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setImageRoundNum(1);
     setImageConcepts([]);
     imageConceptsRef.current = [];
+    imageDebateRunRef.current = false; // 이전 세션 guard stuck 방지
     setMsgs([]);
     convRef.current = [];
     void runPreGenDebate(items[0], undefined);
@@ -4874,6 +4875,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (stageIdx === 1) {
       setMsgs([]);
       convRef.current = [];
+      setDebatePhase("idle"); // StageReportInChat 숨김 — 다음 단계 UI가 제대로 보이도록
       if (assetListPhase === "idle") {
         // Start asset list review first
         void runAssetListReview();
@@ -4889,6 +4891,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
     // Stage 3/4/5(index=2/3/4) 완료 후 → 이미지 생성 단계 삽입
     if (stageIdx >= 2) {
+      setDebatePhase("idle"); // StageReportInChat 숨김
       enterImageGenPhase(stageIdx);
       return;
     }
