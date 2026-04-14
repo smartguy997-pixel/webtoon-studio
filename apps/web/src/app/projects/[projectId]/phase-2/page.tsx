@@ -647,6 +647,34 @@ interface SynopsisAssets {
   props: string[];
 }
 
+// ── 실제 인물 여부 판별 ────────────────────────────────────────────────────────
+// AI가 key_characters / characters 배열에 사회계층·조직·인용구·서술문 등을
+// 잘못 넣는 경우를 걸러낸다.
+function isRealCharacter(name: string): boolean {
+  if (!name || name.trim().length === 0) return false;
+  const n = name.trim();
+  // 너무 긴 이름 = 서술문 (실제 인물명은 대부분 20자 이내)
+  if (n.length > 22) return false;
+  // 인용구 (따옴표·낫표로 시작)
+  if (/^["'「『【'"]/.test(n)) return false;
+  // 목표·태스크 서술 (~것., ~것을, ~에 대한, ~접근.)
+  if (/것\.|것을\b|에 대한|에 관한|물리적 접근|기술을 보유/.test(n)) return false;
+  // 문장형 어미 (동사로 끝나는 서술문)
+  if (/(이다|다|했다|한다|된다|있다|없다|보유하고|저지른|감당하지|요청했다|봉인됐다|알려진|기록에)\s*\.?$/.test(n)) return false;
+  // 사회 계층 레이블 (최상충:, 중간층, 하층: 등)
+  if (/^(최상|상위|중상|중간|중하|하위|하층|상층|중층|최하|서민|귀족|노동|엘리트)/.test(n)) return false;
+  if (/(충|층)\s*:?\s*$/.test(n)) return false;
+  // 조직·단체·기관명 (개인 인물이 아님)
+  if (/(관리단|정보단|특수단|연구단|수사대|작전대|조직망|단체|기관|위원회|부대|집단|리단|보관단)/.test(n)) return false;
+  // 장소 키워드
+  if (/골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|마을|학교|병원|건물|식당|카페|공장|시장|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|센터|연구소|사무실|창고|지하|옥상|주택|빌딩|본부|기지|술집/.test(n)) return false;
+  // 시간 표현
+  if (/^\d{2,4}년|상반기|하반기|년대|세기|시절/.test(n)) return false;
+  // 추상 개념
+  if (/풍경|문화|계층|압박|규범|관습|금기|세계관|이념|역사|미디어|트렌드|가치관|분위기|구조|계급|체제|경제|정치/.test(n)) return false;
+  return true;
+}
+
 // 에이전트 1명이 이전 토론을 읽고 반응하는 단일 역할 프롬프트
 function buildSingleAgentPrompt(
   stageId: StageId,
@@ -2468,10 +2496,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         };
       }
 
-      // 에셋 리스트 복원
+      // 에셋 리스트 복원 (isRealCharacter 필터 재적용)
       const savedAssets = localStorage.getItem(`wts_asset_list_${projectId}`);
       if (savedAssets) {
-        const parsed = JSON.parse(savedAssets) as SynopsisAssets;
+        const raw = JSON.parse(savedAssets) as SynopsisAssets;
+        const parsed: SynopsisAssets = {
+          characters: raw.characters.filter(isRealCharacter),
+          locations: raw.locations,
+          props: raw.props,
+        };
         synopsisAssetsRef.current = parsed;
         setEditableAssets(parsed);
         setAssetListPhase("confirmed");
@@ -2649,8 +2682,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const prev = synopsisAssetsRef.current ?? { characters: [], locations: [], props: [] };
       const chars = [...new Set([
         ...prev.characters,
-        ...names(s1d?.key_characters, "name"),
-        ...names(s2d?.characters, "name"),
+        ...names(s1d?.key_characters, "name").filter(isRealCharacter),
+        ...names(s2d?.characters, "name").filter(isRealCharacter),
       ])];
       const locs = [...new Set([
         ...prev.locations,
@@ -2818,6 +2851,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const runSingleAgent = async (agentId: AgentId, userContent: string, tokens: number) => {
       const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
       if (!key) return;
+      // 같은 에이전트가 이미 스트리밍 중이면 완료 대기 (동시 타이핑 방지, 최대 60초)
+      const waitDedup = Date.now();
+      while (
+        msgsRef.current.some((m: Msg) => m.agent === agentId && m.streaming) &&
+        Date.now() - waitDedup < 60000
+      ) { await sleep(200); }
       const msgId = addMsg(agentId, "", true);
       let text = "";
       try {
@@ -3110,7 +3149,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             const ns = (arr: unknown, key: string): string[] =>
               Array.isArray(arr) ? (arr as Record<string,string>[]).map(x => x[key]).filter(Boolean) : [];
             const next: SynopsisAssets = {
-              characters: [...new Set([...prev.characters, ...ns(data.characters, "name")])],
+              characters: [...new Set([...prev.characters, ...ns(data.characters, "name").filter(isRealCharacter)])],
               locations:  [...new Set([...prev.locations,  ...ns(data.locations,  "name")])],
               props:      [...new Set([...prev.props,      ...ns(data.props,      "name")])],
             };
@@ -3397,9 +3436,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const merged: SynopsisAssets = {
         characters: [...new Set([
           ...prev.characters,
-          ...ns(s1d?.key_characters, "name"),
-          ...ns(s2d?.characters,     "name"),
-          ...(synopsisAssetsRef.current?.characters ?? []),
+          ...ns(s1d?.key_characters, "name").filter(isRealCharacter),
+          ...ns(s2d?.characters,     "name").filter(isRealCharacter),
+          ...(synopsisAssetsRef.current?.characters ?? []).filter(isRealCharacter),
         ])],
         locations: [...new Set([
           ...prev.locations,
@@ -4654,9 +4693,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const s5d = results.find(r => r.stageId === 5)?.data;
       return {
         characters: [...new Set([
-          ...ns(s1d?.key_characters, "name"),
-          ...ns(s2d?.characters, "name"),
-          ...ns(s3d?.characters, "name"),
+          ...ns(s1d?.key_characters, "name").filter(isRealCharacter),
+          ...ns(s2d?.characters, "name").filter(isRealCharacter),
+          ...ns(s3d?.characters, "name").filter(isRealCharacter),
         ])],
         locations: [...new Set([
           ...ns(s1d?.key_locations, "name"),
