@@ -4970,7 +4970,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
 
-        {/* 아젠다 체크리스트 + 블랙리스트 — 토론 중일 때만 표시 */}
+        {/* 아젠다 진행 카드 — 토론 중일 때만 표시 */}
         {debatePhase === "running" && (() => {
           const currentStageId = STAGES[currentStageIdx]?.id;
           const stageAgendaItems = activeStageAgenda.length > 0 ? activeStageAgenda : (STAGE_AGENDA[currentStageId] ?? []);
@@ -4978,74 +4978,102 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const isSynStep = currentStageId === 2;
           const coveredCount = stageAgendaItems.filter(i => coveredAgendaIds.includes(i.id)).length;
           const totalCount = stageAgendaItems.length;
-          // 아직 미완료 항목 중 진행 중인 것 (agendaTurnCounts 가장 높은 것)
-          const inProgress = stageAgendaItems
+          const pct = totalCount > 0 ? Math.round((coveredCount / totalCount) * 100) : 0;
+          // 현재 진행 중인 항목 (미완료 중 언급 횟수 최다)
+          const inProgressItem = stageAgendaItems
             .filter(i => !coveredAgendaIds.includes(i.id))
             .sort((a, b) => (agendaTurnCounts[b.id] ?? 0) - (agendaTurnCounts[a.id] ?? 0))[0];
+
+          // 세그먼트 컬러 계산
+          const segColor = (item: AgendaItem) => {
+            if (coveredAgendaIds.includes(item.id)) return "#34d399";          // 완료 — 그린
+            const t = agendaTurnCounts[item.id] ?? 0;
+            if (t >= Math.ceil(minTurnsUI * 0.5)) return "#7c6cfc";           // 진행 중 — 퍼플
+            if (t > 0) return "#4a4a8a";                                       // 언급 있음 — 딤 블루
+            return "#1c1c2e";                                                  // 미시작 — 다크
+          };
+
           return (
-            <div style={{ background: "rgba(15,20,40,0.6)", borderBottom: "1px solid rgba(99,102,241,0.15)" }}>
-              {/* ── 한 줄 요약 바 ── */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer" }}
-                   onClick={() => setAgendaExpanded(v => !v)}>
-                {/* 진행률 바 */}
-                <div style={{ flex: 1, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", borderRadius: 99, background: "#34d399",
-                    width: totalCount > 0 ? `${(coveredCount / totalCount) * 100}%` : "0%",
-                    transition: "width 0.5s" }} />
-                </div>
-                <span style={{ fontSize: 11, color: coveredCount === totalCount ? "#34d399" : "#7878a0", whiteSpace: "nowrap" }}>
-                  {coveredCount}/{totalCount} 완료
-                </span>
-                {inProgress && !isSynStep && (
-                  <span style={{ fontSize: 10, color: "#a5b4fc", opacity: 0.7, whiteSpace: "nowrap", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    ▶ {inProgress.label}
+            <div style={{ padding: "6px 12px 0", background: "rgba(10,10,20,0.5)", borderBottom: "1px solid rgba(99,102,241,0.12)" }}>
+              {/* ── 소형 카드 ── */}
+              <div
+                onClick={() => setAgendaExpanded(v => !v)}
+                style={{
+                  cursor: "pointer", borderRadius: 10, marginBottom: 6,
+                  background: "rgba(20,20,40,0.7)", border: "1px solid rgba(99,102,241,0.18)",
+                  overflow: "hidden", userSelect: "none",
+                }}
+              >
+                {/* 카드 상단: 제목 + 진행 수치 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 4px" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc", flexShrink: 0 }}>
+                    {STAGES[currentStageIdx]?.name ?? "토론"}
                   </span>
-                )}
-                {/* 블랙리스트 태그 (한 줄 바에 표시) */}
-                {rejectedItems.length > 0 && (
-                  <div style={{ display: "flex", gap: 3 }}>
-                    {rejectedItems.map((w) => (
-                      <span key={w} title="클릭해서 차단 해제"
-                        onClick={(e) => { e.stopPropagation(); const next = rejectedItems.filter(x => x !== w); setRejectedItems(next); rejectedItemsRef.current = next; if (next.length === 0) localStorage.removeItem(`p2_rejected_${projectId}`); }}
-                        style={{ fontSize: 9, padding: "1px 5px", borderRadius: 99, cursor: "pointer",
-                          background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
-                        🚫 {w}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <span style={{ fontSize: 10, color: "#3a3a56" }}>{agendaExpanded ? "▲" : "▼"}</span>
+                  <span style={{ fontSize: 10, color: "#4a4a7a", flex: 1 }}>
+                    {inProgressItem && !isSynStep ? `▶ ${inProgressItem.label}` : ""}
+                  </span>
+                  <span style={{ fontSize: 11, color: pct === 100 ? "#34d399" : "#6b6b9a", fontWeight: 700, flexShrink: 0 }}>
+                    {coveredCount}/{totalCount}
+                  </span>
+                  <span style={{ fontSize: 9, color: "#3a3a5a", flexShrink: 0 }}>
+                    {agendaExpanded ? "▲" : "▼"}
+                  </span>
+                </div>
+
+                {/* 세그먼트 진행 바 */}
+                <div style={{ display: "flex", gap: 2, padding: "0 10px 8px" }}>
+                  {totalCount > 0 ? stageAgendaItems.map((item) => (
+                    <div key={item.id} style={{
+                      flex: 1, height: 6, borderRadius: 3,
+                      background: segColor(item),
+                      transition: "background 0.4s",
+                      minWidth: 4,
+                    }} title={item.label} />
+                  )) : (
+                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: "#1c1c2e" }} />
+                  )}
+                </div>
               </div>
-              {/* ── 펼침: 전체 체크리스트 ── */}
+
+              {/* ── 펼침: 상세 체크리스트 ── */}
               {agendaExpanded && (
-                <div style={{ display: "flex", gap: 4, padding: "4px 12px 8px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 4, padding: "0 2px 8px", flexWrap: "wrap" }}>
                   {stageAgendaItems.map((item) => {
                     const covered = coveredAgendaIds.includes(item.id);
                     const turns = agendaTurnCounts[item.id] ?? 0;
-                    const progress = Math.min(turns, minTurnsUI);
                     const isActive = isSynStep && (
                       (item.id === "step_learning"  && synopsisStep === "learning") ||
                       (item.id === "step_persona"   && synopsisStep === "persona") ||
                       (item.id === "step_logline"   && synopsisStep === "logline") ||
                       (item.id === "step_synopsis"  && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
                     );
+                    const col = covered ? "#34d399" : isActive ? "#6ee7b7" : turns > 0 ? "#7c6cfc" : "rgba(255,255,255,0.2)";
                     return (
                       <div key={item.id} style={{
-                        display: "flex", alignItems: "center", gap: 3,
-                        padding: "2px 7px", borderRadius: 99, fontSize: 10,
-                        background: covered ? "rgba(52,211,153,0.15)" : isActive ? "rgba(52,211,153,0.08)" : turns > 0 ? "rgba(99,102,241,0.08)" : "transparent",
-                        border: `1px solid ${covered ? "rgba(52,211,153,0.4)" : isActive ? "rgba(52,211,153,0.25)" : "rgba(255,255,255,0.06)"}`,
-                        color: covered ? "#34d399" : isActive ? "#6ee7b7" : turns > 0 ? "rgba(165,180,252,0.5)" : "rgba(255,255,255,0.25)",
-                        fontWeight: isActive ? 700 : 400,
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: "3px 8px", borderRadius: 99, fontSize: 10,
+                        background: covered ? "rgba(52,211,153,0.12)" : isActive ? "rgba(52,211,153,0.06)" : turns > 0 ? "rgba(124,108,252,0.1)" : "rgba(255,255,255,0.03)",
+                        border: `1px solid ${covered ? "rgba(52,211,153,0.35)" : isActive ? "rgba(52,211,153,0.2)" : turns > 0 ? "rgba(124,108,252,0.25)" : "rgba(255,255,255,0.06)"}`,
+                        color: col,
+                        fontWeight: covered || isActive ? 700 : 400,
                       }}>
-                        <span>{covered ? "✓" : isActive ? "▶" : "○"}</span>
+                        <span style={{ fontSize: 9 }}>{covered ? "✓" : isActive ? "▶" : "·"}</span>
                         <span>{item.label}</span>
-                        {!isSynStep && turns > 0 && (
-                          <span style={{ fontSize: 8, opacity: 0.6 }}>{progress}/{minTurnsUI}</span>
+                        {!isSynStep && turns > 0 && !covered && (
+                          <span style={{ fontSize: 8, opacity: 0.5 }}>{Math.min(turns, minTurnsUI)}/{minTurnsUI}</span>
                         )}
                       </div>
                     );
                   })}
+                  {/* 블랙리스트 태그 */}
+                  {rejectedItems.map((w) => (
+                    <span key={w} title="클릭해서 차단 해제"
+                      onClick={(e) => { e.stopPropagation(); const next = rejectedItems.filter(x => x !== w); setRejectedItems(next); rejectedItemsRef.current = next; if (next.length === 0) localStorage.removeItem(`p2_rejected_${projectId}`); }}
+                      style={{ fontSize: 9, padding: "3px 7px", borderRadius: 99, cursor: "pointer",
+                        background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+                      🚫 {w}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
