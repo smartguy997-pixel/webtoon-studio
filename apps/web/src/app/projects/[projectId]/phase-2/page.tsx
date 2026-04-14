@@ -1622,61 +1622,106 @@ function StageReportInChat({
   );
 
   // ── 캐릭터 카드 ─────────────────────────────────────────────────────────────
-  const CharCard = ({ ch, cardColor }: { ch: Record<string,string>; cardColor: string }) => {
-    const initials = (ch.name ?? "?").slice(0, 2);
-    const roleLabel = ch.role ?? "";
-    const meta = [ch.gender, ch.age].filter(Boolean).join(" · ");
-    const body = [ch.height, ch.build].filter(Boolean).join(", ");
+  const CharCard = ({ ch, cardColor }: { ch: Record<string, unknown>; cardColor: string }) => {
+    const s = (v: unknown) => (v ? String(v) : "");
+    const name = s(ch.name) || "?";
+    const initials = name.slice(0, 2);
+    const meta = [s(ch.gender), s(ch.age)].filter(Boolean).join(" · ");
+    const bodyStr = [s(ch.height), s(ch.weight), s(ch.build)].filter(Boolean).join(" · ");
+    const rels = Array.isArray(ch.relationships) ? ch.relationships as Array<Record<string,string>> : [];
+    const cons = Array.isArray(ch.conflicts)     ? ch.conflicts     as Array<Record<string,string>> : [];
     return (
-      <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:12, border:`1px solid ${cardColor}22` }}>
-        {/* 헤더 바 */}
-        <div style={{ background:`linear-gradient(90deg, ${cardColor}22, transparent)`, borderBottom:`1px solid ${cardColor}22`, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
-          <div style={{ width:40, height:40, borderRadius:"50%", background:`${cardColor}30`, border:`2px solid ${cardColor}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:cardColor, flexShrink:0 }}>{initials}</div>
-          <div>
-            <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9" }}>{ch.name}
-              {roleLabel && <span style={{ fontSize:11, fontWeight:700, color:cardColor, marginLeft:10, background:`${cardColor}20`, padding:"2px 8px", borderRadius:20 }}>{roleLabel}</span>}
+      <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:16, border:`1px solid ${cardColor}25` }}>
+        {/* 헤더 */}
+        <div style={{ background:`linear-gradient(90deg, ${cardColor}25, transparent)`, borderBottom:`1px solid ${cardColor}20`, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ width:42, height:42, borderRadius:"50%", background:`${cardColor}30`, border:`2px solid ${cardColor}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:cardColor, flexShrink:0 }}>{initials}</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" as const }}>
+              {name}
+              {s(ch.role) && <span style={{ fontSize:11, fontWeight:700, color:cardColor, background:`${cardColor}20`, padding:"2px 8px", borderRadius:20 }}>{s(ch.role)}</span>}
             </div>
             {meta && <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{meta}</div>}
           </div>
         </div>
-        {/* 내용 */}
-        <div style={{ padding:"12px 16px", display:"flex", flexDirection:"column" as const, gap:2 }}>
+        {/* 신체 */}
+        {bodyStr && (
+          <div style={{ padding:"10px 16px 0", borderBottom:"1px solid #1a1a28" }}>
+            <div style={{ fontSize:10, color:"#4a4a68", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:4 }}>신체</div>
+            <div style={{ fontSize:12, color:"#94a3b8", paddingBottom:10 }}>{bodyStr}</div>
+          </div>
+        )}
+        {/* 얼굴·복장·성격 */}
+        <div style={{ padding:"10px 16px 0" }}>
           <Field label="얼굴" val={ch.face} />
-          <Field label="체형/복장" val={[body, ch.outfit].filter(Boolean).join(" — ") || undefined} />
+          <Field label="복장" val={ch.outfit} />
           <Field label="성격" val={ch.personality} />
           <Field label="동기" val={ch.motivation} />
-          <Field label="상처/비밀" val={ch.backstory} />
           <Field label="말투" val={ch.speech} />
-          {ch.story_role && <Field label="서사 역할" val={ch.story_role} />}
+          {s(ch.story_role) && <Field label="서사 역할" val={ch.story_role} />}
+          {s(ch.other) && <Field label="기타" val={ch.other} />}
         </div>
+        {/* 인물 관계 */}
+        {rels.length > 0 && (
+          <div style={{ padding:"10px 16px", borderTop:"1px solid #1a1a28" }}>
+            <div style={{ fontSize:10, color:"#34d399", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:6 }}>인물 관계</div>
+            {rels.map((r, i) => (
+              <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4, display:"flex", gap:6 }}>
+                <span style={{ color:"#f1f5f9", fontWeight:600, whiteSpace:"nowrap" as const }}>{r.character}</span>
+                <span style={{ color:cardColor, fontSize:11, background:`${cardColor}15`, padding:"1px 7px", borderRadius:20, whiteSpace:"nowrap" as const }}>{r.type}</span>
+                {r.description && <span style={{ color:"#64748b" }}>— {r.description}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* 갈등 관계 */}
+        {cons.length > 0 && (
+          <div style={{ padding:"10px 16px", borderTop:"1px solid #1a1a28" }}>
+            <div style={{ fontSize:10, color:"#f87171", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:6 }}>갈등 관계</div>
+            {cons.map((r, i) => (
+              <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4, display:"flex", gap:6, flexWrap:"wrap" as const }}>
+                <span style={{ color:"#f1f5f9", fontWeight:600, whiteSpace:"nowrap" as const }}>{r.character}</span>
+                <span style={{ color:"#f87171", fontSize:11, background:"rgba(248,113,113,0.12)", padding:"1px 7px", borderRadius:20, whiteSpace:"nowrap" as const }}>{r.type}</span>
+                {r.description && <span style={{ color:"#64748b" }}>— {r.description}</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
 
   // ── 장소 카드 ─────────────────────────────────────────────────────────────
-  const LocCard = ({ loc, cardColor }: { loc: Record<string,string>; cardColor: string }) => (
-    <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:12, border:`1px solid ${cardColor}22` }}>
-      <div style={{ background:`linear-gradient(90deg, ${cardColor}18, transparent)`, borderBottom:`1px solid ${cardColor}22`, padding:"12px 16px", display:"flex", alignItems:"center", gap:10 }}>
-        <div style={{ width:36, height:36, borderRadius:8, background:`${cardColor}20`, border:`1px solid ${cardColor}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>🏙</div>
-        <div>
-          <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9" }}>{loc.name}
-            {loc.type && <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>{loc.type}</span>}
+  const LocCard = ({ loc, cardColor }: { loc: Record<string, unknown>; cardColor: string }) => {
+    const s = (v: unknown) => (v ? String(v) : "");
+    const locType = s(loc.location_type) || s(loc.type);
+    const role    = s(loc.role) || s(loc.significance);
+    return (
+      <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:16, border:`1px solid ${cardColor}22` }}>
+        <div style={{ background:`linear-gradient(90deg, ${cardColor}18, transparent)`, borderBottom:`1px solid ${cardColor}20`, padding:"12px 16px", display:"flex", alignItems:"flex-start", gap:10 }}>
+          <div style={{ width:36, height:36, borderRadius:8, background:`${cardColor}20`, border:`1px solid ${cardColor}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
+            {locType.includes("야외") ? "🌿" : locType.includes("실내") ? "🏠" : locType.includes("건물") ? "🏢" : "🏙"}
           </div>
-          {loc.significance && <div style={{ fontSize:12, color:`${cardColor}cc`, marginTop:2 }}>{loc.significance}</div>}
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" as const }}>
+              {s(loc.name)}
+              {locType && <span style={{ fontSize:11, color:"#64748b", background:"rgba(255,255,255,0.06)", padding:"2px 8px", borderRadius:20 }}>{locType}</span>}
+            </div>
+            {role && <div style={{ fontSize:12, color:`${cardColor}cc`, marginTop:3 }}>{role}</div>}
+          </div>
+        </div>
+        <div style={{ padding:"12px 16px" }}>
+          <Field label="시각 묘사" val={loc.visual} />
+          <Field label="조명" val={loc.lighting} />
+          <Field label="색채" val={loc.color_palette} />
+          <Field label="분위기" val={loc.atmosphere} />
+          <Field label="공간 구조" val={loc.architecture} />
+          <Field label="소리·냄새" val={loc.sound} />
+          <Field label="서사적 의미" val={s(loc.significance) !== role ? loc.significance : undefined} />
+          <Field label="상징" val={loc.symbolic_meaning} />
         </div>
       </div>
-      <div style={{ padding:"12px 16px" }}>
-        <Field label="시각" val={loc.visual} />
-        <Field label="조명" val={loc.lighting} />
-        <Field label="색채" val={loc.color_palette} />
-        <Field label="분위기" val={loc.atmosphere} />
-        <Field label="건축" val={loc.architecture} />
-        <Field label="소리" val={loc.sound} />
-        <Field label="주요 장면" val={loc.key_scenes} />
-        <Field label="상징" val={loc.symbolic_meaning} />
-      </div>
-    </div>
-  );
+    );
+  };
 
   // ── Stage별 내용 ─────────────────────────────────────────────────────────────
 
@@ -2184,6 +2229,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [replyTo, setReplyTo] = useState<{ msg: Msg; agentLabel: string; preview: string } | null>(null); // reply-to
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
+  const [agendaExpanded, setAgendaExpanded] = useState(false); // 아젠다 체크리스트 펼침 여부
 
   // ── 시놉시스 4단계 워크플로우 State ──
   type SynopsisStep = "idle" | "learning" | "persona" | "logline" | "completing" | "completing_wait";
@@ -4924,63 +4970,107 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
         </div>
 
-        {/* 아젠다 체크리스트 + 블랙리스트 — 토론 중일 때만 표시 */}
+        {/* 아젠다 진행 카드 — 토론 중일 때만 표시 */}
         {debatePhase === "running" && (() => {
           const currentStageId = STAGES[currentStageIdx]?.id;
-          // 동적 아젠다 우선, 없으면 정적 아젠다 폴백
           const stageAgendaItems = activeStageAgenda.length > 0 ? activeStageAgenda : (STAGE_AGENDA[currentStageId] ?? []);
           const minTurnsUI = MIN_TURNS_BY_STAGE[currentStageId] ?? MIN_TURNS_PER_TOPIC_P2;
+          const isSynStep = currentStageId === 2;
+          const coveredCount = stageAgendaItems.filter(i => coveredAgendaIds.includes(i.id)).length;
+          const totalCount = stageAgendaItems.length;
+          const pct = totalCount > 0 ? Math.round((coveredCount / totalCount) * 100) : 0;
+          // 현재 진행 중인 항목 (미완료 중 언급 횟수 최다)
+          const inProgressItem = stageAgendaItems
+            .filter(i => !coveredAgendaIds.includes(i.id))
+            .sort((a, b) => (agendaTurnCounts[b.id] ?? 0) - (agendaTurnCounts[a.id] ?? 0))[0];
+
+          // 세그먼트 컬러 계산
+          const segColor = (item: AgendaItem) => {
+            if (coveredAgendaIds.includes(item.id)) return "#34d399";          // 완료 — 그린
+            const t = agendaTurnCounts[item.id] ?? 0;
+            if (t >= Math.ceil(minTurnsUI * 0.5)) return "#7c6cfc";           // 진행 중 — 퍼플
+            if (t > 0) return "#4a4a8a";                                       // 언급 있음 — 딤 블루
+            return "#1c1c2e";                                                  // 미시작 — 다크
+          };
+
           return (
-            <div style={{
-              display: "flex", gap: 4, padding: "6px 12px", flexWrap: "wrap", alignItems: "center",
-              background: "rgba(15,20,40,0.6)", borderBottom: "1px solid rgba(99,102,241,0.15)",
-            }}>
-              {stageAgendaItems.map((item) => {
-                const covered = coveredAgendaIds.includes(item.id);
-                const turns = agendaTurnCounts[item.id] ?? 0;
-                const progress = Math.min(turns, minTurnsUI);
-                // Stage 2: 현재 진행 중인 단계 하이라이트
-                const isSynStep = currentStageId === 2;
-                const isActive = isSynStep && (
-                  (item.id === "step_learning"  && synopsisStep === "learning") ||
-                  (item.id === "step_persona"   && synopsisStep === "persona") ||
-                  (item.id === "step_logline"   && synopsisStep === "logline") ||
-                  (item.id === "step_synopsis"  && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
-                );
-                return (
-                  <div key={item.id} style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "2px 8px", borderRadius: 99, fontSize: 11,
-                    background: covered ? "rgba(52,211,153,0.2)" : isActive ? "rgba(52,211,153,0.1)" : turns > 0 ? "rgba(99,102,241,0.1)" : "rgba(255,255,255,0.04)",
-                    border: `1px solid ${covered ? "rgba(52,211,153,0.5)" : isActive ? "rgba(52,211,153,0.3)" : "transparent"}`,
-                    color: covered ? "#34d399" : isActive ? "#6ee7b7" : turns > 0 ? "rgba(165,180,252,0.6)" : "rgba(255,255,255,0.3)",
-                    transition: "all 0.5s",
-                    fontWeight: isActive ? 700 : 400,
-                  }}>
-                    <span>{covered ? "✓" : isActive ? "▶" : "○"}</span>
-                    <span>{item.label}</span>
-                    {!isSynStep && (
-                      <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>
-                        {progress}/{minTurnsUI}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-              {/* 블랙리스트 태그 */}
-              {rejectedItems.length > 0 && (
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, color: "rgba(248,113,113,0.6)" }}>차단:</span>
+            <div style={{ padding: "6px 12px 0", background: "rgba(10,10,20,0.5)", borderBottom: "1px solid rgba(99,102,241,0.12)" }}>
+              {/* ── 소형 카드 ── */}
+              <div
+                onClick={() => setAgendaExpanded(v => !v)}
+                style={{
+                  cursor: "pointer", borderRadius: 10, marginBottom: 6,
+                  background: "rgba(20,20,40,0.7)", border: "1px solid rgba(99,102,241,0.18)",
+                  overflow: "hidden", userSelect: "none",
+                }}
+              >
+                {/* 카드 상단: 제목 + 진행 수치 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 4px" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc", flexShrink: 0 }}>
+                    {STAGES[currentStageIdx]?.name ?? "토론"}
+                  </span>
+                  <span style={{ fontSize: 10, color: "#4a4a7a", flex: 1 }}>
+                    {inProgressItem && !isSynStep ? `▶ ${inProgressItem.label}` : ""}
+                  </span>
+                  <span style={{ fontSize: 11, color: pct === 100 ? "#34d399" : "#6b6b9a", fontWeight: 700, flexShrink: 0 }}>
+                    {coveredCount}/{totalCount}
+                  </span>
+                  <span style={{ fontSize: 9, color: "#3a3a5a", flexShrink: 0 }}>
+                    {agendaExpanded ? "▲" : "▼"}
+                  </span>
+                </div>
+
+                {/* 세그먼트 진행 바 */}
+                <div style={{ display: "flex", gap: 2, padding: "0 10px 8px" }}>
+                  {totalCount > 0 ? stageAgendaItems.map((item) => (
+                    <div key={item.id} style={{
+                      flex: 1, height: 6, borderRadius: 3,
+                      background: segColor(item),
+                      transition: "background 0.4s",
+                      minWidth: 4,
+                    }} title={item.label} />
+                  )) : (
+                    <div style={{ flex: 1, height: 6, borderRadius: 3, background: "#1c1c2e" }} />
+                  )}
+                </div>
+              </div>
+
+              {/* ── 펼침: 상세 체크리스트 ── */}
+              {agendaExpanded && (
+                <div style={{ display: "flex", gap: 4, padding: "0 2px 8px", flexWrap: "wrap" }}>
+                  {stageAgendaItems.map((item) => {
+                    const covered = coveredAgendaIds.includes(item.id);
+                    const turns = agendaTurnCounts[item.id] ?? 0;
+                    const isActive = isSynStep && (
+                      (item.id === "step_learning"  && synopsisStep === "learning") ||
+                      (item.id === "step_persona"   && synopsisStep === "persona") ||
+                      (item.id === "step_logline"   && synopsisStep === "logline") ||
+                      (item.id === "step_synopsis"  && (synopsisStep === "completing" || synopsisStep === "completing_wait"))
+                    );
+                    const col = covered ? "#34d399" : isActive ? "#6ee7b7" : turns > 0 ? "#7c6cfc" : "rgba(255,255,255,0.2)";
+                    return (
+                      <div key={item.id} style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: "3px 8px", borderRadius: 99, fontSize: 10,
+                        background: covered ? "rgba(52,211,153,0.12)" : isActive ? "rgba(52,211,153,0.06)" : turns > 0 ? "rgba(124,108,252,0.1)" : "rgba(255,255,255,0.03)",
+                        border: `1px solid ${covered ? "rgba(52,211,153,0.35)" : isActive ? "rgba(52,211,153,0.2)" : turns > 0 ? "rgba(124,108,252,0.25)" : "rgba(255,255,255,0.06)"}`,
+                        color: col,
+                        fontWeight: covered || isActive ? 700 : 400,
+                      }}>
+                        <span style={{ fontSize: 9 }}>{covered ? "✓" : isActive ? "▶" : "·"}</span>
+                        <span>{item.label}</span>
+                        {!isSynStep && turns > 0 && !covered && (
+                          <span style={{ fontSize: 8, opacity: 0.5 }}>{Math.min(turns, minTurnsUI)}/{minTurnsUI}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* 블랙리스트 태그 */}
                   {rejectedItems.map((w) => (
-                    <span key={w}
-                      title="클릭해서 차단 해제"
-                      onClick={() => {
-                        const next = rejectedItems.filter(x => x !== w);
-                        setRejectedItems(next); rejectedItemsRef.current = next;
-                        if (next.length === 0) localStorage.removeItem(`p2_rejected_${projectId}`);
-                      }}
-                      style={{ fontSize: 10, padding: "1px 7px", borderRadius: 99, cursor: "pointer",
-                        background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                    <span key={w} title="클릭해서 차단 해제"
+                      onClick={(e) => { e.stopPropagation(); const next = rejectedItems.filter(x => x !== w); setRejectedItems(next); rejectedItemsRef.current = next; if (next.length === 0) localStorage.removeItem(`p2_rejected_${projectId}`); }}
+                      style={{ fontSize: 9, padding: "3px 7px", borderRadius: 99, cursor: "pointer",
+                        background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
                       🚫 {w}
                     </span>
                   ))}
