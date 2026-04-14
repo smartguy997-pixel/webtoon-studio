@@ -1729,7 +1729,13 @@ function StageReportInChat({
     switch (result.stageId) {
 
       case 1: { // 세계관 — 5개 프레임워크
-        const chars = arr(data.key_characters) as Record<string,string>[];
+        const _rawChars1 = arr(data.key_characters) as Record<string,string>[];
+        const chars = _rawChars1.filter(ch => {
+          const n = ch.name ?? "";
+          return !/골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|층|마을|학교|병원|건물|식당|분식|카페|폐자장|공장|시장|역(?!\w)|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|가게|점포|센터|연구소|사무실|작업장|창고|지하|옥상|뒷골목|주택|빌딩|본부|기지|술집|주점|포장마차|편의점|노점/.test(n)
+            && !/^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/.test(n)
+            && !/의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/.test(n);
+        });
         const locs  = arr(data.key_locations)  as Record<string,string>[];
         const hasStructured = data.era || data.core_space || data.power_hierarchy || data.theme || chars.length > 0;
         // raw_summary만 있으면 narrative 카드 렌더
@@ -1813,7 +1819,13 @@ function StageReportInChat({
         const protagonist  = data.protagonist as Record<string,string> | null ?? null;
         const storyArc     = data.story_arc   as Record<string,string> | null ?? null;
         const worldRules   = Array.isArray(data.world_rules) ? (data.world_rules as string[]) : [];
-        const chars        = arr(data.characters)  as Record<string,string>[];
+        const _rawChars2   = arr(data.characters)  as Record<string,string>[];
+        const chars        = _rawChars2.filter(ch => {
+          const n = ch.name ?? "";
+          return !/골목|거리|길(?!\w)|집(?!\w)|방(?!법|향)|층|마을|학교|병원|건물|식당|분식|카페|폐자장|공장|시장|역(?!\w)|아파트|빌라|광장|공원|해변|산(?!\w)|강(?!\w)|호수|바다|가게|점포|센터|연구소|사무실|작업장|창고|지하|옥상|뒷골목|주택|빌딩|본부|기지|술집|주점|포장마차|편의점|노점/.test(n)
+            && !/^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/.test(n)
+            && !/의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/.test(n);
+        });
         const locs         = arr(data.locations)   as Record<string,string>[];
         const props2       = arr(data.props)        as Record<string,string>[];
         const keyScenes    = arr(data.key_scenes)   as Record<string,string>[];
@@ -2251,6 +2263,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [newCharInput, setNewCharInput] = useState("");
   const [newLocInput, setNewLocInput] = useState("");
   const [newPropInput, setNewPropInput] = useState("");
+  // 에셋 상세 모달
+  const [assetModal, setAssetModal] = useState<{ type: "char" | "loc" | "prop"; item: Record<string,string> } | null>(null);
 
   // ── 스타일 정의 State (Stage 2 완료 후 삽입) ──
   type StylePhase = "idle" | "debating" | "reviewing" | "generating" | "confirmed";
@@ -4801,68 +4815,91 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               );
               const propData = (s5?.props as Record<string,string>[] | undefined) ?? [];
 
-              const AssetCard = ({ item, color }: { item: Record<string, string>; color: string }) => {
-                const hasDetail = !!(item.face || item.outfit || item.personality || item.visual || item.atmosphere || item.one_line || item.motivation || item.significance || item.description);
+              // ── 섹션 헤더 ──
+              const SectionHead = ({ icon, label, color, count }: { icon: string; label: string; color: string; count: number }) => (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "24px 0 10px", paddingBottom: 8, borderBottom: `1px solid ${color}20` }}>
+                  <span style={{ fontSize: 15 }}>{icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color, letterSpacing: "0.5px", textTransform: "uppercase" as const }}>{label}</span>
+                  <span style={{ fontSize: 11, color, background: `${color}15`, borderRadius: 99, padding: "1px 9px", fontWeight: 700 }}>{count}</span>
+                </div>
+              );
+
+              // ── 컴팩트 카드 (클릭 → 모달) ──
+              const CompactCard = ({ it, color, type, icon }: { it: Record<string,string>; color: string; type: "char"|"loc"|"prop"; icon?: string }) => {
+                const preview = it.face || it.appearance || it.visual || it.personality || it.story_role || "";
+                const sub = type === "char"
+                  ? [it.gender, it.age, it.build].filter(Boolean).join(" · ")
+                  : type === "loc"
+                  ? it.location_type || it.type || ""
+                  : it.type || "";
                 return (
-                  <div style={{ background: "#12121e", borderRadius: 12, overflow: "hidden", marginBottom: 10, border: `1px solid ${color}22` }}>
-                    <div style={{ background: `linear-gradient(90deg, ${color}18, transparent)`, borderBottom: `1px solid ${color}20`, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${color}25`, border: `1px solid ${color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color, flexShrink: 0 }}>
-                        {(item.name ?? "?").slice(0, 2)}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9" }}>
-                          {item.name}
-                          {item.role && <span style={{ fontSize: 11, color, marginLeft: 8, fontWeight: 700, background: `${color}18`, padding: "1px 6px", borderRadius: 99 }}>{item.role}</span>}
-                          {item.type && <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>{item.type}</span>}
+                  <div onClick={() => setAssetModal({ type, item: it })} style={{
+                    background: "#0f0f1c", borderRadius: 10, overflow: "hidden", marginBottom: 8,
+                    border: `1px solid ${color}1e`, cursor: "pointer", transition: "border-color 0.2s",
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.borderColor = `${color}50`)}
+                    onMouseLeave={e => (e.currentTarget.style.borderColor = `${color}1e`)}
+                  >
+                    <div style={{ padding: "9px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                      {type === "char" ? (
+                        <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${color}20`, border: `1.5px solid ${color}45`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color, flexShrink: 0 }}>
+                          {(it.name ?? "?").slice(0, 2)}
                         </div>
-                        {(item.one_line ?? item.characteristics) && (
-                          <div style={{ fontSize: 11, color: "#9a9abf", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                            {item.one_line ?? item.characteristics}
+                      ) : (
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}15`, border: `1px solid ${color}35`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>{it.name}</span>
+                          {it.role && <span style={{ fontSize: 10, color, background: `${color}15`, padding: "1px 6px", borderRadius: 99 }}>{it.role}</span>}
+                          {type !== "char" && sub && <span style={{ fontSize: 10, color: "#5a5a7a" }}>{sub}</span>}
+                        </div>
+                        {type === "char" && sub && <div style={{ fontSize: 11, color: "#4a4a6a", marginTop: 1 }}>{sub}</div>}
+                        {preview && (
+                          <div style={{ fontSize: 11, color: "#4a4a68", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, maxWidth: "100%" }}>
+                            {preview.slice(0, 60)}{preview.length > 60 ? "…" : ""}
                           </div>
                         )}
                       </div>
-                      {!hasDetail && <span style={{ fontSize: 10, color: "#2a2a3d", flexShrink: 0 }}>기본 정보</span>}
+                      <span style={{ fontSize: 11, color: "#2a2a40", flexShrink: 0 }}>›</span>
                     </div>
-                    {hasDetail && (
-                      <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column" as const, gap: 3 }}>
-                        {item.face && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>얼굴</span>{item.face}</div>}
-                        {item.outfit && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>복장</span>{item.outfit}</div>}
-                        {item.personality && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>성격</span>{item.personality}</div>}
-                        {item.motivation && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>동기</span>{item.motivation}</div>}
-                        {item.visual && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>시각</span>{item.visual}</div>}
-                        {item.atmosphere && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>분위기</span>{item.atmosphere}</div>}
-                        {item.significance && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>의미</span>{item.significance}</div>}
-                        {item.function && <div style={{ fontSize: 11, color: "#9a9abf" }}><span style={{ color: "#4a4a68", marginRight: 6, fontWeight: 700 }}>기능</span>{item.function}</div>}
-                      </div>
-                    )}
                   </div>
                 );
               };
 
-              // editableAssets names와 상세 데이터 매핑 (이름 기준)
-              const Section = ({ label, color, items, names }: { label: string; color: string; items: Record<string,string>[]; names: string[] }) => {
-                // 이름 목록 = editableAssets names ∪ 상세 데이터 이름 (누락 없이)
+              // 이름 기준 resolved 목록
+              const resolve = (names: string[], items: Record<string,string>[]) => {
                 const allNames = [...new Set([...names, ...items.map(it => it.name).filter(Boolean)])];
-                const resolved = allNames.map(n => items.find(it => it.name === n) ?? { name: n });
-                return (
-                  <div style={{ marginBottom: 24 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                      {label}
-                      <span style={{ background: `${color}20`, color, borderRadius: 99, padding: "1px 8px", fontSize: 10 }}>{resolved.length}</span>
-                    </div>
-                    {resolved.length === 0
-                      ? <div style={{ fontSize: 12, color: "#3a3a52", padding: "8px 0" }}>(없음)</div>
-                      : resolved.map((it, i) => <AssetCard key={i} item={it} color={color} />)
-                    }
-                  </div>
-                );
+                return allNames.map(n => items.find(it => it.name === n) ?? { name: n });
               };
+              const chars   = resolve(editableAssets.characters, charData);
+              const locs    = resolve(editableAssets.locations,  locData);
+              const propRes = resolve(editableAssets.props,      propData);
 
               return (
                 <div>
-                  <Section label="캐릭터" color="#fb923c" items={charData} names={editableAssets.characters} />
-                  <Section label="장소" color="#a78bfa" items={locData} names={editableAssets.locations} />
-                  <Section label="소품·장비" color="#e879f9" items={propData} names={editableAssets.props} />
+                  {/* 등장인물 */}
+                  <SectionHead icon="👤" label="등장인물" color="#fb923c" count={chars.length} />
+                  {chars.length === 0
+                    ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
+                    : chars.map((it, i) => <CompactCard key={i} it={it} color="#fb923c" type="char" />)
+                  }
+                  {/* 장소 */}
+                  <SectionHead icon="🗺" label="장소" color="#a78bfa" count={locs.length} />
+                  {locs.length === 0
+                    ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
+                    : locs.map((it, i) => {
+                        const locType = it.location_type || it.type || "";
+                        const icon = /야외|거리|공원|산|바다/.test(locType) ? "🌿" : /건물|빌딩|학교|병원/.test(locType) ? "🏢" : "🏠";
+                        return <CompactCard key={i} it={it} color="#a78bfa" type="loc" icon={icon} />;
+                      })
+                  }
+                  {/* 소품 */}
+                  <SectionHead icon="🎒" label="소품·장비" color="#e879f9" count={propRes.length} />
+                  {propRes.length === 0
+                    ? <div style={{ fontSize: 12, color: "#2e2e48", padding: "8px 0 16px" }}>(없음)</div>
+                    : propRes.map((it, i) => <CompactCard key={i} it={it} color="#e879f9" type="prop" icon="🎒" />)
+                  }
                 </div>
               );
             })()}
@@ -5871,6 +5908,119 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           </>)}
         </div>
       </div>
+
+      {/* ── 에셋 모달 오버레이 ─────────────────────────────────────────────── */}
+      {assetModal && (() => {
+        const { type, item } = assetModal;
+        const color = type === "char" ? "#fb923c" : type === "loc" ? "#a78bfa" : "#e879f9";
+        const typeLabel = type === "char" ? "등장인물" : type === "loc" ? "장소" : "소품·장비";
+
+        const MField = ({ label, val }: { label: string; val?: string }) =>
+          val ? (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 13, color: "#d4dce8", lineHeight: 1.7 }}>{val}</div>
+            </div>
+          ) : null;
+
+        const charFields: [string, string][] = [
+          ["외형·얼굴", item.face ?? item.appearance ?? ""],
+          ["성별", item.gender ?? ""],
+          ["나이", item.age ?? ""],
+          ["체형", item.build ?? ""],
+          ["헤어", item.hair ?? ""],
+          ["패션", item.fashion ?? ""],
+          ["성격", item.personality ?? ""],
+          ["역할", item.role ?? ""],
+          ["목표", item.goal ?? item.want ?? ""],
+          ["내면의 상처", item.wound ?? item.backstory ?? ""],
+          ["말투", item.speech_style ?? ""],
+          ["관계", item.relation ?? ""],
+          ["서사적 역할", item.story_role ?? ""],
+        ];
+        const locFields: [string, string][] = [
+          ["유형", item.location_type ?? item.type ?? ""],
+          ["시각 묘사", item.visual ?? item.appearance ?? ""],
+          ["조명", item.lighting ?? ""],
+          ["색채", item.color_palette ?? ""],
+          ["분위기", item.atmosphere ?? ""],
+          ["공간 구조", item.architecture ?? ""],
+          ["소리·냄새", item.sound ?? ""],
+          ["서사적 의미", item.significance ?? item.role ?? ""],
+          ["상징", item.symbolic_meaning ?? ""],
+        ];
+        const propFields: [string, string][] = [
+          ["유형", item.type ?? ""],
+          ["시각 묘사", item.visual ?? item.appearance ?? ""],
+          ["서사적 역할", item.story_role ?? item.significance ?? item.role ?? ""],
+          ["소유자", item.owner ?? ""],
+        ];
+        const fields = type === "char" ? charFields : type === "loc" ? locFields : propFields;
+
+        return (
+          <div
+            onClick={() => setAssetModal(null)}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: "#0d0d1b", border: `1px solid ${color}35`, borderRadius: 16,
+                width: "100%", maxWidth: 520, maxHeight: "80vh", overflow: "hidden",
+                display: "flex", flexDirection: "column",
+              }}
+            >
+              {/* 헤더 */}
+              <div style={{
+                padding: "16px 20px", background: `${color}10`, borderBottom: `1px solid ${color}25`,
+                display: "flex", alignItems: "center", gap: 12,
+              }}>
+                {type === "char" ? (
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: `${color}25`, border: `2px solid ${color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color, flexShrink: 0 }}>
+                    {(item.name ?? "?").slice(0, 2)}
+                  </div>
+                ) : (
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: `${color}20`, border: `1px solid ${color}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                    {type === "loc" ? "🗺" : "🎒"}
+                  </div>
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 2 }}>{typeLabel}</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#f1f5f9" }}>{item.name}</div>
+                  {item.role && <div style={{ fontSize: 11, color: `${color}bb`, marginTop: 1 }}>{item.role}</div>}
+                </div>
+                <button
+                  onClick={() => setAssetModal(null)}
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}
+                >✕</button>
+              </div>
+
+              {/* 바디 */}
+              <div style={{ padding: "18px 20px", overflowY: "auto", flex: 1 }}>
+                {fields.map(([label, val]) =>
+                  val ? <MField key={label} label={label} val={val} /> : null
+                )}
+                {/* Runway 프롬프트 복사 */}
+                {item.image_prompt && (
+                  <div style={{ marginTop: 8, background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, fontWeight: 800, color, textTransform: "uppercase" as const, letterSpacing: "0.08em", marginBottom: 4 }}>Runway 프롬프트</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.55, fontFamily: "monospace" }}>{item.image_prompt}</div>
+                    </div>
+                    <button
+                      onClick={() => void navigator.clipboard.writeText(item.image_prompt ?? "")}
+                      style={{ background: `${color}18`, border: `1px solid ${color}35`, borderRadius: 6, color, fontSize: 10, fontWeight: 700, padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+                    >복사</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
