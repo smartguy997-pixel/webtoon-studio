@@ -4991,6 +4991,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         stageResults: newResults,
         currentStageIdx: stageIdx,
         stageHistoryMsgs: newHistory,
+        pendingDebateStart: stageIdx,  // 재로드 후 해당 스테이지 자동 시작
       }));
     } catch { /* ignore */ }
     window.location.href = `/projects/${projectId}/phase-2`;
