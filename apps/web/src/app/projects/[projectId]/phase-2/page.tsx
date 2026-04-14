@@ -3605,16 +3605,21 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             anthropicApiKey: apiKey,
             runwayApiKey: getRunwayKey(),
           }),
-        }).then(r => r.json() as Promise<{ imageUrl: string; prompt: string }>)
+        }).then(async r => {
+          const data = await r.json() as { imageUrl?: string; prompt?: string; error?: string };
+          if (!r.ok || data.error) throw new Error(data.error ?? `HTTP ${r.status}`);
+          return data as { imageUrl: string; prompt: string };
+        })
       )
     );
 
     const updatedConcepts: ImageConcept[] = LABELS.map((label, i) => {
       const r = results[i];
-      if (r.status === "fulfilled") {
+      if (r.status === "fulfilled" && r.value.imageUrl) {
         return { ...initConcepts[i], imageUrl: r.value.imageUrl, prompt: r.value.prompt, generating: false };
       }
-      return { ...initConcepts[i], generating: false, error: "생성 실패" };
+      const errMsg = r.status === "rejected" ? String((r.reason as Error).message ?? "생성 실패") : "생성 실패";
+      return { ...initConcepts[i], generating: false, error: errMsg };
     });
     setImageConcepts(updatedConcepts);
     imageConceptsRef.current = updatedConcepts;
@@ -4881,7 +4886,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                       {concept.imageUrl
                         ? <img src={concept.imageUrl} alt={`${concept.label}안`} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
                         : <div style={{ width: "100%", aspectRatio: "1", background: "#1a1a26", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#4a4a6a" }}>
-                            {concept.error ? "⚠ 생성 실패" : "⏳ 생성 중"}
+                            {concept.error
+                          ? <span style={{ padding: "0 8px", textAlign: "center", color: "#f87171" }}>
+                              ⚠ 생성 실패<br/>
+                              <span style={{ fontSize: 9, color: "#9ca3af", lineHeight: 1.3, display: "block", marginTop: 4 }}>
+                                {concept.error.slice(0, 120)}
+                              </span>
+                            </span>
+                          : "⏳ 생성 중"}
                           </div>
                       }
                       {/* 방향 설명 */}
