@@ -1736,78 +1736,205 @@ function StageReportInChat({
             && !/^\d{2,4}년|상반기|하반기|년대|세기|시절|연도|기간/.test(n)
             && !/의 결핍|통신|음식|유행어|키워드|풍경|문화|계층|압박|규범|의식|관습|금기|세계관|배경|설정|규칙|시스템|언어|방언|경제|정치|체제|체계|이념|역사|미디어|대중|소비|트렌드|가치관|분위기|기운|층위|차원|구조|계급/.test(n);
         });
-        const locs  = arr(data.key_locations)  as Record<string,string>[];
+        // 장소 필터: 추상 개념·상태·이념 표현 제외, 실제 물리 장소만
+        const _rawLocs1 = arr(data.key_locations) as Record<string,string>[];
+        const locs = _rawLocs1.filter(loc => {
+          const n = loc.name ?? loc.location_name ?? "";
+          return !/의\s*(붕괴|결핍|상실|압박|억압|공포|위기|혼란|충돌|분열|고립|단절|격차|무너짐)/.test(n)
+            && !/에\s*(대한|관한)/.test(n)
+            && !/신뢰|불신|이념|체제|격차|불평등|차별|세계관|규범|금기|역사|경제|정치|미디어|관습|통념/.test(n)
+            && n.length > 0;
+        });
         const hasStructured = data.era || data.core_space || data.power_hierarchy || data.theme || chars.length > 0;
-        // raw_summary만 있으면 narrative 카드 렌더
         if (!hasStructured && data.raw_summary) return renderNarrativeSummary(str(data.raw_summary));
+
+        // ── 내부 헬퍼 ──────────────────────────────────────────────────────
+        const InfoBlock = ({ label, val }: { label: string; val: unknown }) =>
+          val ? (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: c, letterSpacing: "0.5px", textTransform: "uppercase" as const, marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 13, color: "#d4dce8", lineHeight: 1.7 }}>{str(val)}</div>
+            </div>
+          ) : null;
+
+        const rels1 = Array.isArray(data.character_relationships) ? data.character_relationships as Array<Record<string,string>> : [];
+
         return (
           <>
-            {/* ① 시대적·공간적 공기 */}
+            {/* ① 세계 배경 */}
             {(data.era || data.core_space || data.daily_life) && (
-              <>
-                <SectionHeader icon="🌍" title="시대적·공간적 공기" />
-                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
-                  <Field label="시대 배경" val={data.era} />
-                  <Field label="핵심 공간" val={data.core_space} />
-                  <Field label="생활감" val={data.daily_life} />
+              <div style={{ background: "#10101c", borderRadius: 12, padding: "16px 18px", marginBottom: 10, border: `1px solid ${c}20` }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: c, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>🌍</span> 세계 배경
                 </div>
-              </>
-            )}
-
-            {/* ② 사회적 압박과 갈등 */}
-            {(data.power_hierarchy || data.social_norms || data.taboo) && (
-              <>
-                <SectionHeader icon="⚔️" title="사회적 압박과 갈등" />
-                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
-                  <Field label="계급·권력" val={data.power_hierarchy} />
-                  <Field label="사회적 통념" val={data.social_norms} />
-                  <Field label="금기 (Taboo)" val={data.taboo} />
-                </div>
-              </>
-            )}
-
-            {/* ③ 만약에 설정 */}
-            {(data.what_if_rule || data.what_if_cost || data.what_if_who_knows) && (
-              <>
-                <SectionHeader icon="✨" title="만약에 설정 (What If)" />
-                <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
-                  <Field label="핵심 규칙" val={data.what_if_rule} />
-                  <Field label="규칙의 대가" val={data.what_if_cost} />
-                  <Field label="비밀의 공유" val={data.what_if_who_knows} />
-                </div>
-              </>
-            )}
-
-            {/* ④ 인물 관계의 역학 */}
-            {(chars.length > 0 || data.character_backstory || data.goal_conflicts) && (
-              <>
-                <SectionHeader icon="👤" title={`인물 관계의 역학${chars.length > 0 ? ` (${chars.length}명)` : ""}`} />
-                {chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)}
-                {(data.character_backstory || data.goal_conflicts) && (
-                  <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", marginBottom:4, border:`1px solid ${c}20` }}>
-                    <Field label="얽힌 과거사" val={data.character_backstory} />
-                    <Field label="목표 충돌" val={data.goal_conflicts} />
+                {data.era && (
+                  <div style={{ background: `${c}0c`, border: `1px solid ${c}25`, borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: `${c}99`, fontWeight: 700, marginBottom: 3 }}>시대 배경</div>
+                    <div style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.65 }}>{str(data.era)}</div>
                   </div>
                 )}
-              </>
-            )}
-
-            {/* 주요 장소 */}
-            {locs.length > 0 && (
-              <>
-                <SectionHeader icon="🏙" title={`주요 장소 (${locs.length}곳)`} />
-                {locs.map((l, i) => <LocCard key={i} loc={l} cardColor={c} />)}
-              </>
-            )}
-
-            {/* ⑤ 테마 */}
-            {data.theme && (
-              <>
-                <SectionHeader icon="🎭" title="메시지와 테마" />
-                <div style={{ background:`${c}10`, border:`1px solid ${c}30`, borderRadius:12, padding:"16px 18px", marginBottom:4 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:"#f1f5f9", lineHeight:1.75 }}>{str(data.theme)}</div>
+                <div style={{ display: "grid", gridTemplateColumns: data.core_space && data.daily_life ? "1fr 1fr" : "1fr", gap: 8 }}>
+                  {data.core_space && (
+                    <div style={{ background: "#0d0d1a", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 10, color: "#4a4a68", fontWeight: 700, marginBottom: 3 }}>핵심 공간</div>
+                      <div style={{ fontSize: 12, color: "#c8d0e0", lineHeight: 1.6 }}>{str(data.core_space)}</div>
+                    </div>
+                  )}
+                  {data.daily_life && (
+                    <div style={{ background: "#0d0d1a", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 10, color: "#4a4a68", fontWeight: 700, marginBottom: 3 }}>생활감</div>
+                      <div style={{ fontSize: 12, color: "#c8d0e0", lineHeight: 1.6 }}>{str(data.daily_life)}</div>
+                    </div>
+                  )}
                 </div>
-              </>
+              </div>
+            )}
+
+            {/* ② 사회 구조 */}
+            {(data.power_hierarchy || data.social_norms || data.taboo) && (
+              <div style={{ background: "#10101c", borderRadius: 12, padding: "16px 18px", marginBottom: 10, border: `1px solid ${c}20` }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: c, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>⚔️</span> 사회 구조
+                </div>
+                <InfoBlock label="계급·권력" val={data.power_hierarchy} />
+                <InfoBlock label="사회 통념" val={data.social_norms} />
+                <InfoBlock label="금기 (Taboo)" val={data.taboo} />
+              </div>
+            )}
+
+            {/* ③ What If 설정 */}
+            {(data.what_if_rule || data.what_if_cost || data.what_if_who_knows) && (
+              <div style={{ background: `${c}08`, borderRadius: 12, padding: "16px 18px", marginBottom: 10, border: `1px solid ${c}30` }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: c, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>✨</span> What If 설정
+                </div>
+                {data.what_if_rule && (
+                  <div style={{ background: `${c}12`, border: `1px solid ${c}35`, borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: `${c}aa`, fontWeight: 700, marginBottom: 3 }}>핵심 규칙</div>
+                    <div style={{ fontSize: 13, color: "#f1f5f9", fontWeight: 600, lineHeight: 1.65 }}>{str(data.what_if_rule)}</div>
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: data.what_if_cost && data.what_if_who_knows ? "1fr 1fr" : "1fr", gap: 8 }}>
+                  {data.what_if_cost && (
+                    <div style={{ background: "#0d0d1a", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 10, color: "#4a4a68", fontWeight: 700, marginBottom: 3 }}>규칙의 대가</div>
+                      <div style={{ fontSize: 12, color: "#c8d0e0", lineHeight: 1.6 }}>{str(data.what_if_cost)}</div>
+                    </div>
+                  )}
+                  {data.what_if_who_knows && (
+                    <div style={{ background: "#0d0d1a", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 10, color: "#4a4a68", fontWeight: 700, marginBottom: 3 }}>누가 아는가</div>
+                      <div style={{ fontSize: 12, color: "#c8d0e0", lineHeight: 1.6 }}>{str(data.what_if_who_knows)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ④ 등장인물 */}
+            {chars.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#fb923c", letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>👤</span> 등장인물 <span style={{ background: "rgba(251,146,60,0.15)", color: "#fb923c", borderRadius: 99, padding: "1px 8px", fontWeight: 700 }}>{chars.length}</span>
+                </div>
+                {/* 인물 그리드 */}
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(chars.length, 3)}, 1fr)`, gap: 8, marginBottom: 8 }}>
+                  {chars.map((ch, i) => {
+                    const rels = Array.isArray(ch.relationships) ? ch.relationships as Array<Record<string,string>> : [];
+                    return (
+                      <div key={i} style={{ background: "#10101c", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(251,146,60,0.18)" }}>
+                        <div style={{ background: "linear-gradient(135deg, rgba(251,146,60,0.18), transparent)", padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(251,146,60,0.2)", border: "2px solid rgba(251,146,60,0.5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#fb923c", flexShrink: 0 }}>
+                            {(ch.name ?? "?").slice(0, 2)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{ch.name}</div>
+                            {ch.role && <div style={{ fontSize: 10, color: "#fb923c", marginTop: 1 }}>{ch.role}</div>}
+                          </div>
+                        </div>
+                        {(ch.personality || ch.motivation) && (
+                          <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+                            {ch.personality && <div style={{ fontSize: 11, color: "#8080a0", lineHeight: 1.5, marginBottom: ch.motivation ? 4 : 0 }}><span style={{ color: "#fb923c88", fontWeight: 700, marginRight: 4 }}>성격</span>{str(ch.personality).slice(0, 60)}{str(ch.personality).length > 60 ? "…" : ""}</div>}
+                            {ch.motivation && <div style={{ fontSize: 11, color: "#8080a0", lineHeight: 1.5 }}><span style={{ color: "#fb923c88", fontWeight: 700, marginRight: 4 }}>동기</span>{str(ch.motivation).slice(0, 60)}{str(ch.motivation).length > 60 ? "…" : ""}</div>}
+                          </div>
+                        )}
+                        {/* 관계 태그 */}
+                        {rels.length > 0 && (
+                          <div style={{ padding: "6px 12px 8px", borderTop: "1px solid rgba(255,255,255,0.04)", display: "flex", flexWrap: "wrap" as const, gap: 4 }}>
+                            {rels.slice(0, 3).map((r, ri) => (
+                              <span key={ri} style={{ fontSize: 10, background: "rgba(251,146,60,0.1)", border: "1px solid rgba(251,146,60,0.2)", borderRadius: 99, padding: "1px 7px", color: "#fb923c" }}>
+                                {r.character} <span style={{ opacity: 0.6 }}>({r.type})</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* 관계망 요약 */}
+                {(rels1.length > 0 || data.character_backstory || data.goal_conflicts) && (
+                  <div style={{ background: "#10101c", borderRadius: 10, padding: "12px 14px", border: "1px solid rgba(251,146,60,0.12)" }}>
+                    {rels1.length > 0 && (
+                      <div style={{ marginBottom: data.character_backstory || data.goal_conflicts ? 8 : 0 }}>
+                        <div style={{ fontSize: 10, color: "#34d399", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 6 }}>관계망</div>
+                        {rels1.map((r, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 4, flexWrap: "wrap" as const }}>
+                            <span style={{ color: "#f1f5f9", fontWeight: 700 }}>{r.from ?? r.character}</span>
+                            <span style={{ color: "#34d399", fontSize: 10, background: "rgba(52,211,153,0.12)", padding: "1px 7px", borderRadius: 99 }}>↔ {r.type ?? r.relation}</span>
+                            <span style={{ color: "#f1f5f9", fontWeight: 700 }}>{r.to ?? r.target}</span>
+                            {(r.description ?? r.detail) && <span style={{ color: "#4a4a68" }}>— {str(r.description ?? r.detail)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {data.character_backstory && <InfoBlock label="얽힌 과거사" val={data.character_backstory} />}
+                    {data.goal_conflicts && <InfoBlock label="목표 충돌" val={data.goal_conflicts} />}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ⑤ 핵심 장소 */}
+            {locs.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#a78bfa", letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>🏙</span> 핵심 장소 <span style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa", borderRadius: 99, padding: "1px 8px", fontWeight: 700 }}>{locs.length}</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: locs.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}>
+                  {locs.map((l, i) => {
+                    const locType = str(l.location_type) || str(l.type);
+                    const locIcon = /야외|거리|공원|광장|산|바다|들판/.test(locType) ? "🌿" : /건물|빌딩|아파트|학교|병원|관청/.test(locType) ? "🏢" : /시장|상점|가게/.test(locType) ? "🏪" : "🏠";
+                    return (
+                      <div key={i} style={{ background: "#10101c", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(167,139,250,0.18)" }}>
+                        <div style={{ background: "linear-gradient(90deg, rgba(167,139,250,0.12), transparent)", padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 18, flexShrink: 0 }}>{locIcon}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{l.name ?? l.location_name}</div>
+                            {locType && <div style={{ fontSize: 10, color: "#a78bfa", marginTop: 1 }}>{locType}</div>}
+                          </div>
+                        </div>
+                        {(l.visual || l.atmosphere || l.significance || l.role) && (
+                          <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.04)", fontSize: 11, color: "#7070a0", lineHeight: 1.55 }}>
+                            {str(l.visual || l.atmosphere || l.significance || l.role).slice(0, 80)}
+                            {str(l.visual || l.atmosphere || l.significance || l.role).length > 80 ? "…" : ""}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ⑥ 테마 */}
+            {data.theme && (
+              <div style={{ background: `${c}0a`, border: `1px solid ${c}28`, borderRadius: 12, padding: "14px 18px", marginBottom: 10 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: c, letterSpacing: "0.6px", textTransform: "uppercase" as const, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>🎭</span> 메시지·테마
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.75 }}>{str(data.theme)}</div>
+              </div>
             )}
 
             {data.raw_summary && renderNarrativeSummary(str(data.raw_summary))}
