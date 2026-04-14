@@ -2253,6 +2253,21 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);  // mount 시 1회만 실행
 
+  // 뷰 모드 → 메인 모드 소프트 내비게이션 감지: ?view 파라미터 사라지면 자동 재개
+  const searchParamsStr = searchParams.toString();
+  useEffect(() => {
+    const viewGone = !searchParams.get("view");
+    if (!viewGone) return;
+    if (pendingResumeRef.current === null) return;
+    if (runningRef.current) return;
+    const idx = pendingResumeRef.current;
+    pendingResumeRef.current = null;
+    runningRef.current = false;
+    abortRef.current = false;
+    void runDebate(idx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParamsStr]);
+
   // 블랙리스트 localStorage 동기화
   useEffect(() => {
     rejectedItemsRef.current = rejectedItems;
@@ -2375,6 +2390,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       transcript = [...resumeDataRef.current.transcript];
       setMsgs(resumeDataRef.current.msgs);
       resumeDataRef.current = null;
+      // 이어하기 시작: 기존 에이전트 턴 수를 "거부 기준점"으로 설정
+      // → 새로 추가되는 첫 10턴은 마무리 제안 차단 (resume 직후 즉시 wrap-up 방지)
+      wrapUpRejectedTurn = transcript.filter(l => !l.startsWith("[사용자]")).length;
     } else {
       transcript = [];
     }
@@ -4430,7 +4448,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         const label = agData ? agData.label : "사용자";
         return `[${label}]: ${m.text}`;
       });
-    // resume 데이터로 저장 (mount 시 자동 복원)
+    // refs에 직접 복원 (소프트 내비게이션: 전체 리로드 없이 뷰 모드 → 토론 모드)
+    resumeDataRef.current = { transcript, msgs: histMsgs };
+    pendingResumeRef.current = stageIdx;
+    setCurrentStageIdx(stageIdx);
+    // localStorage에도 저장 (강제 리로드 대비)
     try {
       localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
       localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(histMsgs));
@@ -4438,8 +4460,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const parsed = saved ? JSON.parse(saved) as Record<string, unknown> : {};
       localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({ ...parsed, currentStageIdx: stageIdx, pendingResume: stageIdx }));
     } catch { /* ignore */ }
-    window.location.href = `/projects/${projectId}/phase-2`;
-  }, [projectId, stageHistoryMsgs]);
+    // ?view 파라미터 제거 → 메인 토론 뷰로 전환 (소프트 내비게이션, 흰 화면 없음)
+    router.push(`/projects/${projectId}/phase-2`);
+  }, [projectId, stageHistoryMsgs, router]);
 
   // ── 뷰 모드 전용: 과거 스테이지 새로 토론 (해당 스테이지 + 이후 초기화) ──
   const handleRestartStageFromView = useCallback((stageIdx: number) => {
