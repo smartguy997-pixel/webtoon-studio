@@ -3019,10 +3019,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const runSingleAgent = async (agentId: AgentId, userContent: string, tokens: number) => {
       const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
       if (!key) return;
-      // 같은 에이전트가 이미 스트리밍 중이면 완료 대기 (동시 타이핑 방지, 최대 60초)
+      // 전역 lock: 어떤 에이전트든 스트리밍 중이면 완료 대기 (한 번에 한 명만 발언, 최대 60초)
       const waitDedup = Date.now();
       while (
-        msgsRef.current.some((m: Msg) => m.agent === agentId && m.streaming) &&
+        msgsRef.current.some((m: Msg) => m.streaming) &&
         Date.now() - waitDedup < 60000
       ) { await sleep(200); }
       const msgId = addMsg(agentId, "", true);
