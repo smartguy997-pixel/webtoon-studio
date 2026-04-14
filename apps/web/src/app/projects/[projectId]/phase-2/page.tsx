@@ -133,11 +133,11 @@ function matchCommandP2(msg: string): P2CommandPattern | null {
 // 각 스테이지마다 반드시 다뤄야 할 하위 주제들
 // 스테이지별 주제당 최소 턴 수 — 세계관(1)은 깊이가 중요해서 더 많이
 const MIN_TURNS_BY_STAGE: Record<number, number> = {
-  1: 3,  // 세계관 — 5개 프레임워크, 주제당 3회 키워드 감지 시 완료 처리 (WRAP_UP_AFTER = 35)
-  2: 4,  // 시놉시스
-  3: 3,  // 캐릭터
-  4: 3,  // 장소
-  5: 3,  // 소품
+  1: 4,  // 세계관 프레임워크 — 주제당 4회 이상 언급돼야 완료
+  2: 4,  // 시놉시스 4단계 워크플로우
+  3: 5,  // 캐릭터 — 이름이 5회 이상 언급돼야 "이 인물 다뤘다" 처리
+  4: 4,  // 장소 — 4회 이상 언급
+  5: 3,  // 소품 — 3회 이상 언급
 };
 const MIN_TURNS_PER_TOPIC_P2 = 7; // fallback (UI 표시용)
 
@@ -180,6 +180,57 @@ const STAGE_AGENDA: Record<number, Array<{
     { id: "symbol",    label: "상징·의미",    keywords: /상징|의미|역할|중요|핵심|복선|주인공과의 관계|이야기|서사|감정/,      nudge: "이 소품들이 이야기에서 어떤 상징적 의미를 갖는지 얘기해보자." },
   ],
 };
+
+// ─── 동적 아젠다 빌더: Stage 3/4/5는 이전 단계 결과에서 항목 추출 ──────────────────
+type AgendaItem = { id: string; label: string; keywords: RegExp; nudge: string };
+
+function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: number; data: Record<string, unknown> }>): AgendaItem[] {
+  const ns = (arr: unknown): Array<{ name: string }> =>
+    Array.isArray(arr) ? (arr as Array<{ name: string }>).filter(x => x?.name) : [];
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const s1 = stageResults.find(r => r.stageId === 1)?.data;
+  const s2 = stageResults.find(r => r.stageId === 2)?.data;
+
+  if (stageId === 3) {
+    const chars = ns(s2?.characters).length > 0 ? ns(s2?.characters) : ns(s1?.key_characters);
+    if (chars.length > 0) {
+      return chars.map(c => ({
+        id: `char_${c.name}`,
+        label: c.name,
+        keywords: new RegExp(esc(c.name)),
+        nudge: `${c.name} 캐릭터를 더 깊이 다루자. 얼굴·체형·복장·성격·동기·말투까지 이미지로 바로 그릴 수 있을 만큼 구체적으로.`,
+      }));
+    }
+  }
+
+  if (stageId === 4) {
+    const locs = ns(s2?.locations).length > 0 ? ns(s2?.locations) : ns(s1?.key_locations);
+    if (locs.length > 0) {
+      return locs.map(l => ({
+        id: `loc_${l.name}`,
+        label: l.name,
+        keywords: new RegExp(esc(l.name)),
+        nudge: `${l.name} 장소를 더 구체적으로 설계하자. 건축 구조·조명·색채·분위기·서사적 의미까지.`,
+      }));
+    }
+  }
+
+  if (stageId === 5) {
+    const props = ns(s2?.props);
+    if (props.length > 0) {
+      return props.map(p => ({
+        id: `prop_${p.name}`,
+        label: p.name,
+        keywords: new RegExp(esc(p.name)),
+        nudge: `${p.name} 소품을 더 구체적으로 설계하자. 형태·색상·재질·상태·이야기 역할까지.`,
+      }));
+    }
+  }
+
+  // 이전 단계 데이터가 없으면 정적 아젠다로 폴백
+  return STAGE_AGENDA[stageId] ?? [];
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2375,15 +2426,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let wrapUpProposedAt = 0;
     let wrapUpRejectedTurn = -999; // 사용자가 마무리 거부한 턴 — 거부 후 최소 N턴 대기용
     let naturalExit = false;
-    let charTransitionCount = 0; // Stage 3: 캐릭터 전환 횟수 추적
-    // 이 스테이지의 아젠다 항목 수 × 최소 턴 + 여유
-    const stageAgenda = STAGE_AGENDA[stage.id] ?? [];
+    // Stage 3/4/5: 이전 단계 결과에서 동적 아젠다 빌드 (캐릭터·장소·소품 각각 항목화)
+    // Stage 1/2: 정적 아젠다 유지
+    const stageAgenda = buildDynamicAgenda(stage.id, stageResultsRef.current);
     const minTurnsForStage = MIN_TURNS_BY_STAGE[stage.id] ?? MIN_TURNS_PER_TOPIC_P2;
-    // Stage 1: 5개 프레임워크 × 3 + 20 = 35턴 상한 (오케스트레이터가 전환 관리)
-    // Stage 3: 캐릭터 하나당 WRAP_UP_AFTER턴, 최대 3캐릭터 × WRAP_UP_AFTER를 최종 한도로
-    const WRAP_UP_AFTER = stage.id === 1 ? 35 : stageAgenda.length * minTurnsForStage + 10;
-    // Stage 3 한정: 3번 캐릭터 전환 후에만 진짜 마무리 (=캐릭터 여러 명 충분히 논의)
-    const FINAL_WRAP_UP_AFTER = stage.id === 3 ? WRAP_UP_AFTER * 3 : WRAP_UP_AFTER;
+    // WRAP_UP_AFTER: 안전망(hard cap)용 — 항목당 최대 12턴 × 아젠다 수
+    // allCovered && converging이 실질적 1차 트리거이며, WRAP_UP_AFTER는 무한 토론 방지용
+    const WRAP_UP_AFTER = Math.max(stageAgenda.length * 12, stage.id === 1 ? 60 : 40);
     const WRAP_UP_AUTO_MS = stage.id === 1 ? 30_000 : 60_000; // 바이블 스테이지는 60초
     // 아젠다 추적 (스테이지마다 초기화)
     const coveredAgenda = new Set<string>();
@@ -2957,11 +3006,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           }
         }
 
-        // 마무리 조건 체크 — 모든 아젠다 완료 or WRAP_UP_AFTER 턴 초과
+        // 마무리 조건 체크 ─────────────────────────────────────────────────────────
+        // 1차 트리거: 모든 아젠다 항목 완료(allCovered) + 수렴 신호(converging)
+        // 2차 트리거(hard cap): 이번 세션 신규 턴 ≥ WRAP_UP_AFTER (무한 토론 방지)
+        //   → 이어하기 시 기존 누적 턴은 제외 (agentTurnsAtSessionStart 차감)
         const allCovered = stageAgenda.length > 0 && coveredAgenda.size >= stageAgenda.length;
-        // 이번 runDebate 세션에서 새로 추가된 에이전트 턴 수 (이어하기 시 기존 턴 제외)
         const newTurnsSinceStart = agentTurnsSoFar - agentTurnsAtSessionStart;
-        // Stage 1: 최소 10턴 이상 + 모든 항목 완료 시 수렴 신호 1개만 있어도 마무리
         const minTurnsForConverge = stage.id === 1 ? 10 : 8;
         const converging = newTurnsSinceStart >= minTurnsForConverge && (
           stage.id === 1
@@ -2972,46 +3022,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         // 마무리 재제안: 사용자 거부 후 최소 10턴 경과해야 다시 제안 가능
         const turnsAfterRejection = agentTurnsSoFar - wrapUpRejectedTurn;
 
-        // ── Stage 3 캐릭터 전환 ──
-        // allCovered or WRAP_UP_AFTER 신규턴 도달 시: 단계 종료 대신 다음 캐릭터로 전환
-        // FINAL_WRAP_UP_AFTER 신규턴 초과 후에만 진짜 마무리 제안
-        // ※ newTurnsSinceStart 기준이므로 이어하기 시 기존 누적 턴은 카운트 안 됨
         const wrapUpConditionMet = !wrapUpProposed && turnsAfterRejection >= 10
-          && (newTurnsSinceStart >= WRAP_UP_AFTER || (allCovered && converging));
+          && ((allCovered && converging) || newTurnsSinceStart >= WRAP_UP_AFTER);
 
-        if (stage.id === 3 && wrapUpConditionMet && newTurnsSinceStart < FINAL_WRAP_UP_AFTER) {
-          // 캐릭터 전환: 아젠다 초기화하고 다음 인물로
-          charTransitionCount++;
-          coveredAgenda.clear();
-          Object.keys(agendaTurns).forEach(k => { agendaTurns[k] = 0; });
-          setCoveredAgendaIds([]);
-          setAgendaTurnCounts({});
-          // 다음 캐릭터가 WRAP_UP_AFTER 턴을 온전히 받도록 rejection point를 앞으로 당김
-          wrapUpRejectedTurn = agentTurnsSoFar + WRAP_UP_AFTER - 10;
-          // 지금까지 다룬 캐릭터 이름 추출 (Stage 2 우선, 없으면 Stage 1)
-          const s2chars = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.data?.characters as Array<{name:string}>|undefined;
-          const s1chars = stageResultsRef.current.find((r: StageResult) => r.stageId === 1)?.data?.key_characters as Array<{name:string}>|undefined;
-          const prevChars: string[] = (s2chars ?? s1chars ?? []).map((c:{name:string}) => c.name);
-          const prevCharLine = prevChars.length > 0 ? `지금까지 나온 인물: ${prevChars.join(", ")}. 이 중 ${charTransitionCount}번째 인물 설계가 마무리됐어.` : "";
-          await runSingleAgent("producer",
-            `${historyText}${prevCharLine} 프로듀서로서: 방금 논의한 캐릭터를 한 줄로 정리하고, "이 캐릭터 설계 잘됐어. 다음 인물로 넘어가자" 흐름으로 자연스럽게 전환해줘. 단계를 끝내는 게 아니라 다음 캐릭터로 이어가는 흐름. 1~2문장.`,
-            180);
-          lastSpeaker = "producer";
-          continue;
-        }
-
-        if (wrapUpConditionMet && !(stage.id === 3 && newTurnsSinceStart < FINAL_WRAP_UP_AFTER)) {
+        if (wrapUpConditionMet) {
           wrapUpProposed = true;
           wrapUpProposedAt = Date.now();
-          const coveredLabels = stageAgenda.map(i => i.label);
+          const coveredLabels = stageAgenda.filter(i => coveredAgenda.has(i.id)).map(i => i.label);
           const uncoveredLabels = stageAgenda.filter(i => !coveredAgenda.has(i.id)).map(i => i.label);
-          const wrapUpIntro = stage.id === 1
-            ? `5개 프레임워크 — "${coveredLabels.join('", "')}" — 모두 충분히 다뤘어.`
-            : stage.id === 3
-              ? `캐릭터 ${charTransitionCount}명 설계를 마쳤어.`
-              : uncoveredLabels.length > 0
-                ? `"${uncoveredLabels.join('", "')}" 항목이 아직 남아 있는데, 충분히 다뤄진 것 같아.`
-                : `이 단계의 항목들 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
+          const wrapUpIntro = uncoveredLabels.length > 0
+            ? `"${coveredLabels.join('", "')}"은 충분히 다뤘어. "${uncoveredLabels.join('", "')}"이 아직 남아 있어.`
+            : `이 단계의 모든 항목 — "${coveredLabels.join('", "')}" — 충분히 다뤘어.`;
           await runSingleAgent("producer",
             `${historyText}${wrapUpIntro} 프로듀서로서 이 단계를 마무리하자고 자연스럽게 제안해줘. 1~2문장.`,
             180);
