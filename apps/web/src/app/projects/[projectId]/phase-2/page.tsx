@@ -5427,21 +5427,36 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           </div>
           {/* 이미지 컨셉 회의 아이템 진행 표시기 */}
           {imageSessionPhase !== "idle" && imageItems.length > 0 && (
-            <div style={{ display: "flex", gap: 6, padding: "4px 16px 0", overflowX: "auto", flexShrink: 0 }}>
-              {imageItems.map((item: ImageItem, i: number) => (
-                <div key={i} style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  padding: "3px 8px", borderRadius: 6, flexShrink: 0,
-                  background: i === currentImageItemIdx ? "rgba(124,108,252,0.15)" : item.confirmed ? "rgba(52,211,153,0.08)" : "transparent",
-                  border: `1px solid ${i === currentImageItemIdx ? "#7c6cfc" : item.confirmed ? "#34d399" : "#2a2a3d"}`,
-                  fontSize: 11, color: i === currentImageItemIdx ? "#7c6cfc" : item.confirmed ? "#34d399" : "#4a4a6a",
-                }}>
-                  {item.confirmed ? "✓" : i === currentImageItemIdx ? "→" : "·"} {item.name}
-                  {i === currentImageItemIdx && imageRoundNum > 1 && (
-                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>R{imageRoundNum}</span>
-                  )}
-                </div>
-              ))}
+            <div style={{ display: "flex", gap: 8, padding: "8px 16px", overflowX: "auto", flexShrink: 0 }}>
+              {imageItems.map((item: ImageItem, i: number) => {
+                const isActive = i === currentImageItemIdx;
+                const typeIcon = item.type === "character" ? "👤" : item.type === "location" ? "🗺" : "🎒";
+                const typeLabel = item.type === "character" ? "캐릭터" : item.type === "location" ? "장소" : "소품";
+                const activeColor = "#7c6cfc";
+                const doneColor = "#34d399";
+                const col = isActive ? activeColor : item.confirmed ? doneColor : "#3a3a5a";
+                return (
+                  <div key={i} style={{
+                    display: "flex", flexDirection: "column" as const, alignItems: "flex-start", gap: 2,
+                    padding: "8px 14px", borderRadius: 10, flexShrink: 0, minWidth: 80,
+                    background: isActive ? "rgba(124,108,252,0.15)" : item.confirmed ? "rgba(52,211,153,0.08)" : "rgba(255,255,255,0.02)",
+                    border: `1px solid ${isActive ? "#7c6cfc60" : item.confirmed ? "#34d39940" : "#2a2a3d"}`,
+                    boxShadow: isActive ? "0 0 0 1px rgba(124,108,252,0.2)" : "none",
+                    transition: "all 0.2s",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ fontSize: 13 }}>{typeIcon}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: isActive ? "#e2e8f0" : item.confirmed ? doneColor : "#6a6a8a", whiteSpace: "nowrap" as const }}>
+                        {item.confirmed ? "✓ " : isActive ? "" : ""}{item.name}
+                      </span>
+                      {isActive && imageRoundNum > 1 && (
+                        <span style={{ fontSize: 10, color: "#7c6cfc", background: "rgba(124,108,252,0.15)", padding: "1px 6px", borderRadius: 99 }}>R{imageRoundNum}</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 10, color: col, opacity: 0.7, paddingLeft: 18 }}>{isActive ? "▶ 진행 중" : item.confirmed ? "완료" : typeLabel}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
           <button className={s.btnRestart} onClick={handleRestartNew} style={{ flexShrink:0, marginLeft:12 }}>↺ 초기화</button>
@@ -5490,29 +5505,34 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   {/* 요약 헤더 — 클릭으로 카드 펼침 */}
                   <div
                     onClick={() => setAgendaExpanded((v: boolean) => !v)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 14px", cursor: "pointer", userSelect: "none" }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: "pointer", userSelect: "none" }}
                   >
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#a5b4fc" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#a5b4fc", flexShrink: 0 }}>
                       {STAGES[currentStageIdx]?.name ?? "토론"}
                     </span>
-                    {/* 엔티티별 미니 진행바 */}
-                    <div style={{ display: "flex", gap: 5, flex: 1, alignItems: "center", overflowX: "auto" }}>
+                    {/* 엔티티별 이름 + 미니 진행바 */}
+                    <div style={{ display: "flex", gap: 8, flex: 1, alignItems: "center", overflowX: "auto" }}>
                       {Array.from(groupMap.entries()).map(([gk, items]) => {
                         const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
                         const pct = items.length > 0 ? (done / items.length) * 100 : 0;
                         const allDone = done === items.length;
                         return (
-                          <div key={gk} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                            <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#6b6b9a", fontWeight: allDone ? 700 : 400, whiteSpace: "nowrap" as const }}>
+                          <div key={gk} style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                            padding: "3px 10px 3px 8px", borderRadius: 8,
+                            background: allDone ? "rgba(52,211,153,0.07)" : "rgba(99,102,241,0.08)",
+                            border: `1px solid ${allDone ? "rgba(52,211,153,0.2)" : "rgba(99,102,241,0.15)"}`,
+                          }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: allDone ? "#34d399" : "#c4c4e8", whiteSpace: "nowrap" as const }}>
                               {allDone ? "✓ " : ""}{gk}
                             </span>
-                            <div style={{ width: 40, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0 }}>
+                            <div style={{ width: 36, height: 3, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0 }}>
                               <div style={{
                                 height: "100%", borderRadius: 99, transition: "width 0.4s",
                                 background: allDone ? "#34d399" : pct > 0 ? "#7c6cfc" : "transparent",
                                 width: `${pct}%`,
                               }} />
                             </div>
+                            <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#4a4a6a" }}>{done}/{items.length}</span>
                           </div>
                         );
                       })}
@@ -5525,42 +5545,42 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
                   {/* 펼침: 엔티티별 필드 카드 */}
                   {agendaExpanded && (
-                    <div style={{ display: "flex", gap: 8, padding: "0 14px 10px", overflowX: "auto" }}>
+                    <div style={{ display: "flex", gap: 10, padding: "0 14px 12px", overflowX: "auto" }}>
                       {Array.from(groupMap.entries()).map(([gk, items]) => {
                         const done = items.filter((i: AgendaItem) => coveredAgendaIds.includes(i.id)).length;
                         const allDone = done === items.length;
                         return (
                           <div key={gk} style={{
-                            flexShrink: 0, minWidth: 130,
+                            flexShrink: 0, minWidth: 170,
                             borderRadius: 10, overflow: "hidden",
                             border: `1px solid ${allDone ? "rgba(52,211,153,0.25)" : "rgba(99,102,241,0.18)"}`,
                             background: allDone ? "rgba(52,211,153,0.05)" : "rgba(18,18,32,0.8)",
                           }}>
-                            {/* 카드 헤더 */}
+                            {/* 카드 헤더: 이름 크게 */}
                             <div style={{
                               display: "flex", alignItems: "center", justifyContent: "space-between",
-                              padding: "7px 10px 5px",
+                              padding: "10px 12px 8px",
                               background: allDone ? "rgba(52,211,153,0.08)" : "rgba(99,102,241,0.07)",
                               borderBottom: `1px solid ${allDone ? "rgba(52,211,153,0.15)" : "rgba(99,102,241,0.12)"}`,
                             }}>
-                              <span style={{ fontSize: 12, fontWeight: 800, color: allDone ? "#34d399" : "#c4c4e8" }}>{gk}</span>
-                              <span style={{ fontSize: 10, color: allDone ? "#34d399" : "#4a4a6a" }}>{done}/{items.length}</span>
+                              <span style={{ fontSize: 14, fontWeight: 800, color: allDone ? "#34d399" : "#e2e8f0" }}>{gk}</span>
+                              <span style={{ fontSize: 11, color: allDone ? "#34d399" : "#4a4a6a", marginLeft: 8 }}>{done}/{items.length}</span>
                             </div>
                             {/* 필드 목록 */}
-                            <div style={{ padding: "6px 8px", display: "flex", flexDirection: "column" as const, gap: 3 }}>
+                            <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column" as const, gap: 4 }}>
                               {items.map((item: AgendaItem) => {
                                 const st = itemStatus(item);
                                 const subLabel = item.label.includes(" — ") ? item.label.split(" — ")[1] : item.label;
                                 return (
-                                  <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                  <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                     <div style={{
-                                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                                      width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
                                       background: statusColor[st],
                                       border: `1px solid ${statusBorder[st]}`,
                                       transition: "background 0.3s",
                                     }} />
                                     <span style={{
-                                      fontSize: 10,
+                                      fontSize: 11,
                                       color: st === "done" ? "#34d399" : st === "active" ? "#a5b4fc" : st === "seen" ? "#3d3d60" : "#2a2a40",
                                       fontWeight: st === "done" ? 700 : 400,
                                     }}>{subLabel}</span>
