@@ -2085,6 +2085,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const p1DataRef = useRef<P1Data | null>(null); // Phase 1 분석 결과 인계용
   const styleRunningRef = useRef(false);
   const styleConvRef = useRef<string[]>([]);
+  const pendingDebateStartRef = useRef<number | null>(null); // 뷰 모드 → 다음 단계 자동 시작용
   const pendingStyleMsgRef = useRef<string | null>(null);
   const imageItemsRef = useRef<ImageItem[]>([]);
   const imageTargetStageIdxRef = useRef<number>(0);
@@ -2135,13 +2136,21 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
       const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
       if (savedData) {
-        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]> };
+        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]>; pendingDebateStart?: number };
         if (parsed.stageResults?.length) {
           stageResultsRef.current = parsed.stageResults;
           setStageResults(parsed.stageResults);
           if (parsed.stageHistoryMsgs) setStageHistoryMsgs(parsed.stageHistoryMsgs);
           const idx = parsed.currentStageIdx ?? 0;
           setCurrentStageIdx(idx);
+          // pendingDebateStart: 뷰 모드에서 다음 단계 버튼 눌렀을 때 자동 시작 플래그
+          if (typeof parsed.pendingDebateStart === "number") {
+            pendingDebateStartRef.current = parsed.pendingDebateStart;
+            // 플래그 제거 후 저장
+            const { pendingDebateStart: _pd, ...rest } = parsed;
+            void _pd;
+            try { localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify(rest)); } catch { /* ignore */ }
+          }
           if (idx >= STAGES.length) {
             setDebatePhase("done");
           } else {
@@ -2177,6 +2186,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (msgs.some((m: Msg) => m.streaming)) return;
     localStorage.setItem(`p2_msgs_${projectId}`, JSON.stringify(msgs));
   }, [msgs, projectId]);
+
+  // 뷰 모드에서 다음 단계 버튼 → 자동 토론 시작
+  useEffect(() => {
+    if (pendingDebateStartRef.current === null) return;
+    const idx = pendingDebateStartRef.current;
+    pendingDebateStartRef.current = null;
+    setMsgs([]);
+    convRef.current = [];
+    setCurrentStageIdx(idx);
+    setDebatePhase("idle");
+    void runDebate(idx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // mount 시 1회만 실행
 
   // 블랙리스트 localStorage 동기화
   useEffect(() => {
@@ -4370,7 +4392,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               <StageReportInChat
                 result={viewResult}
                 stage={viewStageObj}
-                onNextStage={() => handleNextStage(stageIdx)}
+                onNextStage={() => {
+                  const nextIdx = stageIdx + 1;
+                  try {
+                    const saved = localStorage.getItem(`wts_phase2_${projectId}`);
+                    const parsed = saved ? JSON.parse(saved) as Record<string, unknown> : {};
+                    localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+                      ...parsed,
+                      currentStageIdx: nextIdx,
+                      pendingDebateStart: nextIdx,
+                    }));
+                  } catch { /* ignore */ }
+                  window.location.href = `/projects/${projectId}/phase-2`;
+                }}
                 onContinueDebate={() => handleResumeStageFromView(stageIdx)}
                 onNewDebate={() => handleRestartStageFromView(stageIdx)}
                 nextStageName={stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null}
