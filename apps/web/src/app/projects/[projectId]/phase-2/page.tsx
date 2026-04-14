@@ -3038,6 +3038,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         })) {
           if (abortRef.current) break;
           text += chunk;
+          // 실시간 스트리밍: 청크가 올 때마다 즉시 UI 업데이트
+          updateMsg(msgId, text, true);
         }
       } catch (err) {
         setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId));
@@ -3045,15 +3047,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
         return;
       }
+      // 스트리밍 완료 후 마크다운 클린업 적용
       const clean = text.trim().replace(/\*\*?([^*]+)\*\*?/g, "$1").replace(/[#>_`]/g, "");
       if (!clean) { setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== msgId)); return; }
-      // 타이프라이터: 2자씩 120ms
-      const CHARS = 2; const TICK = 120;
-      for (let i = CHARS; i < clean.length; i += CHARS) {
-        if (abortRef.current) break;
-        updateMsg(msgId, clean.slice(0, i), true);
-        await sleep(TICK);
-      }
       updateMsg(msgId, clean, false);
       transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
       convRef.current = transcript;
