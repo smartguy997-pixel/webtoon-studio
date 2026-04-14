@@ -160,18 +160,25 @@ const STAGE_AGENDA: Record<number, Array<{
     { id: "step_logline",   label: "③ 로그라인 대결",  keywords: /로그라인|한 줄|아이러니|선택|제목|후크|hook/,                               nudge: "3명의 인물 후보로 서로 다른 느낌의 로그라인 5개를 써야 해." },
     { id: "step_synopsis",  label: "④ 시놉시스 완성",  keywords: /기획의도|타겟|장르|인카네이션|트리거|기승전결|비판|보완|스토리아크|완성/,      nudge: "선택된 로그라인을 기반으로 전체 시놉시스를 완성해야 해." },
   ],
-  3: [ // 캐릭터
-    { id: "hero",      label: "주인공",       keywords: /주인공|히어로|주역|주연|리드|protagonist|주캐/,                        nudge: "주인공을 더 깊이 파자. 얼굴·체형·복장·말투·동기·상처까지. 이미지 생성할 수 있을 정도로." },
-    { id: "villain",   label: "빌런·적대자",  keywords: /빌런|악당|적|반동|대립|antagonist|보스|라이벌|악역/,                   nudge: "빌런이나 주요 갈등 상대를 설계해보자. 외모·동기·힘·세계관에서의 위치까지." },
-    { id: "support",   label: "조력자·단역",  keywords: /조력|서브|단역|주변|캐릭터|등장인물|인물|캐스팅|팀|동료|친구|스승/,   nudge: "조력자들과 단역 인물들도 구체적으로 잡아야 해. 이름·역할·외형·이야기 기능." },
-    { id: "design",    label: "외형·시각 설계",keywords: /외모|외형|헤어|머리|눈|얼굴|키|체형|체중|복장|옷|패션|시각|디자인/, nudge: "캐릭터들의 시각적 설계를 정밀하게 잡자. 이미지로 바로 그릴 수 있을 만큼 구체적으로." },
-    { id: "relation",  label: "캐릭터 관계",  keywords: /관계|관계도|사이|갈등|우정|사랑|적대|가족|팀|연결|케미|구도/,        nudge: "인물들 사이의 관계 구도를 얘기해야 해. 누가 누구와 어떤 관계이고 어떻게 변하는지." },
+  3: [ // 캐릭터 — 이전 단계 데이터 없을 때 폴백
+    { id: "hero",      label: "주인공",       keywords: /주인공|히어로|주역|주연|리드|protagonist|주캐/,
+      nudge: "주인공을 필수 항목까지 완성하자. ①성별·나이대·키·몸무게 ②체형(근육질/마른/보통 등) ③주요 복장 ④얼굴 묘사(이목구비·눈빛·표정 습관) ⑤성격 특징 3가지 이상 ⑥조력자·연인·가족 등 인물 관계 ⑦갈등 관계." },
+    { id: "villain",   label: "빌런·적대자",  keywords: /빌런|악당|적|반동|대립|antagonist|보스|라이벌|악역/,
+      nudge: "빌런·적대자를 필수 항목까지 설계하자. ①체형·외모 ②복장 ③성격 ④주인공과의 갈등 관계와 이유 ⑤목표와 동기." },
+    { id: "support",   label: "조력자·단역",  keywords: /조력|서브|단역|주변|캐릭터|등장인물|인물|캐스팅|팀|동료|친구|스승/,
+      nudge: "조력자와 단역들을 구체적으로 잡자. 이름·외형·성격·주인공과의 관계(어떤 도움을 주는지)·갈등 가능성." },
+    { id: "relation",  label: "인물 관계·갈등", keywords: /관계|관계도|사이|갈등|우정|사랑|적대|가족|팀|연결|케미|구도|대립/,
+      nudge: "인물들 사이의 관계와 갈등 구도를 정리하자. 누가 조력자고 누가 연인인지, 누가 최종 대립 관계인지 명확히." },
   ],
-  4: [ // 장소
-    { id: "mainloc",   label: "주요 배경",    keywords: /장소|배경|위치|공간|지역|동네|건물|도시|마을|숲|성|궁전|학교|회사/,   nudge: "주요 배경들을 하나씩 짚어보자. 이름·용도·이야기에서의 역할까지." },
-    { id: "visual_l",  label: "색채·조명",    keywords: /색채|색감|색|조명|빛|밝기|명암|톤|팔레트|컬러|시각적|비주얼/,        nudge: "각 장소의 색채 팔레트와 조명 특성을 얘기해보자. 그림으로 재현할 수 있게." },
-    { id: "arch",      label: "공간 구조",    keywords: /구조|건축|인테리어|레이아웃|공간|규모|크기|층|넓이|형태|구성/,        nudge: "장소들의 건축 구조나 공간 구성을 구체적으로 잡아야 해. 연출할 때 꼭 필요해." },
-    { id: "meaning",   label: "서사적 의미",  keywords: /의미|상징|역할|이야기|서사|사건|감정|기억|역사|중요|핵심|전환점/,    nudge: "각 장소가 이야기에서 어떤 서사적 의미를 갖는지 얘기해보자. 단순 배경 그 이상의 역할." },
+  4: [ // 장소 — 이전 단계 데이터 없을 때 폴백
+    { id: "loctype",   label: "장소 유형·역할", keywords: /장소|배경|위치|공간|지역|동네|건물|도시|야외|실내|역할|기능/,
+      nudge: "각 장소의 유형(야외/실내/건물)과 역할(대결 장소·안식처·사건 현장 등)을 정의해야 해." },
+    { id: "visual_l",  label: "시각적 묘사",   keywords: /색채|색감|조명|빛|분위기|묘사|풍경|시각|디테일|낡|오래된|새|현대/,
+      nudge: "각 장소를 그림처럼 묘사해줘. 시간대·날씨·세부 요소·역사적 배경 포함. 예: '1980년대 쌍문동 골목, 밤, 가로등 하나, 연탄재와 쓰레기, 멀리 북한산 실루엣'." },
+    { id: "arch",      label: "공간 구조",     keywords: /구조|건축|인테리어|레이아웃|규모|크기|층|넓이|형태|재질/,
+      nudge: "장소의 건축 구조와 공간 구성을 잡자. 크기·층수·재질·레이아웃 — 연출에 꼭 필요한 정보." },
+    { id: "meaning",   label: "서사적 의미",   keywords: /의미|상징|역할|서사|사건|감정|기억|역사|중요|핵심|전환점/,
+      nudge: "각 장소가 이야기에서 갖는 서사적·상징적 의미를 다뤄야 해. 이 장소에서 어떤 중요한 사건이 일어나는가." },
   ],
   5: [ // 소품·장비
     { id: "items",     label: "주요 소품",    keywords: /소품|아이템|물건|도구|장비|물품|용품|기물|오브제|prop/,               nudge: "이야기에서 핵심 역할을 하는 소품들을 뽑아보자. 이름·용도·시각적 특징." },
@@ -199,7 +206,10 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
         id: `char_${c.name}`,
         label: c.name,
         keywords: new RegExp(esc(c.name)),
-        nudge: `${c.name} 캐릭터를 더 깊이 다루자. 얼굴·체형·복장·성격·동기·말투까지 이미지로 바로 그릴 수 있을 만큼 구체적으로.`,
+        nudge: `${c.name} 캐릭터를 필수 항목까지 완성하자. ` +
+          `①성별·나이대·키·몸무게 ②체형(근육질/마른/보통 등) ③주요 복장(색상·소재까지) ` +
+          `④얼굴 묘사(이목구비·눈빛·표정 습관) ⑤성격 특징 3가지 이상 ` +
+          `⑥다른 인물과의 관계(조력자·연인·가족 등) ⑦갈등 관계(누구와 왜 대립하는지) — 빠진 항목 채워줘.`,
       }));
     }
   }
@@ -211,7 +221,10 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
         id: `loc_${l.name}`,
         label: l.name,
         keywords: new RegExp(esc(l.name)),
-        nudge: `${l.name} 장소를 더 구체적으로 설계하자. 건축 구조·조명·색채·분위기·서사적 의미까지.`,
+        nudge: `${l.name} 장소를 필수 항목까지 완성하자. ` +
+          `①야외/실내/건물 구분 ②장소 역할(대결 장소·안식처·사건 현장 등) ` +
+          `③구체적 시각 묘사 — 시간대·날씨·세부 요소·역사적 배경을 그림처럼 묘사해줘 ` +
+          `(예: "1980년대 쌍문동 좁은 골목, 밤, 가로등 하나, 연탄재와 쓰레기, 멀리 북한산 실루엣").`,
       }));
     }
   }
@@ -223,7 +236,7 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
         id: `prop_${p.name}`,
         label: p.name,
         keywords: new RegExp(esc(p.name)),
-        nudge: `${p.name} 소품을 더 구체적으로 설계하자. 형태·색상·재질·상태·이야기 역할까지.`,
+        nudge: `${p.name} 소품을 구체적으로 설계하자. 형태·색상·재질·크기·상태(낡음/새것 등)·이야기에서의 역할·상징적 의미·소유자까지.`,
       }));
     }
   }
@@ -237,8 +250,10 @@ function buildDynamicAgenda(stageId: number, stageResults: Array<{ stageId: numb
 const STAGES = [
   { id: 1 as const, name: "세계관",     topic: "세계관 — 드라마·웹툰·애니를 위한 세계 설계: 시대적 공기·사회적 압박·만약에 설정·인물 역학·테마",  tag: "WORLD",  color: "#60a5fa", schema: '{"era":"구체적 시대 배경 (연도·장소명·그 시대의 결핍이나 특징)","core_space":"핵심 공간 (주인공이 주로 머무는 곳의 디테일 — 캐릭터 처지를 대변)","daily_life":"생활감 (사람들이 먹고·입고·쓰는 유행어 등 현실적 디테일)","power_hierarchy":"계급과 권력 (누가 갑이고 누가 을인가 — 재벌/서민, 상사/부하 등)","social_norms":"사회적 통념 (이 세계에서 당연하게 여겨지는 가치관)","taboo":"금기 (넘어서는 안 되는 선 — 주인공이 이 선을 넘을 때 갈등 폭발)","what_if_rule":"만약에 설정 (현실과 딱 하나 다른 핵심 규칙 — 장르물이면 필수, 현실물이면 생략 가능)","what_if_cost":"규칙의 대가 (초능력·행운에 따르는 리스크와 제약)","what_if_who_knows":"비밀의 공유 (이 설정을 누가 알고 누가 모르는가 — 정보 불균형이 긴장감 만듦)","key_characters":[{"name":"이름","role":"주인공/빌런/조력자/방해자","position":"이야기에서의 포지션 (돕는자/막는자/중립)","age":"나이/나이대","gender":"성별","face":"얼굴 특징 (이목구비·인상·표정 습관)","height":"키","build":"체형","outfit":"복장","personality":"성격 (3가지 이상)","motivation":"동기와 목표 (무엇을 원하고 왜)","backstory":"과거사와 내면의 상처","speech":"말투","goal_conflict":"다른 인물과의 목표 충돌"}],"key_locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","significance":"이야기에서의 역할"}],"character_backstory":"인물들이 서로 얽히게 된 결정적 계기 (과거사 요약)","goal_conflicts":"목표의 충돌 구조 (A는 복수를 원하고 B는 용서를 원할 때 등)","theme":"핵심 테마·메시지 (모든 사건과 배경이 향하는 주제 — 사랑/복수/가족애/정의 등)"}' },
   { id: 2 as const, name: "시놉시스",   topic: "시놉시스 — IP 전략가+수석 작가 관점: 로그라인·기획의도·세계관규칙·인카네이션·스토리아크·비판보완 + 에셋리스트",    tag: "SYNOPSIS",      color: "#34d399", schema: '{"logline":"한 문장 — 아이러니하고 시선을 끄는 로그라인","production_intent":"기획 의도 — 이 작품이 지금 이 시대에 왜 필요한가","target_audience":"핵심 타겟층 (나이·성별·관심사)","genre":"최적 장르 + 서브장르","world_rules":["이 세계에서만 작동하는 사회 규칙 1","규칙 2","규칙 3"],"protagonist":{"name":"이름","pain_point":"결핍(Pain point) — 무엇이 빠져있는가","want":"목표(Want) — 무엇을 원하는가","need":"진짜 필요 — 자신도 모르는 진짜 문제","incarnation":"왜 이 세계관에서만 이 결핍이 의미 있는가","arc":"캐릭터 아크 — 시작에서 끝까지 어떻게 변하는가"},"trigger":"사건의 트리거 — 세계관 특수 규칙이 주인공 일상과 충돌하는 첫 번째 대사건","story_arc":{"setup":"발단 — 주인공의 일상과 사건의 도화선","development":"전개 — 갈등 심화와 세계관 비밀 노출 시작","crisis":"위기 — 모든 것이 잘못될 때","climax":"절정 — 가장 극적인 대결 또는 선택","resolution":"결말 — 카타르시스와 변화","twist":"반전 — 독자가 예상 못할 전환점"},"world_exclusivity":"이 세계관이 아니면 절대 불가능한 이유","critique":"진부한 요소 지적 + 어떻게 신선하게 만들 것인가","characters":[{"name":"이름","role":"역할(주인공/빌런/조력자 등)","appearance":"외형 묘사 (얼굴·키·체형·복장·헤어·특징 — 구체적으로)","personality":"성격 키워드 3가지 이상","relation":"주인공과의 관계","image_prompt":"Runway Gen-4 영문 프롬프트 — [인물 외형: 인종·나이·헤어·복장·표정], [조명: 유형·방향·색온도], [카메라: 샷 종류·앵글], [분위기·스타일 키워드]. 예: Korean woman in her 20s, shoulder-length black hair, wearing worn denim jacket, looking away from camera, golden hour backlighting, medium close-up, webtoon line art style, melancholic mood"}],"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사 (건축·조명·색채·분위기·디테일 — 구체적으로)","significance":"이야기에서의 역할","image_prompt":"Runway Gen-4 영문 프롬프트 — [장소 묘사: 공간·건축·색채], [조명: 시간대·자연/인공·그림자], [카메라: 샷 종류·무브], [분위기·스타일]. 예: narrow alleyway between brutalist concrete buildings, flickering neon signs reflected on wet pavement, overcast night lighting, low-angle wide shot, Korean urban noir style, oppressive atmosphere"}],"props":[{"name":"소품명","type":"유형","visual":"시각적 묘사 (색·형태·재질·크기·상태 — 구체적으로)","story_role":"이야기 역할","owner":"소유자","image_prompt":"Runway Gen-4 영문 프롬프트 — [소품 묘사: 형태·색상·재질·상태·크기], [조명: 방향·색온도·반사], [카메라: 샷 종류], [스타일·분위기]. 예: worn leather notebook with frayed edges, dark brown with gold-stamped cover, sitting on wooden desk, soft desk lamp sidelight, extreme close-up, warm tones, webtoon still-life style"}],"key_scenes":[{"title":"장면 제목","location":"장소","characters":"등장 인물","action":"행동·상황 묘사","visual":"시각적 묘사 (구도·색감·조명·분위기)","emotion":"감정·분위기 키워드","image_prompt":"Runway Gen-4 영문 프롬프트 — [인물 행동·표정], [장소 배경], [조명: 시간·방향·색온도], [카메라: 샷·무브·앵글], [분위기·스타일]. 예: young man in hoodie running through rain-soaked alley, desperate expression, pursuing shadows behind him, dramatic side lighting with blue tones, tracking shot from low angle, Korean webtoon action style"}]}' },
-  { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 — 이름·역할·성별·나이·외모·체형·복장·성격·동기·말투·세계관 내 역할",        tag: "CHARACTERS",    color: "#fb923c", schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자","gender":"성별","age":"나이/나이대","face":"얼굴 특징","height":"키","build":"체형","weight":"몸무게","outfit":"복장 스타일","personality":"성격","motivation":"동기","speech":"말투","story_role":"시놉시스·세계관에서의 역할"}]}' },
-  { id: 4 as const, name: "장소 설정",  topic: "주요 장소 — 이름·유형·건축/공간 구조·조명·색채·분위기·소리·서사적 의미·상징",  tag: "LOCATIONS",     color: "#a78bfa", schema: '{"locations":[{"name":"장소명","type":"유형","visual":"시각적 묘사","architecture":"건축/공간 구조","lighting":"조명 특성","color_palette":"색채 팔레트","atmosphere":"분위기","sound":"소리/냄새","significance":"서사적 의미","key_scenes":"이곳에서 일어나는 주요 장면","symbolic_meaning":"상징적 의미"}]}' },
+  { id: 3 as const, name: "캐릭터 설정", topic: "등장인물 필수 설정 — 각 인물마다: ①성별·나이대·키·몸무게 ②체형(근육질/마른/보통 등) ③주요 복장 ④얼굴 묘사(이목구비·인상·표정 습관) ⑤성격 특징(3가지 이상) ⑥인물 관계(조력자·연인·가족 등) ⑦갈등 관계(대립·경쟁) ⑧기타 설정", tag: "CHARACTERS", color: "#fb923c",
+    schema: '{"characters":[{"name":"이름","role":"주인공/빌런/조력자/단역","gender":"성별","age":"나이/나이대","height":"키 (대략적 수치 또는 cm)","weight":"몸무게 (대략적 수치 또는 kg)","build":"체형 — 근육질/마른/보통/통통/왜소 등 구체적으로","face":"얼굴 묘사 — 이목구비·인상·눈빛·피부·표정 습관 등 구체적으로","outfit":"주요 복장 — 색상·소재·스타일 구체적으로","personality":"성격 특징 — 3가지 이상 (예: 무표정하고 세상사에 관심 없음, 의외로 다정함)","motivation":"동기와 목표","speech":"말투","relationships":[{"character":"상대 인물 이름","type":"조력자/연인/친구/가족/스승 등","description":"관계 묘사 — 어떻게 만났고 어떤 사이인가"}],"conflicts":[{"character":"상대 인물 이름","type":"대립/경쟁/갈등/반목 등","description":"갈등 내용과 원인 — 왜 대립하고 어떻게 전개되는가"}],"story_role":"시놉시스·세계관에서의 역할","other":"기타 특이 설정 — 특수 능력·숨겨진 비밀·상징적 소품 등"}]}' },
+  { id: 4 as const, name: "장소 설정",  topic: "주요 장소 필수 설정 — 각 장소마다: ①건물/야외/실내 구분 ②장소의 역할(대결 장소·안식처·사건 현장 등) ③구체적 시각 묘사(시간대·날씨·세부 요소·역사적 배경 포함)", tag: "LOCATIONS", color: "#a78bfa",
+    schema: '{"locations":[{"name":"장소명","location_type":"야외/실내/건물/복합 — 구체적 유형","role":"장소의 역할 — 대결 장소/주인공 안식처/사건 현장/배경 장소 등 이야기에서의 기능","visual":"구체적 시각 묘사 — 시간대·날씨·세부 요소·역사적 배경·분위기를 그림처럼 묘사 (예: 1980년대 쌍문동 좁은 골목길, 밤, 흐린 하늘, 가로등 하나, 연탄재와 쓰레기가 쌓여 있음, 멀리 북한산 실루엣이 보임)","architecture":"건축/공간 구조 — 크기·층수·재질·레이아웃","lighting":"조명 특성 — 시간대·자연광/인공광·그림자 방향·색온도","color_palette":"색채 팔레트 — 주조색과 포인트색","atmosphere":"분위기 키워드","sound":"소리·냄새·촉감 등 감각 묘사","significance":"서사적 의미 — 이야기에서 이 장소가 왜 중요한가","symbolic_meaning":"상징적 의미"}]}' },
   { id: 5 as const, name: "소품·장비",  topic: "소품·장비·도구 — 탈것·무기·특수 아이템·장비·일상용품 등 이야기에서 중요한 모든 물건의 시각적 설계",  tag: "PROPS", color: "#e879f9", schema: '{"props":[{"name":"소품명","type":"유형(탈것/무기/장비/아이템/일상용품)","visual":"시각적 묘사 (색상·형태·재질·크기)","condition":"상태 (낡음/새것/특별히 장식됨 등)","function":"기능/용도","story_role":"이야기에서의 역할","symbolic_meaning":"상징적 의미","owner":"주요 소유자/사용자"}]}' },
 ];
 type StageId = 1 | 2 | 3 | 4 | 5;
