@@ -1578,6 +1578,8 @@ function StageReportInChat({
   onNewDebate?: () => void;   // 뷰 모드 전용: 기존 내용 지우고 새로 토론
 }) {
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [stg1CharModal, setStg1CharModal] = useState<Record<string,unknown> | null>(null);
+  const [stg1LocModal,  setStg1LocModal]  = useState<Record<string,unknown> | null>(null);
   const isViewMode = !!onNewDebate; // onNewDebate가 있으면 뷰 모드
   const c = stage.color;
   const { data } = result;
@@ -1940,15 +1942,18 @@ function StageReportInChat({
                   {chars.map((ch, i) => {
                     const rels = Array.isArray(ch.relationships) ? ch.relationships as Array<Record<string,string>> : [];
                     return (
-                      <div key={i} style={{ background: "#10101c", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(251,146,60,0.18)" }}>
+                      <div key={i} onClick={() => setStg1CharModal(ch)} style={{ background: "#10101c", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(251,146,60,0.18)", cursor: "pointer", transition: "border-color 0.15s" }}
+                        onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = "rgba(251,146,60,0.5)")}
+                        onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = "rgba(251,146,60,0.18)")}>
                         <div style={{ background: "linear-gradient(135deg, rgba(251,146,60,0.18), transparent)", padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
                           <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(251,146,60,0.2)", border: "2px solid rgba(251,146,60,0.5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#fb923c", flexShrink: 0 }}>
-                            {(ch.name ?? "?").slice(0, 2)}
+                            {(str(ch.name) || "?").slice(0, 2)}
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{ch.name}</div>
-                            {ch.role && <div style={{ fontSize: 10, color: "#fb923c", marginTop: 1 }}>{ch.role}</div>}
+                            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{str(ch.name)}</div>
+                            {ch.role && <div style={{ fontSize: 10, color: "#fb923c", marginTop: 1 }}>{str(ch.role)}</div>}
                           </div>
+                          <span style={{ fontSize: 9, color: "#4a4a68" }}>▶</span>
                         </div>
                         {(ch.personality || ch.motivation) && (
                           <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
@@ -2003,19 +2008,22 @@ function StageReportInChat({
                   {locs.map((l, i) => {
                     const locType = str(l.location_type) || str(l.type);
                     const locIcon = /야외|거리|공원|광장|산|바다|들판/.test(locType) ? "🌿" : /건물|빌딩|아파트|학교|병원|관청/.test(locType) ? "🏢" : /시장|상점|가게/.test(locType) ? "🏪" : "🏠";
+                    const desc = str(l.visual || l.atmosphere || l.significance || l.role);
                     return (
-                      <div key={i} style={{ background: "#10101c", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(167,139,250,0.18)" }}>
+                      <div key={i} onClick={() => setStg1LocModal(l)} style={{ background: "#10101c", borderRadius: 10, overflow: "hidden", border: "1px solid rgba(167,139,250,0.18)", cursor: "pointer", transition: "border-color 0.15s" }}
+                        onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = "rgba(167,139,250,0.5)")}
+                        onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = "rgba(167,139,250,0.18)")}>
                         <div style={{ background: "linear-gradient(90deg, rgba(167,139,250,0.12), transparent)", padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ fontSize: 18, flexShrink: 0 }}>{locIcon}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{l.name ?? l.location_name}</div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{str(l.name ?? l.location_name)}</div>
                             {locType && <div style={{ fontSize: 10, color: "#a78bfa", marginTop: 1 }}>{locType}</div>}
                           </div>
+                          <span style={{ fontSize: 9, color: "#4a4a68" }}>▶</span>
                         </div>
-                        {(l.visual || l.atmosphere || l.significance || l.role) && (
+                        {desc && (
                           <div style={{ padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.04)", fontSize: 11, color: "#7070a0", lineHeight: 1.55 }}>
-                            {str(l.visual || l.atmosphere || l.significance || l.role).slice(0, 80)}
-                            {str(l.visual || l.atmosphere || l.significance || l.role).length > 80 ? "…" : ""}
+                            {desc.slice(0, 80)}{desc.length > 80 ? "…" : ""}
                           </div>
                         )}
                       </div>
@@ -2349,6 +2357,90 @@ function StageReportInChat({
           </button>
         </div>
       </div>
+
+      {/* ── Stage 1 인물 상세 모달 ── */}
+      {stg1CharModal && (
+        <div onClick={() => setStg1CharModal(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            style={{ background:"#12121e", border:"1px solid rgba(251,146,60,0.35)", borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto" }}>
+            {/* 헤더 */}
+            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
+              <div style={{ width:42, height:42, borderRadius:"50%", background:"rgba(251,146,60,0.2)", border:"2px solid rgba(251,146,60,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:"#fb923c", flexShrink:0 }}>
+                {str(stg1CharModal.name).slice(0,2) || "?"}
+              </div>
+              <div>
+                <div style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{str(stg1CharModal.name)}</div>
+                {stg1CharModal.role && <div style={{ fontSize:11, color:"#fb923c" }}>{str(stg1CharModal.role)} {stg1CharModal.position ? `· ${str(stg1CharModal.position)}` : ""}</div>}
+              </div>
+              <button onClick={() => setStg1CharModal(null)} style={{ marginLeft:"auto", background:"transparent", border:"none", color:"#4a4a68", fontSize:18, cursor:"pointer", padding:4 }}>✕</button>
+            </div>
+            {/* 필드 목록 */}
+            {(() => {
+              const fields: Array<[string, string]> = [
+                ["나이", str(stg1CharModal.age)],
+                ["성별", str(stg1CharModal.gender)],
+                ["키 · 체형", [str(stg1CharModal.height), str(stg1CharModal.build)].filter(Boolean).join(" / ")],
+                ["얼굴", str(stg1CharModal.face)],
+                ["복장", str(stg1CharModal.outfit)],
+                ["성격", str(stg1CharModal.personality)],
+                ["동기 · 목표", str(stg1CharModal.motivation)],
+                ["말투", str(stg1CharModal.speech)],
+                ["과거사 · 상처", str(stg1CharModal.backstory)],
+                ["목표 충돌", str(stg1CharModal.goal_conflict)],
+              ].filter(([, v]) => v);
+              return fields.map(([label, val]) => (
+                <div key={label} style={{ marginBottom:10 }}>
+                  <div style={{ fontSize:10, fontWeight:800, color:"#fb923c88", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:3 }}>{label}</div>
+                  <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.7 }}>{val}</div>
+                </div>
+              ));
+            })()}
+            {/* 관계 */}
+            {Array.isArray(stg1CharModal.relationships) && (stg1CharModal.relationships as Array<Record<string,string>>).length > 0 && (
+              <div style={{ marginTop:10 }}>
+                <div style={{ fontSize:10, fontWeight:800, color:"#fb923c88", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:6 }}>관계</div>
+                {(stg1CharModal.relationships as Array<Record<string,string>>).map((r, i) => (
+                  <div key={i} style={{ fontSize:12, color:"#c8d0e0", marginBottom:4 }}>
+                    <span style={{ color:"#fb923c", fontWeight:700 }}>{r.character}</span> <span style={{ color:"#4a4a68" }}>({r.type})</span> {r.description && `— ${r.description}`}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Stage 1 장소 상세 모달 ── */}
+      {stg1LocModal && (
+        <div onClick={() => setStg1LocModal(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            style={{ background:"#12121e", border:"1px solid rgba(167,139,250,0.35)", borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+              <div style={{ fontSize:24 }}>🏙</div>
+              <div>
+                <div style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{str(stg1LocModal.name ?? stg1LocModal.location_name)}</div>
+                {(stg1LocModal.type || stg1LocModal.location_type) && <div style={{ fontSize:11, color:"#a78bfa" }}>{str(stg1LocModal.type ?? stg1LocModal.location_type)}</div>}
+              </div>
+              <button onClick={() => setStg1LocModal(null)} style={{ marginLeft:"auto", background:"transparent", border:"none", color:"#4a4a68", fontSize:18, cursor:"pointer", padding:4 }}>✕</button>
+            </div>
+            {(() => {
+              const fields: Array<[string, string]> = [
+                ["시각적 묘사", str(stg1LocModal.visual)],
+                ["분위기", str(stg1LocModal.atmosphere)],
+                ["역할 · 의미", str(stg1LocModal.significance ?? stg1LocModal.role)],
+              ].filter(([, v]) => v);
+              return fields.map(([label, val]) => (
+                <div key={label} style={{ marginBottom:10 }}>
+                  <div style={{ fontSize:10, fontWeight:800, color:"#a78bfa88", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:3 }}>{label}</div>
+                  <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.7 }}>{val}</div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
