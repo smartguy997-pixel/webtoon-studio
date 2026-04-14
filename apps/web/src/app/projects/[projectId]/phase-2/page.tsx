@@ -4164,7 +4164,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       } else if (assetListPhase === "confirmed" && stylePhase === "confirmed") {
         // 에셋 + 스타일 이미 완료 (페이지 재로드 등) → 바로 캐릭터 설정 토론 시작
         setCurrentStageIdx(2);
-        setDebatePhase("idle");
         void runDebate(2);
       }
       return;
@@ -4596,7 +4595,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }
 
-  if (debatePhase === "idle") {
+  if (debatePhase === "idle" && stageResults.length === 0) {
     return (
       <div className={s.page}>
         <div className={s.formWrap}>
