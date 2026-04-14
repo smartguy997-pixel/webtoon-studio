@@ -1205,6 +1205,76 @@ async function extractStageData(
     }
   }
 
+  // ④ Claude 기반 인물·장소·소품 클린업 — 모든 스테이지 적용
+  // 토론에서 오염된 항목(사회계층·조직명·인용구·서술문·추상개념)을 Claude가 제거
+  if (structured) {
+    // 스테이지별 배열 키 매핑
+    const charKey = stage.id === 1 ? "key_characters" : "characters";
+    const locKey  = stage.id === 1 ? "key_locations"  : "locations";
+    const propKey = "props";
+
+    const rawChars = Array.isArray(structured[charKey]) ? (structured[charKey] as Record<string,unknown>[]) : [];
+    const rawLocs  = Array.isArray(structured[locKey])  ? (structured[locKey]  as Record<string,unknown>[]) : [];
+    const rawProps = Array.isArray(structured[propKey]) ? (structured[propKey] as Record<string,unknown>[]) : [];
+
+    const charNames = rawChars.map(c => String(c.name ?? "")).filter(Boolean);
+    const locNames  = rawLocs.map(l => String(l.name ?? "")).filter(Boolean);
+    const propNames = rawProps.map(p => String(p.name ?? "")).filter(Boolean);
+
+    if (charNames.length > 0 || locNames.length > 0 || propNames.length > 0) {
+      let filterText = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey,
+          model: "claude-sonnet-4-6",
+          systemPrompt: "웹툰 에셋 분류 전문가. 실제 항목만 남기고 오염된 항목을 제거한다. JSON만 출력, 설명 없이.",
+          messages: [{
+            role: "user",
+            content:
+              `아래 목록에서 각 규칙에 맞는 항목만 남겨줘.\n\n` +
+              `[등장인물 후보] (${charNames.length}개): ${charNames.join(" / ")}\n` +
+              `[장소 후보] (${locNames.length}개): ${locNames.join(" / ")}\n` +
+              `[소품 후보] (${propNames.length}개): ${propNames.join(" / ")}\n\n` +
+              `규칙:\n` +
+              `- characters: 고유 이름 있는 실제 개인 인물·존재만. 사회계층(최상층·중산층 등), 집단명, 조직명, 인용구("..."), 서술문(~했다/~된다), 목표 설명, 추상개념 절대 금지\n` +
+              `- locations: 실제 물리적 장소(거리·건물·도시·지역·공간·시설)만. 추상적 상태·이념·사회현상·감정·역학관계 금지\n` +
+              `- props: 실제 물건·도구·아이템만. 추상개념·상태·사회현상 금지\n` +
+              `- 원본 이름 그대로 유지 (수정 금지), 해당 없으면 빈 배열\n\n` +
+              `JSON만:\n{"characters":["이름"],"locations":["장소"],"props":["소품"]}`,
+          }],
+          maxTokens: 400,
+          tools: [],
+        })) { filterText += chunk; }
+      } catch { /* ignore — 아래 isRealCharacter 필터로 폴백 */ }
+
+      const fm = filterText.match(/\{[\s\S]*\}/);
+      if (fm) {
+        try {
+          const filtered = JSON.parse(fm[0]) as { characters?: string[]; locations?: string[]; props?: string[] };
+          const keepChars = new Set(filtered.characters ?? []);
+          const keepLocs  = new Set(filtered.locations  ?? []);
+          const keepProps = new Set(filtered.props      ?? []);
+
+          if (keepChars.size > 0 || charNames.length === 0) {
+            structured = { ...structured, [charKey]: rawChars.filter(c => keepChars.has(String(c.name ?? ""))) };
+          }
+          if (keepLocs.size > 0 || locNames.length === 0) {
+            structured = { ...structured, [locKey]: rawLocs.filter(l => keepLocs.has(String(l.name ?? ""))) };
+          }
+          if (keepProps.size > 0 || propNames.length === 0) {
+            structured = { ...structured, [propKey]: rawProps.filter(p => keepProps.has(String(p.name ?? ""))) };
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    // 2차 필터: isRealCharacter로 인물 배열 최종 정제
+    const finalChars = Array.isArray(structured[charKey])
+      ? (structured[charKey] as Record<string,unknown>[]).filter(c => isRealCharacter(String(c.name ?? "")))
+      : [];
+    structured = { ...structured, [charKey]: finalChars };
+  }
+
   // data: 구조화 JSON 우선, 없으면 내러티브에서 기본 필드 파싱 시도, 최후엔 raw_summary
   let data: Record<string, unknown>;
   if (structured) {
