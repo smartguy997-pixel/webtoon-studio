@@ -6938,30 +6938,31 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                   {chars3.map((name, i) => {
                     const isDone = coveredAgendaIds.includes(`char_${name}_body`);
                     const isActive = !isDone && i === activeIdx;
+                    const isPending = !isDone && !isActive;
                     return (
                       <div key={i} style={{
                         flexShrink:0, width:72, minHeight:76,
                         borderRadius:10,
-                        border:`1px solid ${isDone ? "rgba(52,211,153,0.35)" : isActive ? "rgba(251,146,60,0.45)" : "#1e1e2a"}`,
-                        background: isDone ? "rgba(52,211,153,0.06)" : isActive ? "rgba(251,146,60,0.07)" : "rgba(255,255,255,0.015)",
+                        border:`1px solid ${isDone ? "rgba(52,211,153,0.35)" : isActive ? "rgba(251,146,60,0.45)" : "rgba(255,255,255,0.12)"}`,
+                        background: isDone ? "rgba(52,211,153,0.06)" : isActive ? "rgba(251,146,60,0.07)" : "rgba(255,255,255,0.04)",
                         display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center",
                         gap:5, padding:"8px 4px",
                         transition:"all 0.2s",
                       }}>
                         <div style={{
                           width:34, height:34, borderRadius:"50%",
-                          background: isDone ? "rgba(52,211,153,0.18)" : isActive ? "rgba(251,146,60,0.18)" : "rgba(255,255,255,0.04)",
-                          border:`1px solid ${isDone ? "rgba(52,211,153,0.4)" : isActive ? "rgba(251,146,60,0.4)" : "#1e1e2a"}`,
+                          background: isDone ? "rgba(52,211,153,0.18)" : isActive ? "rgba(251,146,60,0.18)" : "rgba(255,255,255,0.07)",
+                          border:`1px solid ${isDone ? "rgba(52,211,153,0.4)" : isActive ? "rgba(251,146,60,0.4)" : "rgba(255,255,255,0.1)"}`,
                           display:"flex", alignItems:"center", justifyContent:"center",
-                          fontSize: isDone ? 16 : 10,
-                          color: isDone ? "#34d399" : isActive ? "#fb923c" : "#2a2a3a",
+                          fontSize: isDone ? 16 : isPending ? 14 : 10,
+                          color: isDone ? "#34d399" : isActive ? "#fb923c" : "#4a4a6a",
                         }}>
-                          {isDone ? "✓" : isActive ? <ThinkingDots /> : ""}
+                          {isDone ? "✓" : isActive ? <ThinkingDots /> : "○"}
                         </div>
                         <div style={{
                           fontSize:10, fontWeight:700, textAlign:"center" as const, lineHeight:1.3,
                           maxWidth:64, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const,
-                          color: isDone ? "#34d399" : isActive ? "#fb923c" : "#3a3a52",
+                          color: isDone ? "#34d399" : isActive ? "#fb923c" : "#6a6a8a",
                         }}>{name}</div>
                       </div>
                     );
