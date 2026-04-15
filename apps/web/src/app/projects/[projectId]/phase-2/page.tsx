@@ -2532,77 +2532,108 @@ function CharacterGallery({
         })}
       </div>
 
-      {/* ── 캐릭터 상세 모달 ── */}
-      {selectedChar && (
-        <div
-          onClick={() => setSelectedChar(null)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.82)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
-        >
+      {/* ── 캐릭터 상세 모달 (2단 레이아웃) ── */}
+      {selectedChar && (() => {
+        const selImgItem = imageItems.find(
+          (it: ImageItem) => it.type === "character" && it.name === selectedChar.name && it.imageUrl
+        );
+        const selInitials = (selectedChar.name || "?").slice(0, 2);
+        const selRoleBg = selectedChar.role === "주인공" ? "#fbbf24" : selectedChar.role === "빌런" ? "#f87171" : "#94a3b8";
+        return (
           <div
-            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            style={{ background:"#12121e", border:`1px solid ${c}30`, borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column" as const, gap:14 }}
+            onClick={() => setSelectedChar(null)}
+            style={{ position:"fixed" as const, inset:0, background:"rgba(0,0,0,0.88)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
           >
-            {/* 헤더 */}
-            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-              <div style={{ width:44, height:44, borderRadius:"50%", background:`${c}25`, border:`2px solid ${c}50`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:c, flexShrink:0 }}>
-                {(selectedChar.name || "?").slice(0, 2)}
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{selectedChar.name}</div>
-                {selectedChar.role && <div style={{ fontSize:11, color:c, marginTop:2 }}>{selectedChar.role}</div>}
-              </div>
-              <button onClick={() => setSelectedChar(null)} style={{ background:"transparent", border:"none", color:"#4a4a68", fontSize:20, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
-            </div>
-            {/* 필드 목록 */}
-            {([ ["기본", [selectedChar.gender, selectedChar.age, selectedChar.height, selectedChar.weight, selectedChar.build].filter(Boolean).join(" · ")],
-                 ["얼굴", selectedChar.face],
-                 ["복장", selectedChar.outfit],
-                 ["성격", selectedChar.personality],
-                 ["동기", selectedChar.motivation],
-                 ["말투", selectedChar.speech],
-                 ["서사 역할", selectedChar.story_role],
-                 ["기타", selectedChar.other],
-               ] as Array<[string, string]>).filter(([, v]) => v).map(([label, val]) => (
-              <div key={label}>
-                <div style={{ fontSize:10, fontWeight:800, color:`${c}88`, letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:3 }}>{label}</div>
-                <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.75 }}>{val}</div>
-              </div>
-            ))}
-            {/* 인물 관계 */}
-            {Array.isArray(selectedChar.relationships) && (selectedChar.relationships as unknown as Array<Record<string,string>>).length > 0 && (
-              <div>
-                <div style={{ fontSize:10, fontWeight:800, color:"#34d39988", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:6 }}>인물 관계</div>
-                {(selectedChar.relationships as unknown as Array<Record<string,string>>).map((r, i) => (
-                  <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
-                    <span style={{ color:"#f1f5f9", fontWeight:600 }}>{r.character}</span>
-                    {r.type && <span style={{ color:c, fontSize:11, background:`${c}15`, padding:"1px 7px", borderRadius:20, marginLeft:6 }}>{r.type}</span>}
-                    {r.description && <span style={{ color:"#64748b" }}> — {r.description}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* 갈등 관계 */}
-            {Array.isArray(selectedChar.conflicts) && (selectedChar.conflicts as unknown as Array<Record<string,string>>).length > 0 && (
-              <div>
-                <div style={{ fontSize:10, fontWeight:800, color:"#f8717188", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:6 }}>갈등 관계</div>
-                {(selectedChar.conflicts as unknown as Array<Record<string,string>>).map((r, i) => (
-                  <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
-                    <span style={{ color:"#f1f5f9", fontWeight:600 }}>{r.character}</span>
-                    {r.type && <span style={{ color:"#f87171", fontSize:11, background:"rgba(248,113,113,0.12)", padding:"1px 7px", borderRadius:20, marginLeft:6 }}>{r.type}</span>}
-                    {r.description && <span style={{ color:"#64748b" }}> — {r.description}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            <button
-              onClick={() => setSelectedChar(null)}
-              style={{ alignSelf:"flex-end" as const, padding:"8px 22px", borderRadius:8, background:"#1e1e2a", border:"1px solid #2a2a3d", color:"#94a3b8", fontSize:13, fontWeight:700, cursor:"pointer" }}
+            <div
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              style={{ background:"#12121e", border:`1px solid ${c}30`, borderRadius:16, width:"100%", maxWidth:700, maxHeight:"88vh", display:"flex", flexDirection:"column" as const, overflow:"hidden" }}
             >
-              닫기
-            </button>
+              {/* 2단 콘텐츠 영역 */}
+              <div style={{ display:"flex", flex:1, overflow:"hidden", minHeight:0 }}>
+                {/* 좌측: 이미지 패널 */}
+                <div style={{ width:"42%", flexShrink:0, background:`${c}08`, display:"flex", alignItems:"center", justifyContent:"center", position:"relative" as const, overflow:"hidden", minHeight:340 }}>
+                  {selImgItem?.imageUrl
+                    ? <img src={selImgItem.imageUrl} alt={selectedChar.name} style={{ width:"100%", height:"100%", objectFit:"cover" as const, display:"block", position:"absolute" as const, inset:0 }} />
+                    : (
+                      <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:10 }}>
+                        <div style={{ width:88, height:88, borderRadius:"50%", background:`${c}18`, border:`2px solid ${c}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:30, fontWeight:800, color:c }}>{selInitials}</div>
+                        <div style={{ fontSize:11, color:`${c}55`, textAlign:"center" as const, padding:"0 16px", lineHeight:1.5 }}>이미지 생성 대기 중</div>
+                      </div>
+                    )
+                  }
+                </div>
+                {/* 우측: 정보 패널 */}
+                <div style={{ flex:1, overflowY:"auto" as const, padding:"24px 22px 16px", position:"relative" as const }}>
+                  {/* X 버튼 */}
+                  <button onClick={() => setSelectedChar(null)} style={{ position:"absolute" as const, top:14, right:14, background:"transparent", border:"none", color:"#4a4a68", fontSize:20, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
+                  {/* 이름 */}
+                  <div style={{ fontSize:22, fontWeight:800, color:"#f1f5f9", paddingRight:36, lineHeight:1.2, marginBottom:10 }}>{selectedChar.name}</div>
+                  {/* 배지 */}
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap" as const, marginBottom:20 }}>
+                    {selectedChar.role && (
+                      <span style={{ background:selRoleBg, color:"#0a0a14", padding:"3px 11px", borderRadius:20, fontSize:11, fontWeight:800 }}>{selectedChar.role}</span>
+                    )}
+                    {selImgItem?.imageUrl && (
+                      <span style={{ background:`${c}18`, color:c, padding:"3px 11px", borderRadius:20, fontSize:11, fontWeight:700, border:`1px solid ${c}35` }}>대표 디자인</span>
+                    )}
+                  </div>
+                  {/* 필드 섹션들 */}
+                  {([
+                    ["기본 정보", [selectedChar.gender, selectedChar.age, selectedChar.height, selectedChar.weight, selectedChar.build].filter(Boolean).join(" · ")],
+                    ["외형 — 얼굴", selectedChar.face],
+                    ["외형 — 복장", selectedChar.outfit],
+                    ["성격", selectedChar.personality],
+                    ["동기", selectedChar.motivation],
+                    ["말투", selectedChar.speech],
+                    ["서사 역할", selectedChar.story_role],
+                    ["기타", selectedChar.other],
+                  ] as Array<[string, string]>).filter(([, v]) => v).map(([label, val]) => (
+                    <div key={label} style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:`${c}75`, letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:4 }}>{label}</div>
+                      <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.75, whiteSpace:"pre-wrap" as const }}>{val}</div>
+                    </div>
+                  ))}
+                  {/* 인물 관계 */}
+                  {Array.isArray(selectedChar.relationships) && (selectedChar.relationships as unknown as Array<Record<string,string>>).length > 0 && (
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:"#34d39975", letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:6 }}>인물 관계</div>
+                      {(selectedChar.relationships as unknown as Array<Record<string,string>>).map((r, i) => (
+                        <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:5 }}>
+                          <span style={{ color:"#f1f5f9", fontWeight:600 }}>{r.character}</span>
+                          {r.type && <span style={{ color:c, fontSize:11, background:`${c}15`, padding:"1px 7px", borderRadius:20, marginLeft:6 }}>{r.type}</span>}
+                          {r.description && <span style={{ color:"#64748b" }}> — {r.description}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* 갈등 관계 */}
+                  {Array.isArray(selectedChar.conflicts) && (selectedChar.conflicts as unknown as Array<Record<string,string>>).length > 0 && (
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:"#f8717175", letterSpacing:"0.6px", textTransform:"uppercase" as const, marginBottom:6 }}>갈등 관계</div>
+                      {(selectedChar.conflicts as unknown as Array<Record<string,string>>).map((r, i) => (
+                        <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:5 }}>
+                          <span style={{ color:"#f1f5f9", fontWeight:600 }}>{r.character}</span>
+                          {r.type && <span style={{ color:"#f87171", fontSize:11, background:"rgba(248,113,113,0.12)", padding:"1px 7px", borderRadius:20, marginLeft:6 }}>{r.type}</span>}
+                          {r.description && <span style={{ color:"#64748b" }}> — {r.description}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* 하단 닫기 버튼 */}
+              <div style={{ padding:"12px 22px", borderTop:"1px solid #1e1e2a", flexShrink:0 }}>
+                <button
+                  onClick={() => setSelectedChar(null)}
+                  style={{ width:"100%", padding:"12px 0", borderRadius:10, background:"#1e1e2a", border:"1px solid #2a2a3d", color:"#94a3b8", fontSize:14, fontWeight:700, cursor:"pointer" }}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
