@@ -2937,20 +2937,24 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const P2_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "editor"];
     let agentIndex = 0;
     let lastSpeaker: AgentId | null = null;
+    let secondToLastSpeaker: AgentId | null = null; // 직전 2명 추적 — 같은 에이전트 연속 방지
 
-    function pickNextSpeaker(lastLine: string, last: AgentId | null): AgentId {
-      const available = P2_AGENTS.filter(a => a !== last);
-      if (!available.length) return P2_AGENTS[0];
+    function pickNextSpeaker(lastLine: string, last: AgentId | null, secondLast: AgentId | null): AgentId {
+      // 직전 2명 제외 (같은 에이전트가 연속으로 나타나는 현상 방지)
+      const available = P2_AGENTS.filter(a => a !== last && a !== secondLast);
+      // 모두 제외되면 직전 1명만 제외로 완화
+      const safeAvail = available.length > 0 ? available : P2_AGENTS.filter(a => a !== last);
+      if (!safeAvail.length) return P2_AGENTS[0];
       const lower = lastLine.toLowerCase();
-      // 키워드 매칭: 주제에 맞는 전문가 우선
-      if (/세계|배경|규칙|설정|시대|문명|마법|공간/.test(lower) && available.includes("worldbuilder")) return "worldbuilder";
-      if (/캐릭터|인물|주인공|감정|성격|외형|말투|빌런/.test(lower) && available.includes("character")) return "character";
-      if (/이야기|서사|플롯|갈등|전개|장르|훅|전제/.test(lower) && available.includes("scenario")) return "scenario";
-      if (/그림|연출|장면|시각|컷|화면|비주얼|그려/.test(lower) && available.includes("script")) return "script";
-      if (/편집|구조|흐름|전반적|연결/.test(lower) && available.includes("editor")) return "editor";
+      // 키워드 매칭: 주제에 맞는 전문가 우선 (단, 직전 2명에서 제외된 에이전트는 선택 불가)
+      if (/세계|배경|규칙|설정|시대|문명|마법|공간/.test(lower) && safeAvail.includes("worldbuilder")) return "worldbuilder";
+      if (/캐릭터|인물|주인공|감정|성격|외형|말투|빌런/.test(lower) && safeAvail.includes("character")) return "character";
+      if (/이야기|서사|플롯|갈등|전개|장르|훅|전제/.test(lower) && safeAvail.includes("scenario")) return "scenario";
+      if (/그림|연출|장면|시각|컷|화면|비주얼|그려/.test(lower) && safeAvail.includes("script")) return "script";
+      if (/편집|구조|흐름|전반적|연결/.test(lower) && safeAvail.includes("editor")) return "editor";
       // 매칭 없으면: editor는 3턴에 한 번꼴로만 끼어들게 (흐름 끊지 않도록)
-      const nonEditor = available.filter(a => a !== "editor");
-      const pool = (nonEditor.length > 0 && agentIndex % 3 !== 2) ? nonEditor : available;
+      const nonEditor = safeAvail.filter(a => a !== "editor");
+      const pool = (nonEditor.length > 0 && agentIndex % 3 !== 2) ? nonEditor : safeAvail;
       return pool[Math.floor(Math.random() * pool.length)];
     }
 
@@ -3098,6 +3102,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       transcript.push(`[${AGENTS[agentId].label}]: ${clean}`);
       convRef.current = transcript;
       agentIndex++;
+      secondToLastSpeaker = lastSpeaker;
       lastSpeaker = agentId;
       // 진행 저장 (이어하기 지원)
       try {
@@ -3512,6 +3517,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               `${historyText}[진행 상황 정리] 프로듀서로서 토론 흐름을 짧게 정리하고 다음 주제로 안내해줘. ${coveredStr} ${remainStr} 지금은 "${pick.label}" 주제에 집중하자. ${pick.nudge} 2~3문장, 자연스럽게.`,
               stage.id === 1 ? 350 : 200,
             );
+            secondToLastSpeaker = lastSpeaker;
             lastSpeaker = "producer";
             nudgeCooldown = 3;
             continue;
@@ -3522,6 +3528,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               `${historyText}${pick.nudge} 여러 선택지를 놓고 서로 의견을 주고받아봐.`,
               stage.id === 1 ? 300 : 200,
             );
+            secondToLastSpeaker = lastSpeaker;
             lastSpeaker = "producer";
             nudgeCooldown = 2;
             continue;
@@ -3558,13 +3565,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           await runSingleAgent("producer",
             `${historyText}${wrapUpIntro} 프로듀서로서 이 단계를 마무리하자고 자연스럽게 제안해줘. 1~2문장.`,
             180);
+          secondToLastSpeaker = lastSpeaker;
           lastSpeaker = "producer";
           continue;
         }
 
         // 다음 발언자 선택 및 실행
         const isFirst = agentTurnsSoFar === 0;
-        const nextAgent = isFirst ? "worldbuilder" : pickNextSpeaker(lastLine, lastSpeaker);
+        const nextAgent = isFirst ? "worldbuilder" : pickNextSpeaker(lastLine, lastSpeaker, secondToLastSpeaker);
 
         const agentPrompt = isFirst
           ? stage.id === 1
@@ -3787,6 +3795,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const runOne = async (agentId: AgentId, prompt: string) => {
       const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIdx));
       if (!key) return;
+      // 전역 lock: 스트리밍 중이면 완료 대기 (한 번에 한 명만 발언)
+      const lockStart = Date.now();
+      while (msgsRef.current.some((m: Msg) => m.streaming) && Date.now() - lockStart < 30000) {
+        await sleep(200);
+      }
       const msgId = addMsg(agentId, "", true);
       let text = "";
       try {
@@ -4164,6 +4177,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   ): Promise<void> => {
     const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(0));
     if (!key) return;
+    // 전역 lock: 스트리밍 중이면 완료 대기 (한 번에 한 명만 발언)
+    const lockStart = Date.now();
+    while (msgsRef.current.some((m: Msg) => m.streaming) && Date.now() - lockStart < 30000) {
+      await sleep(200);
+    }
     const msgId = addMsg(agentId, "", true);
     let text = "";
     try {
