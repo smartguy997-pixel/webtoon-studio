@@ -3662,13 +3662,24 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const s1sum = stageResultsRef.current.find(r => r.stageId === 1)?.summary ?? "";
     const s2sum = stageResultsRef.current.find(r => r.stageId === 2)?.summary ?? "";
 
+    // 실제 토론 대화 텍스트 — 문맥 이해용
+    const s1msgs = stageHistoryMsgs[0] ?? [];
+    const s2msgs = stageHistoryMsgs[1] ?? [];
+    const debateText = [...s1msgs, ...s2msgs]
+      .filter((m: Msg) => !m.streaming && m.text)
+      .map((m: Msg) => {
+        const ag = AGENTS[m.agent as AgentId];
+        return `[${ag?.label ?? m.agent}]: ${m.text}`;
+      })
+      .join("\n")
+      .slice(0, 8000);
+
     const msgId = addMsg("producer", "에셋 목록 분류 중...", true);
 
-    // Claude가 세계관+시놉시스 데이터에서 실제 인물/장소/소품만 추출·정제
+    // Claude가 토론 전체 문맥을 읽고 실제 등장인물/장소/소품 추출
     let extracted: SynopsisAssets = { characters: [], locations: [], props: [] };
 
     if (apiKey) {
-      const raw = JSON.stringify({ stage1: s1d, stage2: s2d });
       const ctx = [s1sum, s2sum].filter(Boolean).join("\n\n");
       let jsonText = "";
       try {
@@ -3676,23 +3687,27 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           apiKey,
           model: "claude-sonnet-4-6",
           systemPrompt:
-            "웹툰 기획 에셋 분류 전문가. 주어진 데이터에서 실제 인물·장소·소품을 정확하게 추출·분류한다. " +
+            "웹툰 기획 에셋 분류 전문가. 토론 전체를 읽고 문맥을 이해해서 실제 등장인물·장소·소품을 추출한다. " +
             "반드시 JSON만 출력. 설명·마크다운 없이.",
           messages: [{
             role: "user",
             content:
-              `아래 세계관·시놉시스 데이터에서 이미지 생성에 필요한 에셋을 분류해줘.\n\n` +
-              `[요약]\n${ctx}\n\n[원본 JSON]\n${raw.slice(0, 6000)}\n\n` +
-              `규칙:\n` +
-              `- characters: 실제 개인 인물(이름·번호·코드명이 있는 사람·존재)만. "029번 요원"처럼 번호+직함 형태도 포함. 사회계층(최상층/중산층 등), 조직명, 인용구, 서술문, 목표설명, 추상개념 절대 포함 금지\n` +
-              `- locations: 실제 물리적 장소(거리명·건물명·지역명 등)만. 추상적 상태·이념·사회현상 금지\n` +
-              `- props: 이야기에서 중요한 소품·장비·아이템만. 없으면 빈 배열\n` +
-              `- 각 항목은 "이름만" (설명 없이, 짧게)\n` +
-              `- 중복 제거, 실제 등장하는 것만\n\n` +
+              `아래 세계관·시놉시스 토론에서 이미지 생성에 필요한 에셋을 추출해줘.\n\n` +
+              `[요약]\n${ctx}\n\n` +
+              (debateText ? `[토론 전문]\n${debateText}\n\n` : "") +
+              `추출 기준:\n` +
+              `- characters: 이 이야기에 실제로 등장하는 인물 전부. 이름이든 코드명이든 별명이든 상관없이, ` +
+              `토론에서 구체적인 개인으로 언급된 사람이면 모두 포함. ` +
+              `(예: 강현, 029번 요원, 엄기태 — 모두 포함)\n` +
+              `  단, 조직명·집단·계층 전체(예: "단 요원들", "상위 계층")는 제외\n` +
+              `- locations: 이야기에서 구체적으로 언급된 장소 (거리명·건물명·지역명 등)\n` +
+              `- props: 이야기에서 중요한 소품·장비·아이템. 없으면 빈 배열\n` +
+              `- 각 항목은 "이름만" (설명 없이)\n` +
+              `- 중복 제거\n\n` +
               `출력 형식 (JSON만):\n` +
               `{"characters":["이름1","이름2"],"locations":["장소1","장소2"],"props":["소품1"]}`,
           }],
-          maxTokens: 600,
+          maxTokens: 800,
           tools: [],
         })) { jsonText += chunk; }
       } catch { /* fallback to regex filter */ }
@@ -3749,7 +3764,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text: text.slice(0, i), streaming: true } : m));
     }
     setMsgs((prev: Msg[]) => prev.map((m: Msg) => m.id === msgId ? { ...m, text, streaming: false } : m));
-  }, [addMsg, projectId]);
+  }, [addMsg, projectId, stageHistoryMsgs]);
 
   // ── Style Definition: 스타일 토론 (Stage 2 완료 후) ──
   const runStyleDebate = useCallback(async () => {
