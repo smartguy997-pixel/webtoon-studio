@@ -3806,9 +3806,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           if (abortRef.current) throw new Error("abort");
 
           // ─ 4) 15초 사용자 개입 창 + 피드백 반영 ─
-          setCoveredAgendaIds(targets.slice(0, ci + 1).flatMap(n =>
+          // coveredAgenda 로컬 Set도 함께 갱신 — debateLoop fall-through 시 덮어쓰기 방지
+          const completedCharIds = targets.slice(0, ci + 1).flatMap(n =>
             [`char_${n}_body`, `char_${n}_face`, `char_${n}_outfit`, `char_${n}_personality`, `char_${n}_relation`]
-          ));
+          );
+          completedCharIds.forEach(id => coveredAgenda.add(id));
+          setCoveredAgendaIds(completedCharIds);
           const waitStart = Date.now();
           while (Date.now() - waitStart < 15000) {
             if (abortRef.current || pendingUserMsgRef.current) break;
@@ -3959,10 +3962,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           }
         }
 
-        // 오케스트레이터 조율 — 주제 전환 + 진행 상황 공지
+        // 오케스트레이터 조율 — 명시적 → @agentId 지정이 없을 때만 넛지 실행
+        const explicitNextAgent = parseNextAgent(lastLine);
         if (nudgeCooldown > 0) {
-          nudgeCooldown--;
-        } else if (agentTurnsSoFar > 0) {
+          if (!explicitNextAgent) nudgeCooldown--;
+        } else if (agentTurnsSoFar > 0 && !explicitNextAgent) {
           const uncovered = stageAgenda.filter(item => !coveredAgenda.has(item.id));
           const covered   = stageAgenda.filter(item =>  coveredAgenda.has(item.id));
 
