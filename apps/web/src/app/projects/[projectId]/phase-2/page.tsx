@@ -2608,6 +2608,9 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [imageGenLoading, setImageGenLoading] = useState(false);
   const [imageGenError, setImageGenError] = useState<string | null>(null);
   const [imageCustomDir, setImageCustomDir] = useState(""); // 사용자 커스텀 방향 입력
+  const [newStageChoice, setNewStageChoice] = useState<{
+    stageIdx: number; transcript: string[]; msgs: Msg[]
+  } | null>(null); // 이전 단계에서 넘어올 때 기존 토론 내용 이어하기/새로 시작 선택 UI
 
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -4053,6 +4056,28 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
   }, [projectId, styleInput, conceptStyle, genre]);
 
+  // ── 새 단계 시작: 기존 저장 내용 있으면 선택 UI 표시 ──
+  const startNewStageDebate = useCallback((idx: number) => {
+    const savedConv = localStorage.getItem(`p2_conv_${idx}_${projectId}`);
+    const savedMsgs = localStorage.getItem(`p2_msgs_${idx}_${projectId}`);
+    if (savedConv && savedMsgs) {
+      try {
+        const parsedTranscript = JSON.parse(savedConv) as string[];
+        const parsedMsgs = JSON.parse(savedMsgs) as Msg[];
+        if (parsedTranscript.length > 0 || parsedMsgs.length > 0) {
+          setNewStageChoice({ stageIdx: idx, transcript: parsedTranscript, msgs: parsedMsgs });
+          return;
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    // 저장된 내용 없으면 즉시 새 토론 시작
+    resumeDataRef.current = null;
+    setMsgs([]);
+    convRef.current = [];
+    setCurrentStageIdx(idx);
+    void runDebate(idx);
+  }, [projectId, runDebate]);
+
   // ── Style: 확정 & Stage 3 진행 ──
   const confirmStyle = useCallback(() => {
     const style = styleInput.trim() || conceptStyle;
@@ -4063,8 +4088,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     convRef.current = [];
     setCurrentStageIdx(2);
     setDebatePhase("idle");
-    void runDebate(2);
-  }, [styleInput, conceptStyle, projectId, runDebate]);
+    startNewStageDebate(2);
+  }, [styleInput, conceptStyle, projectId, startNewStageDebate]);
 
   // ── 이미지 컨셉 회의 Phase ──
 
@@ -4901,8 +4926,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         void runStyleDebate();
       } else if (assetListPhase === "confirmed" && stylePhase === "confirmed") {
         // 에셋 + 스타일 이미 완료 (페이지 재로드 등) → 바로 캐릭터 설정 토론 시작
-        setCurrentStageIdx(2);
-        void runDebate(2);
+        startNewStageDebate(2);
       }
       return;
     }
@@ -4915,13 +4939,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const nextIdx = stageIdx + 1;
     setMsgs([]);
     convRef.current = [];
-    setCurrentStageIdx(nextIdx);
     if (nextIdx >= STAGES.length) {
+      setCurrentStageIdx(nextIdx);
       setDebatePhase("done");
     } else {
-      void runDebate(nextIdx);
+      startNewStageDebate(nextIdx);
     }
-  }, [runDebate, runStyleDebate, runAssetListReview, stylePhase, assetListPhase, enterImageGenPhase]);
+  }, [startNewStageDebate, runStyleDebate, runAssetListReview, stylePhase, assetListPhase, enterImageGenPhase]);
 
   // ── Re-analyze: 기존 토론 내용을 다시 추출 + 이후 스테이지에 공지 삽입 ──
   const handleReanalyze = useCallback(async (stageIdx: number): Promise<void> => {
@@ -5683,6 +5707,77 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             setReplyTo({ msg, agentLabel: ag?.label ?? msg.agent, preview: msg.text.slice(0, 60).trim() });
             setTimeout(() => chatInputRef.current?.focus(), 50);
           } : undefined} />)}
+
+          {/* ── 새 단계 시작: 기존 토론 내용 이어하기/새로 시작 선택 UI ── */}
+          {newStageChoice && (
+            <div style={{
+              margin: "12px 0",
+              background: "#0e0e1a",
+              border: "1px solid rgba(124,108,252,0.35)",
+              borderRadius: 14,
+              padding: "20px 18px",
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#a5b4fc", marginBottom: 6 }}>
+                💬 기존 토론 내용이 있습니다
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
+                이전에 저장된 &apos;{STAGES[newStageChoice.stageIdx]?.name}&apos; 토론 내용이 있습니다.
+                이어서 진행할까요, 아니면 처음부터 새로 시작할까요?
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => {
+                    const { stageIdx, transcript, msgs: savedMsgs } = newStageChoice;
+                    setNewStageChoice(null);
+                    resumeDataRef.current = { transcript, msgs: savedMsgs };
+                    setCurrentStageIdx(stageIdx);
+                    void runDebate(stageIdx);
+                  }}
+                  style={{
+                    flex: 1,
+                    background: "rgba(124,108,252,0.15)",
+                    border: "1px solid rgba(124,108,252,0.4)",
+                    borderRadius: 10,
+                    color: "#a5b4fc",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    padding: "11px 16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  이어서 하기 →
+                </button>
+                <button
+                  onClick={() => {
+                    const { stageIdx } = newStageChoice;
+                    setNewStageChoice(null);
+                    resumeDataRef.current = null;
+                    try {
+                      localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
+                      localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
+                    } catch { /* ignore */ }
+                    setMsgs([]);
+                    convRef.current = [];
+                    setCurrentStageIdx(stageIdx);
+                    void runDebate(stageIdx);
+                  }}
+                  style={{
+                    flex: 1,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid #2a2a3d",
+                    borderRadius: 10,
+                    color: "#94a3b8",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    padding: "11px 16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  새로 시작하기
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── 시놉시스 로그라인 선택 UI ── */}
           {synopsisStep === "logline" && synopsisLoglines.length > 0 && (
