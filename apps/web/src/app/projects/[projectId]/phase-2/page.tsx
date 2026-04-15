@@ -6918,8 +6918,54 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             </div>
           )}
 
-          {/* Running: confirm button */}
-          {debatePhase === "running" && (
+          {/* Running: Stage 3은 캐릭터 진행 카드, 나머지는 확정 버튼 */}
+          {debatePhase === "running" && STAGES[currentStageIdx]?.id === 3 ? (() => {
+            const chars3 = editableAssets.characters;
+            if (chars3.length === 0) return null;
+            const doneCount = chars3.filter(n => coveredAgendaIds.includes(`char_${n}_body`)).length;
+            const activeIdx = chars3.findIndex(n => !coveredAgendaIds.includes(`char_${n}_body`));
+            return (
+              <div style={{ padding:"8px 16px 10px", borderTop:"1px solid #1a1a28" }}>
+                <div style={{ fontSize:10, fontWeight:700, color:"#fb923c", letterSpacing:"0.06em", marginBottom:8, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <span>👥 캐릭터 설정 진행</span>
+                  <span style={{ color:"#3a3a52" }}>{doneCount} / {chars3.length}</span>
+                </div>
+                <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:2 }}>
+                  {chars3.map((name, i) => {
+                    const isDone = coveredAgendaIds.includes(`char_${name}_body`);
+                    const isActive = !isDone && i === activeIdx;
+                    return (
+                      <div key={i} style={{
+                        flexShrink:0, width:72, minHeight:76,
+                        borderRadius:10,
+                        border:`1px solid ${isDone ? "rgba(52,211,153,0.35)" : isActive ? "rgba(251,146,60,0.45)" : "#1e1e2a"}`,
+                        background: isDone ? "rgba(52,211,153,0.06)" : isActive ? "rgba(251,146,60,0.07)" : "rgba(255,255,255,0.015)",
+                        display:"flex", flexDirection:"column" as const, alignItems:"center", justifyContent:"center",
+                        gap:5, padding:"8px 4px",
+                        transition:"all 0.2s",
+                      }}>
+                        <div style={{
+                          width:34, height:34, borderRadius:"50%",
+                          background: isDone ? "rgba(52,211,153,0.18)" : isActive ? "rgba(251,146,60,0.18)" : "rgba(255,255,255,0.04)",
+                          border:`1px solid ${isDone ? "rgba(52,211,153,0.4)" : isActive ? "rgba(251,146,60,0.4)" : "#1e1e2a"}`,
+                          display:"flex", alignItems:"center", justifyContent:"center",
+                          fontSize: isDone ? 16 : 10,
+                          color: isDone ? "#34d399" : isActive ? "#fb923c" : "#2a2a3a",
+                        }}>
+                          {isDone ? "✓" : isActive ? <ThinkingDots /> : ""}
+                        </div>
+                        <div style={{
+                          fontSize:10, fontWeight:700, textAlign:"center" as const, lineHeight:1.3,
+                          maxWidth:64, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const,
+                          color: isDone ? "#34d399" : isActive ? "#fb923c" : "#3a3a52",
+                        }}>{name}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })() : debatePhase === "running" ? (
             <div style={{ padding:"6px 16px 0" }}>
               <button
                 onClick={() => { void handleConfirm(currentStageIdx); }}
@@ -6931,7 +6977,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 ✓ 이 단계 확정하고 결과 정리
               </button>
             </div>
-          )}
+          ) : null}
 
           {/* Confirming: spinner */}
           {debatePhase === "confirming" && (
