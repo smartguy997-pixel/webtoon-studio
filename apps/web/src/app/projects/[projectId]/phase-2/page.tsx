@@ -57,6 +57,36 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
     "짧고 핵심만. 길게 말하지 마.",
 };
 
+// ─── 에이전트 명시적 지정 라우팅 ─────────────────────────────────────────────────
+// 에이전트가 발언 끝에 `→ @agentId` 를 붙이면 다음 발언자를 지정할 수 있음
+// pickNextSpeaker() 와 MsgBubble 이 모두 이 맵을 사용함
+
+const NEXT_AGENT_ALIASES: Record<string, AgentId> = {
+  // 영문 ID
+  worldbuilder: "worldbuilder",
+  character:    "character",
+  scenario:     "scenario",
+  script:       "script",
+  editor:       "editor",
+  // 한국어 별칭
+  세계관설계자: "worldbuilder",
+  세계관:       "worldbuilder",
+  캐릭터디자이너: "character",
+  캐릭터:       "character",
+  시나리오작가:  "scenario",
+  시나리오:     "scenario",
+  스크립트작가:  "script",
+  연출가:       "script",
+  편집자:       "editor",
+};
+
+/** 텍스트에서 `→ @agentId` 패턴을 파싱해 AgentId 반환. 없으면 null. */
+function parseNextAgent(text: string): AgentId | null {
+  const m = text.match(/→\s*@([^\s\]]+)/);
+  if (!m) return null;
+  return (NEXT_AGENT_ALIASES[m[1]] ?? NEXT_AGENT_ALIASES[m[1].toLowerCase()] ?? null) as AgentId | null;
+}
+
 // ─── Phase 2 사용자 명령 패턴 ────────────────────────────────────────────────────
 // 사용자가 특정 키워드 입력 시 즉시 반응하는 에이전트 라우팅
 
@@ -801,6 +831,7 @@ ${responseGuide}
 - 마크다운(#, *, >, -) 금지. JSON 금지.
 - "다음 단계", "단계 완료" 같은 말 하지 마.
 - "못박아야 한다" 같은 딱딱한 표현 쓰지 마. 대신 "먼저 정하면 좋겠어", "설정해두면 어떨까", "결정해두는 게 좋을 것 같아" 같이 자연스럽게.
+- 특정 팀원에게 발언을 넘기고 싶을 때만, 메시지 끝에 \`→ @에이전트ID\`를 붙여. 예: \`→ @character\`, \`→ @worldbuilder\`, \`→ @scenario\`, \`→ @script\`, \`→ @editor\`. 매번 쓰면 흐름이 딱딱해지니 꼭 필요할 때만.
 
 [레퍼런스 이미지 서치]
 시각적 레퍼런스가 필요할 때 딱 1번만 이렇게 써:
@@ -2468,23 +2499,29 @@ function CharacterGallery({
   chars,
   imageItems,
   stageColor,
+  compact = false,
 }: {
   chars: Record<string,string>[];
   imageItems: ImageItem[];
   stageColor: string;
+  compact?: boolean;
 }) {
   const [selectedChar, setSelectedChar] = useState<Record<string,string> | null>(null);
   if (chars.length === 0) return null;
   const c = stageColor;
+  // compact 모드: 가로 스크롤 한 줄, 작은 타일
+  const tileW = compact ? 72 : 90;
 
   return (
-    <div style={{ padding:"10px 0 4px" }}>
-      <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.06em", marginBottom:8, textTransform:"uppercase" as const }}>
-        👥 캐릭터 ({chars.length}명) — 누르면 상세 설정
-      </div>
+    <div style={{ padding: compact ? "0" : "10px 0 4px" }}>
+      {!compact && (
+        <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.06em", marginBottom:8, textTransform:"uppercase" as const }}>
+          👥 캐릭터 ({chars.length}명) — 누르면 상세 설정
+        </div>
+      )}
 
       {/* ── 타일 그리드 ── */}
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap" as const }}>
+      <div style={{ display:"flex", gap: compact ? 6 : 8, flexWrap: compact ? "nowrap" as const : "wrap" as const }}>
         {chars.map((ch, i) => {
           const imgItem = imageItems.find(
             (it: ImageItem) => it.type === "character" && it.name === ch.name && it.imageUrl
@@ -2497,11 +2534,11 @@ function CharacterGallery({
               key={i}
               onClick={() => setSelectedChar(ch)}
               style={{
-                width: 90,
+                width: tileW,
                 cursor: "pointer",
                 background: "#16161f",
                 border: `1px solid ${c}25`,
-                borderRadius: 10,
+                borderRadius: compact ? 8 : 10,
                 overflow: "hidden",
                 transition: "border-color 0.15s",
                 flexShrink: 0,
@@ -2657,6 +2694,13 @@ function renderMsgText(text: string) {
 function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg) => void }) {
   const ag = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
+
+  // 명시적 다음 발언자 지정 감지
+  const nextAgentId = !msg.streaming ? parseNextAgent(msg.text) : null;
+  const nextAgentInfo = nextAgentId ? AGENTS[nextAgentId] : null;
+  // 텍스트에서 `→ @xxx` 부분 제거해 표시
+  const displayText = nextAgentId ? msg.text.replace(/\s*→\s*@[^\s\]]+\s*$/, "").trimEnd() : msg.text;
+
   return (
     <div className={`${s.msgRow} ${isUser ? s.msgRowUser : ""}`}>
       {!isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>{ag.ini}</div>}
@@ -2674,7 +2718,7 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
           title={onReply && !msg.streaming ? "클릭해서 댓글 달기" : undefined}
         >
           {msg.streaming && !msg.text ? <ThinkingDots /> : (
-            <span className={s.msgText} style={{ whiteSpace: "pre-wrap" }}>{renderMsgText(msg.text)}{msg.streaming && <StreamCursor />}</span>
+            <span className={s.msgText} style={{ whiteSpace: "pre-wrap" }}>{renderMsgText(displayText)}{msg.streaming && <StreamCursor />}</span>
           )}
           {msg.imageUrl && (
             <img src={msg.imageUrl} alt="concept art"
@@ -2682,6 +2726,15 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
             />
           )}
         </div>
+        {/* 다음 발언자 지정 배지 */}
+        {nextAgentInfo && (
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+            <span style={{ fontSize: 10, color: "#4a4a68" }}>→</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: nextAgentInfo.color, background: `${nextAgentInfo.color}18`, border: `1px solid ${nextAgentInfo.color}35`, borderRadius: 20, padding: "1px 8px" }}>
+              {nextAgentInfo.label}
+            </span>
+          </div>
+        )}
       </div>
       {isUser && <div className={s.avatar} style={{ background: ag.bg, color: ag.color, border: `1px solid ${ag.color}40` }}>나</div>}
     </div>
@@ -3106,6 +3159,10 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     let secondToLastSpeaker: AgentId | null = null; // 직전 2명 추적 — 같은 에이전트 연속 방지
 
     function pickNextSpeaker(lastLine: string, last: AgentId | null, secondLast: AgentId | null): AgentId {
+      // 0. 명시적 지정 감지: → @agentId (직전 2명 제외 규칙보다 우선)
+      const explicit = parseNextAgent(lastLine);
+      if (explicit && P2_AGENTS.includes(explicit)) return explicit;
+
       // 직전 2명 제외 (같은 에이전트가 연속으로 나타나는 현상 방지)
       const available = P2_AGENTS.filter(a => a !== last && a !== secondLast);
       // 모두 제외되면 직전 1명만 제외로 완화
@@ -6257,26 +6314,6 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             );
           })()}
 
-          {/* ── 캐릭터 갤러리: Stage 3 완료 후 영구 표시, 이미지 생성되면 자동 업데이트 ── */}
-          {(() => {
-            const s3 = stageResults.find((r: StageResult) => r.stageId === 3);
-            if (!s3) return null;
-            const chars = Array.isArray(s3.data.characters) ? s3.data.characters as Record<string,string>[] : [];
-            // 시놉시스 업데이트 감지: synopsisAssets의 캐릭터 목록이 Stage 3 결과와 다르면 안내
-            const syncedChars = editableAssets.characters;
-            const newInSynopsis = syncedChars.filter(n => !chars.some(c => c.name === n));
-            return (
-              <div>
-                {newInSynopsis.length > 0 && (
-                  <div style={{ fontSize:11, color:"#fbbf24", background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.2)", borderRadius:8, padding:"7px 12px", marginBottom:8 }}>
-                    ⚡ 시놉시스에 새 캐릭터가 추가됐습니다: {newInSynopsis.join(", ")} — 캐릭터 설정을 다시 실행하면 반영됩니다.
-                  </div>
-                )}
-                <CharacterGallery chars={chars} imageItems={imageItems} stageColor={STAGES[2].color} />
-              </div>
-            );
-          })()}
-
           {/* ── 4개 이미지 그리드 (selecting 단계) ── */}
           {imageSessionPhase === "selecting" && imageConcepts.length > 0 && (
             <div style={{ padding: "16px", borderTop: "1px solid #1e1e2a" }}>
@@ -6379,6 +6416,26 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
           <div ref={bottomRef} />
         </div>
+
+        {/* ── 캐릭터 갤러리 고정 바: 채팅창 아래, 입력창 위 ── */}
+        {(() => {
+          const s3 = stageResults.find((r: StageResult) => r.stageId === 3);
+          if (!s3) return null;
+          const chars = Array.isArray(s3.data.characters) ? s3.data.characters as Record<string,string>[] : [];
+          if (chars.length === 0) return null;
+          const syncedChars = editableAssets.characters;
+          const newInSynopsis = syncedChars.filter(n => !chars.some(c => c.name === n));
+          return (
+            <div style={{ flexShrink: 0, borderTop: "1px solid #1a1a28", background: "#09090f", padding: "8px 20px 8px", overflowX: "auto", overflowY: "hidden" }}>
+              {newInSynopsis.length > 0 && (
+                <div style={{ fontSize: 10, color: "#fbbf24", marginBottom: 5 }}>
+                  ⚡ 시놉시스에 새 캐릭터: {newInSynopsis.join(", ")} — 캐릭터 설정을 다시 실행하면 반영됩니다.
+                </div>
+              )}
+              <CharacterGallery chars={chars} imageItems={imageItems} stageColor={STAGES[2].color} compact />
+            </div>
+          );
+        })()}
 
         <div className={s.chatBottom}>
 
