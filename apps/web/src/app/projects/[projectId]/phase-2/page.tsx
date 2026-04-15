@@ -6152,6 +6152,34 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         )}
 
         <div className={s.chatBody}>
+          {/* ── 이전 완료 단계 대화 기록 (단계 구분선 포함) ── */}
+          {STAGES.slice(0, currentStageIdx).map((st, si) => {
+            const histMsgs = stageHistoryMsgs[si] ?? [];
+            if (histMsgs.length === 0) return null;
+            return (
+              <div key={si}>
+                {/* 단계 구분선 */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, margin:"6px 0 10px", opacity:0.55 }}>
+                  <div style={{ flex:1, height:1, background:"#1e1e2a" }} />
+                  <span style={{ fontSize:10, fontWeight:700, color:st.color, letterSpacing:"0.06em", whiteSpace:"nowrap" as const }}>
+                    {st.name} — 완료
+                  </span>
+                  <div style={{ flex:1, height:1, background:"#1e1e2a" }} />
+                </div>
+                {/* 해당 단계 메시지들 (투명도 낮춰서 '과거' 느낌) */}
+                <div style={{ opacity:0.65 }}>
+                  {histMsgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)}
+                </div>
+                {/* 단계 완료 구분선 */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, margin:"10px 0 16px", opacity:0.4 }}>
+                  <div style={{ flex:1, height:1, background:"#1e1e2a" }} />
+                  <span style={{ fontSize:10, color:"#34d399", fontWeight:700 }}>✓ 단계 완료</span>
+                  <div style={{ flex:1, height:1, background:"#1e1e2a" }} />
+                </div>
+              </div>
+            );
+          })}
+
           {msgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} onReply={debatePhase === "running" && m.agent !== "user" ? (msg) => {
             const ag = AGENTS[msg.agent];
             setReplyTo({ msg, agentLabel: ag?.label ?? msg.agent, preview: msg.text.slice(0, 60).trim() });
