@@ -3257,7 +3257,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     };
 
     // 단일 에이전트 타이프라이터 효과 (백그라운드 스트림 → 재생)
-    const runSingleAgent = async (agentId: AgentId, userContent: string, tokens: number) => {
+    const runSingleAgent = async (agentId: AgentId, userContent: string, tokens: number, isContinuation = false) => {
       const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
       if (!key) return;
       // 전역 lock: 어떤 에이전트든 스트리밍 중이면 완료 대기 (한 번에 한 명만 발언, 최대 60초)
@@ -3270,6 +3270,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       let fullText = "";
       let apiDone = false;
       let fetchError: string | null = null;
+      let wasTruncated = false;
 
       // 백그라운드에서 API 패치 (버퍼 채우기)
       void (async () => {
@@ -3281,6 +3282,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             messages: [{ role: "user", content: userContent }],
             maxTokens: tokens,
             tools: [],
+            onStopReason: (reason) => { if (reason === "max_tokens") wasTruncated = true; },
           })) {
             if (abortRef.current) break;
             fullText += chunk;
@@ -3332,6 +3334,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
         localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m: Msg) => !m.streaming)));
       } catch { /* ignore */ }
+
+      // 말이 끊긴 경우: 같은 에이전트가 자동으로 이어서 발언 (1회만)
+      if (wasTruncated && !isContinuation && !abortRef.current) {
+        await sleep(400);
+        const contPrompt = `${userContent}\n\n[네 방금 발언 — 토큰 한도로 중간에 끊김]\n${clean}\n\n방금 하던 말이 끊겼어. 자연스럽게 바로 이어서 계속해줘. 앞에 한 말은 절대 반복하지 마.`;
+        await runSingleAgent(agentId, contPrompt, Math.min(tokens + 300, 1200), true);
+      }
     };
 
     // 스테이지 오프닝: 이전 단계 내용을 팀에게 자연스럽게 환기
