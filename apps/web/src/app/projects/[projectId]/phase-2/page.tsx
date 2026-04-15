@@ -8,15 +8,24 @@ import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicK
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
 const AGENTS = {
-  worldbuilder: { label: "세계관설계자",   color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  ini: "세" },
-  character:    { label: "캐릭터디자이너", color: "#fb923c", bg: "rgba(251,146,60,0.12)",  ini: "캐" },
-  scenario:     { label: "시나리오작가",   color: "#fbbf24", bg: "rgba(251,191,36,0.12)",  ini: "시" },
-  script:       { label: "연출작가",       color: "#f87171", bg: "rgba(248,113,113,0.12)", ini: "연" },
-  producer:     { label: "총괄프로듀서",   color: "#f1f5f9", bg: "rgba(241,245,249,0.12)", ini: "총" },
-  editor:       { label: "편집자",         color: "#fb923c", bg: "rgba(251,146,60,0.10)",  ini: "편" },
-  user:         { label: "나",             color: "#7c6cfc", bg: "rgba(124,108,252,0.12)", ini: "나" },
+  worldbuilder:    { label: "세계관설계자",   color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  ini: "세" },
+  character:       { label: "캐릭터디자이너", color: "#fb923c", bg: "rgba(251,146,60,0.12)",  ini: "캐" },
+  scenario:        { label: "시나리오작가",   color: "#fbbf24", bg: "rgba(251,191,36,0.12)",  ini: "시" },
+  script:          { label: "연출작가",       color: "#f87171", bg: "rgba(248,113,113,0.12)", ini: "연" },
+  producer:        { label: "총괄프로듀서",   color: "#f1f5f9", bg: "rgba(241,245,249,0.12)", ini: "총" },
+  editor:          { label: "편집자",         color: "#fb923c", bg: "rgba(251,146,60,0.10)",  ini: "편" },
+  meetingrecorder: { label: "회의록작성자",   color: "#94a3b8", bg: "rgba(148,163,184,0.07)", ini: "📋" },
+  user:            { label: "나",             color: "#7c6cfc", bg: "rgba(124,108,252,0.12)", ini: "나" },
 } as const;
 type AgentId = keyof typeof AGENTS;
+
+// 회의록 현황판 타입
+interface MeetingDoc {
+  confirmed: string[];   // ✅ 확정된 설정
+  exploring: string[];   // ⏳ 논의 중인 아이디어
+  rejected: string[];    // ❌ 거부된 방향
+  user_prefs: string[];  // 👤 사용자 선호
+}
 
 // API 키 할당 (에이전트 인덱스 → 키 인덱스, 순환)
 function getApiKeyIndexForAgent(agentIdx: number): number {
@@ -2695,6 +2704,25 @@ function MsgBubble({ msg, onReply }: { key?: string; msg: Msg; onReply?: (m: Msg
   const ag = AGENTS[msg.agent];
   const isUser = msg.agent === "user";
 
+  // ── 회의록작성자 전용 카드 렌더링 ──
+  if (msg.agent === "meetingrecorder") {
+    const lines = msg.text.split("\n");
+    const title = lines[0] ?? "";
+    const body = lines.slice(2).join("\n"); // 빈 줄 뒤 본문
+    return (
+      <div style={{ margin: "14px 0", padding: "14px 16px", background: "rgba(148,163,184,0.05)", border: "1px solid rgba(148,163,184,0.15)", borderRadius: 12, borderLeft: "3px solid #94a3b8" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 14 }}>📋</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", letterSpacing: "0.06em", textTransform: "uppercase" as const }}>회의록작성자</span>
+          <div style={{ flex: 1, height: 1, background: "rgba(148,163,184,0.15)" }} />
+        </div>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{title}</div>
+        <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.85, whiteSpace: "pre-wrap" as const }}>{body}</div>
+        {msg.streaming && <StreamCursor />}
+      </div>
+    );
+  }
+
   // 명시적 다음 발언자 지정 감지
   const nextAgentId = !msg.streaming ? parseNextAgent(msg.text) : null;
   const nextAgentInfo = nextAgentId ? AGENTS[nextAgentId] : null;
@@ -3254,6 +3282,65 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           } catch { /* ignore */ }
         }
       })();
+    };
+
+    // ── 살아있는 현황판 (Living Doc) ──────────────────────────────────────────────
+    let meetingDoc: MeetingDoc | null = null;
+    const MEETING_INTERVAL = 12; // 12 에이전트 턴마다 회의록 갱신
+
+    const formatDoc = (doc: MeetingDoc): string => [
+      doc.confirmed.length  > 0 ? `[확정] ${doc.confirmed.join(" / ")}` : "",
+      doc.exploring.length  > 0 ? `[논의 중] ${doc.exploring.join(" / ")}` : "",
+      doc.rejected.length   > 0 ? `[거부됨] ${doc.rejected.join(" / ")}` : "",
+      doc.user_prefs.length > 0 ? `[사용자 선호] ${doc.user_prefs.join(" / ")}` : "",
+    ].filter(Boolean).join("\n");
+
+    const updateLivingDoc = async (): Promise<void> => {
+      if (transcript.length < 6 || abortRef.current) return;
+      const key = getAnthropicKeyByIndex(getApiKeyIndexForAgent(agentIndex));
+      if (!key) return;
+      let raw = "";
+      try {
+        for await (const chunk of streamClaude({
+          apiKey: key,
+          model: debateModel,
+          systemPrompt: "웹툰 기획 토론 분석가. JSON만 출력. 설명 없이.",
+          messages: [{
+            role: "user",
+            content: [
+              meetingDoc ? `[기존 현황판]\n${JSON.stringify(meetingDoc)}\n\n` : "",
+              `[최근 대화]\n${transcript.slice(-15).join("\n")}\n\n`,
+              "위 내용을 바탕으로 기획 현황판을 갱신하세요.\n",
+              `{"confirmed":["확정 설정 (구체 수치·이름 포함)"],"exploring":["현재 논의 중인 아이디어"],"rejected":["팀/사용자가 거부한 방향"],"user_prefs":["사용자가 언급한 선호"]}\n`,
+              "각 배열 항목은 1줄 이내, 최대 7개. 기존 현황판과 최근 대화를 합쳐서 덮어씀. JSON만.",
+            ].filter(Boolean).join(""),
+          }],
+          maxTokens: 500,
+          tools: [],
+        })) { if (abortRef.current) break; raw += chunk; }
+      } catch { return; }
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return;
+      try {
+        const doc = JSON.parse(m[0]) as MeetingDoc;
+        meetingDoc = doc;
+        // 채팅창에 회의록 버블 추가
+        const lines = [
+          doc.confirmed.length  > 0 ? `✅ 확정\n${doc.confirmed.map(s => `• ${s}`).join("\n")}` : "",
+          doc.exploring.length  > 0 ? `⏳ 논의 중\n${doc.exploring.map(s => `• ${s}`).join("\n")}` : "",
+          doc.rejected.length   > 0 ? `❌ 거부됨\n${doc.rejected.map(s => `• ${s}`).join("\n")}` : "",
+          doc.user_prefs.length > 0 ? `👤 선호\n${doc.user_prefs.map(s => `• ${s}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n");
+        const msgId = addMsg("meetingrecorder", `지금까지 논의를 정리할게요.\n\n${lines}`, false);
+        transcript.push(`[회의록작성자]: [기획 현황 정리됨]`);
+        convRef.current = transcript;
+        // 저장
+        try {
+          localStorage.setItem(`p2_conv_${stageIdx}_${projectId}`, JSON.stringify(transcript));
+          localStorage.setItem(`p2_msgs_${stageIdx}_${projectId}`, JSON.stringify(msgsRef.current.filter((m2: Msg) => !m2.streaming)));
+        } catch { /* ignore */ }
+        void msgId;
+      } catch { /* ignore */ }
     };
 
     // 단일 에이전트 타이프라이터 효과 (백그라운드 스트림 → 재생)
@@ -3854,16 +3941,23 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         turnsSinceLastSummary++;
         if (turnsSinceLastSummary >= 5) { refreshSummary(); refreshDecisions(); turnsSinceLastSummary = 0; }
 
-        // 히스토리 텍스트 구성
+        // 회의록 현황판 갱신 (MEETING_INTERVAL 턴마다 — await로 직렬화)
+        if (agentTurnsSoFar > 0 && agentTurnsSoFar % MEETING_INTERVAL === 0 && !abortRef.current) {
+          await updateLivingDoc();
+        }
+
+        // 히스토리 텍스트 구성: 현황판 있으면 현황판 + 직전 5개, 없으면 기존 방식
         const lastLine = transcript.filter(l => !l.startsWith("[사용자]")).slice(-1)[0] ?? "";
         const decisionsBlock = [
           stageDecisions.agreed.length   > 0 ? `[✅ 합의된 내용]\n${stageDecisions.agreed.map(d => `• ${d}`).join("\n")}` : "",
           stageDecisions.rejected.length > 0 ? `[❌ 거부된 방향]\n${stageDecisions.rejected.map(d => `• ${d}`).join("\n")}` : "",
           stageDecisions.pending.length  > 0 ? `[⏳ 미결 쟁점]\n${stageDecisions.pending.map(d => `• ${d}`).join("\n")}` : "",
         ].filter(Boolean).join("\n");
-        const historyText = conversationSummary
-          ? `[토론 요약]\n${conversationSummary}\n\n${decisionsBlock ? `${decisionsBlock}\n\n` : ""}${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
-          : `[대화 내용]\n${transcript.slice(-5).join("\n")}\n\n`;
+        const historyText = meetingDoc
+          ? `[기획 현황 — 지금까지 팀이 합의·탐색·거부한 내용]\n${formatDoc(meetingDoc)}\n\n${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 대화]\n${transcript.filter(l => !l.startsWith("[회의록작성자]")).slice(-5).join("\n")}\n\n`
+          : conversationSummary
+            ? `[토론 요약]\n${conversationSummary}\n\n${decisionsBlock ? `${decisionsBlock}\n\n` : ""}${userTurnCount > 0 ? `[사용자 의견]: ${lastUserMsg}\n` : ""}[직전 발언]: ${lastLine}\n\n`
+            : `[대화 내용]\n${transcript.slice(-5).join("\n")}\n\n`;
         if (userTurnCount > 0) userTurnCount--;
 
         // ── 명령 핸들러 — 사용자 명령에 즉시 반응 ──
