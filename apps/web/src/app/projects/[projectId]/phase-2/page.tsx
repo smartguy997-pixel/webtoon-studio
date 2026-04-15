@@ -3835,52 +3835,24 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         if (!abortRef.current) {
           // 모든 캐릭터 완료 후 프로듀서 마무리
           await runSingleAgent("producer",
-            `${histText()}${targets.length}명 캐릭터 설계 완료. 빠진 내용 있으면 채팅으로 알려줘.`,
-            100);
-          naturalExit = true;
+            `${histText()}${targets.length}명 캐릭터 설계 완료! 수정하거나 보완할 내용이 있으면 바로 채팅해줘. 모두 만족스러우면 아래 '이 단계 확정하고 결과 정리' 버튼을 눌러줘.`,
+            120);
         }
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
         if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
-      }
-
-      runningRef.current = false;
-
-      // 자연 종료 시 자동 추출
-      if (!abortRef.current && naturalExit) {
-        setDebatePhase("confirming");
-        const apiKey = getAnthropicKey();
-        if (apiKey) {
-          const debateText = convRef.current.join("\n");
-          const extractId = addMsg("producer", "캐릭터 설계 정리 중...", true);
-          const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
-          const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
-          updateMsg(extractId, "", false);
-          setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
-          localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
-          localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
-          const result: StageResult = { stageId: stage.id, data, summary };
-          const newResults = [...stageResultsRef.current, result];
-          stageResultsRef.current = newResults;
-          setStageHistoryMsgs(prev => {
-            const next = { ...prev, [stageIdx]: msgsRef.current.filter((m: Msg) => !m.streaming) };
-            try {
-              localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
-                stageResults: newResults,
-                currentStageIdx: stageIdx + 1,
-                stageHistoryMsgs: next,
-              }));
-            } catch { /* ignore */ }
-            return next;
-          });
-          setCurrentStageIdx(stageIdx + 1);
-          localStorage.setItem(`wts_p2_stage_${projectId}`, String(stageIdx + 1));
-          setDebatePhase("confirmed");
-        }
-      } else {
+        runningRef.current = false;
         setDebatePhase("idle");
+        return; // 에러/중단 시 Stage 3 워크플로우 종료
       }
-      return; // Stage 3 워크플로우 종료
+
+      if (abortRef.current) {
+        runningRef.current = false;
+        setDebatePhase("idle");
+        return;
+      }
+      // 구조적 캐릭터 처리 완료 → 자동 추출하지 않고 debateLoop 로 이어서 채팅 유지
+      // 사용자가 '이 단계 확정하고 결과 정리' 버튼을 눌러야 Stage 3 완료
     }
     // ── Stage 3 워크플로우 끝 ─────────────────────────────────────────────────
 
