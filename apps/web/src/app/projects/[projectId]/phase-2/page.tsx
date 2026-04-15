@@ -2768,8 +2768,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       pendingResumeRef.current = null;
       runningRef.current = false;
       abortRef.current = false;
-      // resumeDataRef.current은 init useEffect에서 이미 설정됨 (p2_conv_/p2_msgs_ 복원)
-      void runDebate(idx);
+      // 크래시 복구: 저장된 내용이 있으면 자동 재개 대신 선택 UI 표시
+      if (resumeDataRef.current) {
+        const data = resumeDataRef.current;
+        resumeDataRef.current = null;
+        setCurrentStageIdx(idx);
+        setNewStageChoice({ stageIdx: idx, transcript: data.transcript, msgs: data.msgs });
+      } else {
+        void runDebate(idx);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);  // mount 시 1회만 실행
