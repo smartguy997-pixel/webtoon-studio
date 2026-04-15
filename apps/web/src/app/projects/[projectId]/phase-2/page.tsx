@@ -1579,6 +1579,7 @@ function StageReportInChat({
   onNewDebate?: () => void;   // 뷰 모드 전용: 기존 내용 지우고 새로 토론
 }) {
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [stg1CharModal, setStg1CharModal] = useState<Record<string,unknown> | null>(null);
   const [stg1LocModal,  setStg1LocModal]  = useState<Record<string,unknown> | null>(null);
   const isViewMode = !!onNewDebate; // onNewDebate가 있으면 뷰 모드
@@ -2311,154 +2312,111 @@ function StageReportInChat({
     }
   })();
 
+  const cleanSummary = (result.summary || "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/[#>_`]/g, "")
+    .trim();
+  const previewText = cleanSummary.slice(0, 120) + (cleanSummary.length > 120 ? "..." : "");
+
   return (
-    <div style={{ margin:"24px 0 8px" }}>
-      {/* ── 완료 배너 ── */}
-      <div style={{ background:`linear-gradient(90deg, ${c}18, ${c}08, transparent)`, border:`1px solid ${c}30`, borderRadius:12, padding:"14px 20px", marginBottom:20, display:"flex", alignItems:"center", gap:12 }}>
-        <div style={{ width:36, height:36, borderRadius:10, background:`${c}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>✓</div>
-        <div>
-          <div style={{ fontSize:15, fontWeight:800, color:c }}>{stage.name} 완료</div>
-          <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>토론 결과가 정리되었습니다. 내용을 확인하고 다음 단계로 진행하세요.</div>
-        </div>
-      </div>
-
-      {/* ── 내용 ── */}
-      <div style={{ padding:"0 4px" }}>
-        {content}
-
-        {/* ── 액션 버튼 ── */}
-        <div style={{ display:"flex", flexDirection:"column" as const, gap:8, marginTop:20 }}>
-          {isViewMode ? (
-            /* 뷰 모드: 새로 토론 / 이어서 토론 / 다음 단계 */
-            <>
-              <button
-                onClick={onNextStage}
-                style={{ width:"100%", padding:"13px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
-                {nextBtnLabel}
-              </button>
-              <div style={{ display:"flex", gap:10 }}>
-                <button
-                  onClick={onNewDebate}
-                  style={{ flex:1, padding:"10px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #3a2a2a", color:"#f87171", transition:"all 0.15s" }}>
-                  🗑 새로 토론
-                </button>
-                <button
-                  onClick={onContinueDebate}
-                  style={{ flex:2, padding:"10px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid #2a2a3d", color:"#94a3b8" }}>
-                  ↩ 이어서 토론
-                </button>
-              </div>
-            </>
-          ) : (
-            /* 인라인 모드: 계속 토론 / 다음 단계 */
-            <div style={{ display:"flex", gap:10 }}>
-              <button
-                onClick={onContinueDebate}
-                style={{ flex:1, padding:"12px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b", transition:"border-color 0.15s" }}>
-                ✎ 계속 토론
-              </button>
-              <button
-                onClick={onNextStage}
-                style={{ flex:2, padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 20px ${c}40` }}>
-                {nextBtnLabel}
-              </button>
-            </div>
-          )}
-          {/* ── 다시 분석 버튼 ── */}
-          <button
-            disabled={reanalyzing}
-            onClick={async () => {
-              setReanalyzing(true);
-              try { await onReanalyze?.(); } finally { setReanalyzing(false); }
-            }}
-            style={{ width:"100%", padding:"10px 0", borderRadius:10, fontSize:12, fontWeight:700, cursor: reanalyzing ? "default" : "pointer", background:"rgba(255,255,255,0.03)", border:"1px solid #252535", color: reanalyzing ? "#3a3a52" : "#64748b", transition:"all 0.15s", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-            {reanalyzing
-              ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span> 분석 중...</>
-              : "🔄 기존 내용 다시 분석"}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Stage 1 인물 상세 모달 ── */}
-      {stg1CharModal && (
-        <div onClick={() => setStg1CharModal(null)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            style={{ background:"#12121e", border:"1px solid rgba(251,146,60,0.35)", borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto" }}>
-            {/* 헤더 */}
-            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-              <div style={{ width:42, height:42, borderRadius:"50%", background:"rgba(251,146,60,0.2)", border:"2px solid rgba(251,146,60,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:800, color:"#fb923c", flexShrink:0 }}>
-                {str(stg1CharModal.name).slice(0,2) || "?"}
-              </div>
-              <div>
-                <div style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{str(stg1CharModal.name)}</div>
-                {stg1CharModal.role && <div style={{ fontSize:11, color:"#fb923c" }}>{str(stg1CharModal.role)} {stg1CharModal.position ? `· ${str(stg1CharModal.position)}` : ""}</div>}
-              </div>
-              <button onClick={() => setStg1CharModal(null)} style={{ marginLeft:"auto", background:"transparent", border:"none", color:"#4a4a68", fontSize:18, cursor:"pointer", padding:4 }}>✕</button>
-            </div>
-            {/* 필드 목록 */}
-            {(() => {
-              const fields: Array<[string, string]> = [
-                ["나이", str(stg1CharModal.age)],
-                ["성별", str(stg1CharModal.gender)],
-                ["키 · 체형", [str(stg1CharModal.height), str(stg1CharModal.build)].filter(Boolean).join(" / ")],
-                ["얼굴", str(stg1CharModal.face)],
-                ["복장", str(stg1CharModal.outfit)],
-                ["성격", str(stg1CharModal.personality)],
-                ["동기 · 목표", str(stg1CharModal.motivation)],
-                ["말투", str(stg1CharModal.speech)],
-                ["과거사 · 상처", str(stg1CharModal.backstory)],
-                ["목표 충돌", str(stg1CharModal.goal_conflict)],
-              ].filter(([, v]) => v);
-              return fields.map(([label, val]) => (
-                <div key={label} style={{ marginBottom:10 }}>
-                  <div style={{ fontSize:10, fontWeight:800, color:"#fb923c88", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:3 }}>{label}</div>
-                  <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.7 }}>{val}</div>
-                </div>
-              ));
-            })()}
-            {/* 관계 */}
-            {Array.isArray(stg1CharModal.relationships) && (stg1CharModal.relationships as Array<Record<string,string>>).length > 0 && (
-              <div style={{ marginTop:10 }}>
-                <div style={{ fontSize:10, fontWeight:800, color:"#fb923c88", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:6 }}>관계</div>
-                {(stg1CharModal.relationships as Array<Record<string,string>>).map((r, i) => (
-                  <div key={i} style={{ fontSize:12, color:"#c8d0e0", marginBottom:4 }}>
-                    <span style={{ color:"#fb923c", fontWeight:700 }}>{r.character}</span> <span style={{ color:"#4a4a68" }}>({r.type})</span> {r.description && `— ${r.description}`}
-                  </div>
-                ))}
-              </div>
-            )}
+    <div style={{ margin:"8px 0" }}>
+      {/* ── 컴팩트 결과 타일 ── */}
+      <div
+        onClick={() => setModalOpen(true)}
+        style={{
+          background:"#16161f",
+          border:`1px solid ${c}35`,
+          borderRadius:12,
+          padding:"13px 15px",
+          cursor:"pointer",
+          transition:"border-color 0.15s",
+          marginBottom:10,
+        }}
+      >
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+            <div style={{ width:7, height:7, borderRadius:"50%", background:c, flexShrink:0 }} />
+            <span style={{ fontSize:13, fontWeight:800, color:"#f1f5f9" }}>{stage.name} 완료</span>
           </div>
+          <span style={{ fontSize:13, color:c, fontWeight:700, opacity:0.8 }}>↗</span>
         </div>
-      )}
+        <div style={{
+          fontSize:12, color:"#64748b", lineHeight:1.55,
+          overflow:"hidden", display:"-webkit-box",
+          WebkitLineClamp:2, WebkitBoxOrient:"vertical" as const,
+        }}>
+          {previewText || "결과를 보려면 눌러주세요."}
+        </div>
+      </div>
 
-      {/* ── Stage 1 장소 상세 모달 ── */}
-      {stg1LocModal && (
-        <div onClick={() => setStg1LocModal(null)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-          <div onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            style={{ background:"#12121e", border:"1px solid rgba(167,139,250,0.35)", borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-              <div style={{ fontSize:24 }}>🏙</div>
-              <div>
-                <div style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{str(stg1LocModal.name ?? stg1LocModal.location_name)}</div>
-                {(stg1LocModal.type || stg1LocModal.location_type) && <div style={{ fontSize:11, color:"#a78bfa" }}>{str(stg1LocModal.type ?? stg1LocModal.location_type)}</div>}
-              </div>
-              <button onClick={() => setStg1LocModal(null)} style={{ marginLeft:"auto", background:"transparent", border:"none", color:"#4a4a68", fontSize:18, cursor:"pointer", padding:4 }}>✕</button>
+      {/* ── 액션 버튼 ── */}
+      <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
+        {isViewMode ? (
+          <>
+            <button onClick={onNextStage}
+              style={{ width:"100%", padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 16px ${c}40` }}>
+              {nextBtnLabel}
+            </button>
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={onNewDebate}
+                style={{ flex:1, padding:"9px 0", borderRadius:10, fontSize:12, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #3a2a2a", color:"#f87171" }}>
+                🗑 새로 토론
+              </button>
+              <button onClick={onContinueDebate}
+                style={{ flex:2, padding:"9px 0", borderRadius:10, fontSize:12, fontWeight:700, cursor:"pointer", background:"rgba(255,255,255,0.04)", border:"1px solid #2a2a3d", color:"#94a3b8" }}>
+                ↩ 이어서 토론
+              </button>
             </div>
-            {(() => {
-              const fields: Array<[string, string]> = [
-                ["시각적 묘사", str(stg1LocModal.visual)],
-                ["분위기", str(stg1LocModal.atmosphere)],
-                ["역할 · 의미", str(stg1LocModal.significance ?? stg1LocModal.role)],
-              ].filter(([, v]) => v);
-              return fields.map(([label, val]) => (
-                <div key={label} style={{ marginBottom:10 }}>
-                  <div style={{ fontSize:10, fontWeight:800, color:"#a78bfa88", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:3 }}>{label}</div>
-                  <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.7 }}>{val}</div>
-                </div>
-              ));
-            })()}
+          </>
+        ) : (
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={onContinueDebate}
+              style={{ flex:1, padding:"10px 0", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer", background:"transparent", border:"1px solid #2a2a3d", color:"#64748b" }}>
+              ✎ 계속 토론
+            </button>
+            <button onClick={onNextStage}
+              style={{ flex:2, padding:"10px 0", borderRadius:10, fontSize:14, fontWeight:800, cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`, border:"none", color:"#0a0a14", boxShadow:`0 4px 16px ${c}40` }}>
+              {nextBtnLabel}
+            </button>
+          </div>
+        )}
+        <button
+          disabled={reanalyzing}
+          onClick={async () => { setReanalyzing(true); try { await onReanalyze?.(); } finally { setReanalyzing(false); } }}
+          style={{ width:"100%", padding:"9px 0", borderRadius:10, fontSize:12, fontWeight:700, cursor:reanalyzing?"default":"pointer", background:"rgba(255,255,255,0.03)", border:"1px solid #252535", color:reanalyzing?"#3a3a52":"#64748b", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+          {reanalyzing ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span> 분석 중...</> : "🔄 기존 내용 다시 분석"}
+        </button>
+      </div>
+
+      {/* ── 전체 내용 모달 ── */}
+      {modalOpen && (
+        <div
+          onClick={() => setModalOpen(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.80)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+        >
+          <div
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            style={{ background:"#12121e", border:`1px solid ${c}30`, borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:520, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column" as const, gap:16 }}
+          >
+            {/* 모달 헤더 */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:4, height:22, borderRadius:2, background:c, flexShrink:0 }} />
+                <span style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{stage.name}</span>
+              </div>
+              <button onClick={() => setModalOpen(false)} style={{ background:"transparent", border:"none", color:"#4a4a68", fontSize:20, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
+            </div>
+            {/* 내용 */}
+            <div style={{ fontSize:14, color:"#c8d0e0", lineHeight:1.85, whiteSpace:"pre-wrap" as const }}>
+              {cleanSummary || "요약이 없습니다."}
+            </div>
+            {/* 닫기 */}
+            <button
+              onClick={() => setModalOpen(false)}
+              style={{ alignSelf:"flex-end" as const, padding:"8px 22px", borderRadius:8, background:"#1e1e2a", border:"1px solid #2a2a3d", color:"#94a3b8", fontSize:13, fontWeight:700, cursor:"pointer" }}
+            >
+              닫기
+            </button>
           </div>
         </div>
       )}
