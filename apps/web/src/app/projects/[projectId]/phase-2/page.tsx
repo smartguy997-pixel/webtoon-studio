@@ -2543,6 +2543,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── State ──
   const [genre, setGenre] = useState("판타지");
+  const [appReady, setAppReady] = useState(false); // localStorage 복원 완료 여부 (init 화면 깜빡임 방지)
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
@@ -2725,10 +2726,12 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               setDebatePhase("confirmed");
             }
           }
+          setAppReady(true); // localStorage 복원 완료 (early return 전에 호출)
           return;
         }
       }
     } catch { /* ignore */ }
+    setAppReady(true); // 저장 데이터 없는 경우 (첫 방문)
   }, [projectId]);
 
   useEffect(() => { msgsRef.current = msgs; }, [msgs]);
@@ -4086,6 +4089,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     setStylePhase("confirmed");
     setMsgs([]);
     convRef.current = [];
+    resumeDataRef.current = null; // 전 단계 resume 데이터 반드시 초기화
     setCurrentStageIdx(2);
     setDebatePhase("idle");
     startNewStageDebate(2);
@@ -4913,6 +4917,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Move to next stage (only via button) ──
   const handleNextStage = useCallback((stageIdx: number) => {
+    resumeDataRef.current = null; // 단계 전환 시 이전 resume 데이터 반드시 초기화
     // Stage 2(index=1) 완료 후 → 에셋 리스트 검토 → 스타일 정의 단계
     if (stageIdx === 1) {
       setMsgs([]);
@@ -5385,6 +5390,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         </div>
       );
     }
+  }
+
+  // localStorage 복원 전 — 빈 화면으로 대기 (init 화면 깜빡임 방지)
+  if (!appReady) {
+    return <div className={s.page} />;
   }
 
   if (debatePhase === "idle" && stageResults.length === 0) {
