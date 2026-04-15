@@ -3398,6 +3398,173 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     }
     // ── Stage 2 워크플로우 끝 ─────────────────────────────────────────────────
 
+    // ── Stage 3 전용: 인물별 구조화 워크플로우 ────────────────────────────────
+    if (stage.id === 3) {
+      const charList = synopsisAssetsRef.current?.characters ?? [];
+      const s1d = stageResultsRef.current.find(r => r.stageId === 1)?.data;
+      const s2d = stageResultsRef.current.find(r => r.stageId === 2)?.data;
+      const s2chars = Array.isArray(s2d?.characters) ? (s2d!.characters as Record<string,string>[]) : [];
+      const s1chars = Array.isArray(s1d?.key_characters) ? (s1d!.key_characters as Record<string,string>[]) : [];
+      const prot    = s2d?.protagonist as Record<string,string> | undefined;
+      const baseCtx = buildContext(3, stageResultsRef.current).slice(0, 3000);
+      const histText = () =>
+        transcript.length === 0 ? "" : `[대화 내용]\n${transcript.slice(-4).join("\n")}\n\n`;
+
+      try {
+        if (charList.length === 0) {
+          // 에셋 목록 없으면 프로듀서가 캐릭터 목록 작성 요청
+          await runSingleAgent("producer",
+            `캐릭터 설계 단계야. 세계관·시놉시스를 보고 이 이야기에 등장하는 모든 인물을 목록으로 정리해줘.\n\n${baseCtx}`,
+            300);
+          if (abortRef.current) throw new Error("abort");
+        }
+
+        // 각 캐릭터를 순서대로 완전히 설계
+        const targets = charList.length > 0 ? charList : ["주인공"];
+        for (let ci = 0; ci < targets.length && !abortRef.current; ci++) {
+          const charName = targets[ci];
+          const isProtagonist = ci === 0 || charName === prot?.name;
+          const prevChar = s2chars.find(c => c.name === charName) ?? s1chars.find(c => c.name === charName);
+          const prevDesc = prevChar ? [
+            prevChar.appearance ?? prevChar.face ? `외형 힌트: ${prevChar.appearance ?? prevChar.face}` : "",
+            prevChar.personality ? `성격 힌트: ${prevChar.personality}` : "",
+            prevChar.role ? `역할: ${prevChar.role}` : "",
+          ].filter(Boolean).join(" / ") : "";
+
+          const remainCount = targets.length - ci - 1;
+          const remainHint = remainCount > 0 ? ` (이후 ${targets.slice(ci + 1).join(", ")} 설계 예정)` : " (마지막 캐릭터)";
+
+          // ─ 1) 캐릭터디자이너 — 신체·얼굴 집중 설계 ─
+          await runSingleAgent("character",
+            `${histText()}[${ci + 1}/${targets.length}] 지금부터 **${charName}**을 집중 설계해${remainHint}.\n` +
+            (prevDesc ? `시놉시스에서 나온 기존 정보: ${prevDesc}\n\n` : "") +
+            `아래 항목을 구체적 수치와 함께 빠짐없이:\n` +
+            `① 성별·나이대·정확한 키(cm)·몸무게(kg)·체형(근육질/마른/보통/통통 등 구체적으로)\n` +
+            `② 얼굴 묘사: 이목구비·눈빛·피부색·인상·표정 습관 (예: 무표정이지만 눈이 항상 촉촉함)\n` +
+            `③ 헤어: 색상·길이·스타일\n` +
+            `${isProtagonist ? "주인공이야 — 독자가 매화 보는 얼굴이니 최대한 구체적으로." : "조연이지만 이미지 생성에 쓸 수 있을 수준으로."}`,
+            isProtagonist ? 550 : 400);
+          if (abortRef.current) throw new Error("abort");
+
+          // 사용자 개입 폴링 (3초)
+          const t1 = Date.now();
+          while (Date.now() - t1 < 3000) { if (abortRef.current || pendingUserMsgRef.current) break; await sleep(200); }
+          if (abortRef.current) throw new Error("abort");
+          if (pendingUserMsgRef.current) {
+            const um = pendingUserMsgRef.current; pendingUserMsgRef.current = null;
+            transcript.push(`[사용자]: ${um}`); convRef.current = transcript;
+            await runSingleAgent("character", `${histText()}사용자가 "${um}"라고 했어. ${charName} 얼굴·신체 설계에 반영해줘.`, 300);
+            if (abortRef.current) throw new Error("abort");
+          }
+
+          // ─ 2) 스크립트 작가 — 복장·스타일 + Runway 프롬프트 ─
+          await runSingleAgent("script",
+            `${histText()}${charName}의 **주요 복장과 스타일**을 잡아줘.\n` +
+            `색상·소재·스타일·착용 방식 구체적으로. 이 세계관 분위기에 어울리게.\n` +
+            `그리고 Runway Gen-4 영문 프롬프트도 완성해줘 — ` +
+            `[인물 외형: 인종·나이·헤어·복장·표정], [조명: 유형·방향·색온도], [카메라: 샷 종류·앵글], [분위기·스타일 키워드].`,
+            isProtagonist ? 400 : 320);
+          if (abortRef.current) throw new Error("abort");
+
+          // 사용자 개입 폴링 (3초)
+          const t2 = Date.now();
+          while (Date.now() - t2 < 3000) { if (abortRef.current || pendingUserMsgRef.current) break; await sleep(200); }
+          if (abortRef.current) throw new Error("abort");
+          if (pendingUserMsgRef.current) {
+            const um = pendingUserMsgRef.current; pendingUserMsgRef.current = null;
+            transcript.push(`[사용자]: ${um}`); convRef.current = transcript;
+            await runSingleAgent("script", `${histText()}사용자: "${um}". ${charName} 복장·Runway 프롬프트에 반영해줘.`, 300);
+            if (abortRef.current) throw new Error("abort");
+          }
+
+          // ─ 3) 시나리오 작가 — 성격·관계·갈등 ─
+          await runSingleAgent("scenario",
+            `${histText()}${charName}의 **성격·관계·갈등**을 정의해줘.\n` +
+            `성격 특징 3가지 이상 (예: 무표정하지만 의외로 다정함, 완벽주의, 분노 조절 어려움)\n` +
+            `주요 관계: 누구와 어떤 사이인지 (조력자/연인/경쟁자/스승 등)\n` +
+            `핵심 갈등: 누구와 왜 대립하고 어떻게 전개되는지`,
+            isProtagonist ? 400 : 300);
+          if (abortRef.current) throw new Error("abort");
+
+          // ─ 4) 15초 사용자 개입 창 + 피드백 반영 ─
+          setCoveredAgendaIds(targets.slice(0, ci + 1).flatMap(n =>
+            [`char_${n}_body`, `char_${n}_face`, `char_${n}_outfit`, `char_${n}_personality`, `char_${n}_relation`]
+          ));
+          const waitStart = Date.now();
+          while (Date.now() - waitStart < 15000) {
+            if (abortRef.current || pendingUserMsgRef.current) break;
+            await sleep(300);
+          }
+          if (abortRef.current) throw new Error("abort");
+          if (pendingUserMsgRef.current) {
+            const um = pendingUserMsgRef.current; pendingUserMsgRef.current = null;
+            transcript.push(`[사용자]: ${um}`); convRef.current = transcript;
+            await runSingleAgent("character",
+              `${histText()}사용자가 ${charName}에 대해 "${um}"라고 했어. 이 피드백 반영해서 설계를 수정하거나 보완해줘.`, 350);
+            if (abortRef.current) throw new Error("abort");
+          }
+
+          // ─ 5) 프로듀서 — 완료 확인 + 다음 캐릭터 안내 ─
+          if (ci < targets.length - 1) {
+            await runSingleAgent("producer",
+              `${histText()}${charName} 설계 완료. 다음은 **${targets[ci + 1]}** 차례야. 바로 시작하자.`,
+              80);
+            if (abortRef.current) throw new Error("abort");
+          }
+        }
+
+        if (!abortRef.current) {
+          // 모든 캐릭터 완료 후 프로듀서 마무리
+          await runSingleAgent("producer",
+            `${histText()}${targets.length}명 캐릭터 설계 완료. 빠진 내용 있으면 채팅으로 알려줘.`,
+            100);
+          naturalExit = true;
+        }
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        if (!raw.includes("abort") && !abortRef.current) setApiError(`API 오류: ${raw}`);
+      }
+
+      runningRef.current = false;
+
+      // 자연 종료 시 자동 추출
+      if (!abortRef.current && naturalExit) {
+        setDebatePhase("confirming");
+        const apiKey = getAnthropicKey();
+        if (apiKey) {
+          const debateText = convRef.current.join("\n");
+          const extractId = addMsg("producer", "캐릭터 설계 정리 중...", true);
+          const synopsisCtx = stageResultsRef.current.find((r: StageResult) => r.stageId === 2)?.summary;
+          const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
+          updateMsg(extractId, "", false);
+          setMsgs((prev: Msg[]) => prev.filter((m: Msg) => m.id !== extractId));
+          localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
+          localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
+          const result: StageResult = { stageId: stage.id, data, summary };
+          const newResults = [...stageResultsRef.current, result];
+          stageResultsRef.current = newResults;
+          setStageHistoryMsgs(prev => {
+            const next = { ...prev, [stageIdx]: msgsRef.current.filter((m: Msg) => !m.streaming) };
+            try {
+              localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+                stageResults: newResults,
+                currentStageIdx: stageIdx + 1,
+                stageHistoryMsgs: next,
+              }));
+            } catch { /* ignore */ }
+            return next;
+          });
+          setCurrentStageIdx(stageIdx + 1);
+          localStorage.setItem(`wts_p2_stage_${projectId}`, String(stageIdx + 1));
+          setDebatePhase("confirmed");
+        }
+      } else {
+        setDebatePhase("idle");
+      }
+      return; // Stage 3 워크플로우 종료
+    }
+    // ── Stage 3 워크플로우 끝 ─────────────────────────────────────────────────
+
     try {
       debateLoop: while (true) {
         if (abortRef.current) break;
@@ -3622,14 +3789,14 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           let chars = [...prev.characters];
           let locs   = [...prev.locations];
           let props  = [...prev.props];
-          if (stage.id === 1) {
+          if ((stage.id as StageId) === 1) {
             chars = [...new Set([...chars, ...names(data.key_characters, "name")])];
             locs  = [...new Set([...locs,  ...names(data.key_locations,  "name")])];
-          } else if (stage.id === 2) {
+          } else if ((stage.id as StageId) === 2) {
             // 시놉시스 확정 시 등장인물 + 장소 즉시 누적
             chars = [...new Set([...chars, ...names(data.characters, "name")])];
             locs  = [...new Set([...locs,  ...names(data.locations,  "name")])];
-          } else if (stage.id === 3) {
+          } else if ((stage.id as StageId) === 3) {
             chars = [...new Set([...chars, ...names(data.characters, "name")])];
           } else if (stage.id === 4) {
             locs  = [...new Set([...locs,  ...names(data.locations, "name")])];
