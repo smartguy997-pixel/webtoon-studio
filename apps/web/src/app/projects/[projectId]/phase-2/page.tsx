@@ -1722,8 +1722,9 @@ function StageReportInChat({
     </div>
   );
 
-  // ── 캐릭터 카드 ─────────────────────────────────────────────────────────────
+  // ── 캐릭터 카드 (접기/펼치기) ────────────────────────────────────────────
   const CharCard = ({ ch, cardColor }: { ch: Record<string, unknown>; cardColor: string }) => {
+    const [expanded, setExpanded] = useState(false);
     const s = (v: unknown) => (v ? String(v) : "");
     const name = s(ch.name) || "?";
     const initials = name.slice(0, 2);
@@ -1731,61 +1732,80 @@ function StageReportInChat({
     const bodyStr = [s(ch.height), s(ch.weight), s(ch.build)].filter(Boolean).join(" · ");
     const rels = Array.isArray(ch.relationships) ? ch.relationships as Array<Record<string,string>> : [];
     const cons = Array.isArray(ch.conflicts)     ? ch.conflicts     as Array<Record<string,string>> : [];
+    // 요약 태그: 성격 첫 번째 키워드
+    const personalityFirst = s(ch.personality).split(/[,·,]/)[0].trim();
     return (
-      <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:16, border:`1px solid ${cardColor}25` }}>
-        {/* 헤더 */}
-        <div style={{ background:`linear-gradient(90deg, ${cardColor}25, transparent)`, borderBottom:`1px solid ${cardColor}20`, padding:"12px 16px", display:"flex", alignItems:"center", gap:12 }}>
-          <div style={{ width:42, height:42, borderRadius:"50%", background:`${cardColor}30`, border:`2px solid ${cardColor}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:cardColor, flexShrink:0 }}>{initials}</div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:15, fontWeight:800, color:"#f1f5f9", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" as const }}>
+      <div style={{ background:"#10101c", borderRadius:12, overflow:"hidden", marginBottom:8, border:`1px solid ${cardColor}25` }}>
+        {/* 헤더 — 항상 표시, 클릭으로 펼치기/접기 */}
+        <div
+          onClick={() => setExpanded((prev: boolean) => !prev)}
+          style={{ background:`linear-gradient(90deg, ${cardColor}25, transparent)`, padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", userSelect:"none" as const }}
+        >
+          <div style={{ width:36, height:36, borderRadius:"50%", background:`${cardColor}30`, border:`2px solid ${cardColor}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:800, color:cardColor, flexShrink:0 }}>{initials}</div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:"#f1f5f9", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" as const }}>
               {name}
               {s(ch.role) && <span style={{ fontSize:11, fontWeight:700, color:cardColor, background:`${cardColor}20`, padding:"2px 8px", borderRadius:20 }}>{s(ch.role)}</span>}
             </div>
-            {meta && <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{meta}</div>}
-          </div>
-        </div>
-        {/* 신체 */}
-        {bodyStr && (
-          <div style={{ padding:"10px 16px 0", borderBottom:"1px solid #1a1a28" }}>
-            <div style={{ fontSize:10, color:"#4a4a68", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:4 }}>신체</div>
-            <div style={{ fontSize:12, color:"#94a3b8", paddingBottom:10 }}>{bodyStr}</div>
-          </div>
-        )}
-        {/* 얼굴·복장·성격 */}
-        <div style={{ padding:"10px 16px 0" }}>
-          <Field label="얼굴" val={ch.face} />
-          <Field label="복장" val={ch.outfit} />
-          <Field label="성격" val={ch.personality} />
-          <Field label="동기" val={ch.motivation} />
-          <Field label="말투" val={ch.speech} />
-          {s(ch.story_role) && <Field label="서사 역할" val={ch.story_role} />}
-          {s(ch.other) && <Field label="기타" val={ch.other} />}
-        </div>
-        {/* 인물 관계 */}
-        {rels.length > 0 && (
-          <div style={{ padding:"10px 16px", borderTop:"1px solid #1a1a28" }}>
-            <div style={{ fontSize:10, color:"#34d399", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:6 }}>인물 관계</div>
-            {rels.map((r, i) => (
-              <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4, display:"flex", gap:6 }}>
-                <span style={{ color:"#f1f5f9", fontWeight:600, whiteSpace:"nowrap" as const }}>{r.character}</span>
-                <span style={{ color:cardColor, fontSize:11, background:`${cardColor}15`, padding:"1px 7px", borderRadius:20, whiteSpace:"nowrap" as const }}>{r.type}</span>
-                {r.description && <span style={{ color:"#64748b" }}>— {r.description}</span>}
+            {/* 접혀있을 때: 요약 한 줄 */}
+            {!expanded && (
+              <div style={{ fontSize:11, color:"#4a5568", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>
+                {[meta, personalityFirst].filter(Boolean).join(" · ")}
               </div>
-            ))}
+            )}
+            {/* 펼쳐있을 때: meta */}
+            {expanded && meta && <div style={{ fontSize:12, color:"#64748b", marginTop:2 }}>{meta}</div>}
           </div>
-        )}
-        {/* 갈등 관계 */}
-        {cons.length > 0 && (
-          <div style={{ padding:"10px 16px", borderTop:"1px solid #1a1a28" }}>
-            <div style={{ fontSize:10, color:"#f87171", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:6 }}>갈등 관계</div>
-            {cons.map((r, i) => (
-              <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4, display:"flex", gap:6, flexWrap:"wrap" as const }}>
-                <span style={{ color:"#f1f5f9", fontWeight:600, whiteSpace:"nowrap" as const }}>{r.character}</span>
-                <span style={{ color:"#f87171", fontSize:11, background:"rgba(248,113,113,0.12)", padding:"1px 7px", borderRadius:20, whiteSpace:"nowrap" as const }}>{r.type}</span>
-                {r.description && <span style={{ color:"#64748b" }}>— {r.description}</span>}
+          <div style={{ fontSize:13, color:"#3a3a52", flexShrink:0, transform: expanded ? "rotate(180deg)" : "none", transition:"transform 0.2s" }}>▼</div>
+        </div>
+
+        {/* 상세 내용 — expanded 시만 표시 */}
+        {expanded && (
+          <>
+            {/* 신체 */}
+            {bodyStr && (
+              <div style={{ padding:"10px 16px 0", borderTop:"1px solid #1a1a28" }}>
+                <div style={{ fontSize:10, color:"#4a4a68", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:4 }}>신체</div>
+                <div style={{ fontSize:12, color:"#94a3b8", paddingBottom:10 }}>{bodyStr}</div>
               </div>
-            ))}
-          </div>
+            )}
+            {/* 얼굴·복장·성격 */}
+            <div style={{ padding:"10px 16px 0" }}>
+              <Field label="얼굴" val={ch.face} />
+              <Field label="복장" val={ch.outfit} />
+              <Field label="성격" val={ch.personality} />
+              <Field label="동기" val={ch.motivation} />
+              <Field label="말투" val={ch.speech} />
+              {s(ch.story_role) && <Field label="서사 역할" val={ch.story_role} />}
+              {s(ch.other) && <Field label="기타" val={ch.other} />}
+            </div>
+            {/* 인물 관계 */}
+            {rels.length > 0 && (
+              <div style={{ padding:"10px 16px", borderTop:"1px solid #1a1a28" }}>
+                <div style={{ fontSize:10, color:"#34d399", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:6 }}>인물 관계</div>
+                {rels.map((r, i) => (
+                  <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4, display:"flex", gap:6 }}>
+                    <span style={{ color:"#f1f5f9", fontWeight:600, whiteSpace:"nowrap" as const }}>{r.character}</span>
+                    <span style={{ color:cardColor, fontSize:11, background:`${cardColor}15`, padding:"1px 7px", borderRadius:20, whiteSpace:"nowrap" as const }}>{r.type}</span>
+                    {r.description && <span style={{ color:"#64748b" }}>— {r.description}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 갈등 관계 */}
+            {cons.length > 0 && (
+              <div style={{ padding:"10px 16px", borderTop:"1px solid #1a1a28" }}>
+                <div style={{ fontSize:10, color:"#f87171", fontWeight:700, textTransform:"uppercase" as const, letterSpacing:"0.5px", marginBottom:6 }}>갈등 관계</div>
+                {cons.map((r, i) => (
+                  <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4, display:"flex", gap:6, flexWrap:"wrap" as const }}>
+                    <span style={{ color:"#f1f5f9", fontWeight:600, whiteSpace:"nowrap" as const }}>{r.character}</span>
+                    <span style={{ color:"#f87171", fontSize:11, background:"rgba(248,113,113,0.12)", padding:"1px 7px", borderRadius:20, whiteSpace:"nowrap" as const }}>{r.type}</span>
+                    {r.description && <span style={{ color:"#64748b" }}>— {r.description}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -2754,13 +2774,26 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (pendingDebateStartRef.current !== null) {
       const idx = pendingDebateStartRef.current;
       pendingDebateStartRef.current = null;
-      setMsgs([]);
-      convRef.current = [];
-      resumeDataRef.current = null; // pendingDebateStart는 항상 새 토론 — 이전 저장 데이터 무시
+      resumeDataRef.current = null;
       runningRef.current = false;   // 혹시 stuck된 상태 초기화
       abortRef.current = false;
       setCurrentStageIdx(idx);
       setDebatePhase("idle");
+      // 저장된 진행 내용 있으면 선택 UI 표시 (pendingDebateStart도 기존 데이터 우선)
+      const savedConv = localStorage.getItem(`p2_conv_${idx}_${projectId}`);
+      const savedMsgs = localStorage.getItem(`p2_msgs_${idx}_${projectId}`);
+      if (savedConv && savedMsgs) {
+        try {
+          const parsedT = JSON.parse(savedConv) as string[];
+          const parsedM = JSON.parse(savedMsgs) as Msg[];
+          if (parsedT.length > 0 || parsedM.length > 0) {
+            setNewStageChoice({ stageIdx: idx, transcript: parsedT, msgs: parsedM });
+            return;
+          }
+        } catch { /* ignore */ }
+      }
+      setMsgs([]);
+      convRef.current = [];
       void runDebate(idx);
       return;
     }
