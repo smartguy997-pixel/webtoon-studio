@@ -2463,6 +2463,150 @@ function ImageSearchCard({ query, delayMs = 0 }: { query: string; delayMs?: numb
   );
 }
 
+// ── 캐릭터 갤러리 ────────────────────────────────────────────────────────────
+function CharacterGallery({
+  chars,
+  imageItems,
+  stageColor,
+}: {
+  chars: Record<string,string>[];
+  imageItems: ImageItem[];
+  stageColor: string;
+}) {
+  const [selectedChar, setSelectedChar] = useState<Record<string,string> | null>(null);
+  if (chars.length === 0) return null;
+  const c = stageColor;
+
+  return (
+    <div style={{ padding:"10px 0 4px" }}>
+      <div style={{ fontSize:10, fontWeight:800, color:c, letterSpacing:"0.06em", marginBottom:8, textTransform:"uppercase" as const }}>
+        👥 캐릭터 ({chars.length}명) — 누르면 상세 설정
+      </div>
+
+      {/* ── 타일 그리드 ── */}
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap" as const }}>
+        {chars.map((ch, i) => {
+          const imgItem = imageItems.find(
+            (it: ImageItem) => it.type === "character" && it.name === ch.name && it.imageUrl
+          );
+          const initials = (ch.name || "?").slice(0, 2);
+          const roleBg = ch.role === "주인공" ? "#fbbf24" : ch.role === "빌런" ? "#f87171" : "#94a3b8";
+
+          return (
+            <div
+              key={i}
+              onClick={() => setSelectedChar(ch)}
+              style={{
+                width: 90,
+                cursor: "pointer",
+                background: "#16161f",
+                border: `1px solid ${c}25`,
+                borderRadius: 10,
+                overflow: "hidden",
+                transition: "border-color 0.15s",
+                flexShrink: 0,
+              }}
+            >
+              {/* 이미지 or 이니셜 */}
+              <div style={{ position:"relative" as const, width:"100%", aspectRatio:"1", background:`${c}10`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {imgItem?.imageUrl
+                  ? <img src={imgItem.imageUrl} alt={ch.name} style={{ width:"100%", height:"100%", objectFit:"cover" as const, display:"block" }} />
+                  : <div style={{ fontSize:18, fontWeight:800, color:c }}>{initials}</div>
+                }
+                {/* 역할 배지 */}
+                {ch.role && (
+                  <div style={{ position:"absolute" as const, top:4, left:4, background:roleBg, color:"#0a0a14", fontSize:9, fontWeight:800, padding:"2px 5px", borderRadius:4, letterSpacing:"0.3px" }}>
+                    {ch.role}
+                  </div>
+                )}
+              </div>
+              {/* 이름 + 한 줄 요약 */}
+              <div style={{ padding:"5px 7px 7px" }}>
+                <div style={{ fontSize:11, fontWeight:800, color:"#f1f5f9", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>{ch.name}</div>
+                <div style={{ fontSize:10, color:"#4a5568", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const, marginTop:1 }}>
+                  {(ch.personality || ch.gender || "").split(/[,·]/)[0].trim() || "설정 확인 →"}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── 캐릭터 상세 모달 ── */}
+      {selectedChar && (
+        <div
+          onClick={() => setSelectedChar(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.82)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+        >
+          <div
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            style={{ background:"#12121e", border:`1px solid ${c}30`, borderRadius:16, padding:"20px 22px", width:"100%", maxWidth:480, maxHeight:"85vh", overflowY:"auto", display:"flex", flexDirection:"column" as const, gap:14 }}
+          >
+            {/* 헤더 */}
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ width:44, height:44, borderRadius:"50%", background:`${c}25`, border:`2px solid ${c}50`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:c, flexShrink:0 }}>
+                {(selectedChar.name || "?").slice(0, 2)}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:16, fontWeight:800, color:"#f1f5f9" }}>{selectedChar.name}</div>
+                {selectedChar.role && <div style={{ fontSize:11, color:c, marginTop:2 }}>{selectedChar.role}</div>}
+              </div>
+              <button onClick={() => setSelectedChar(null)} style={{ background:"transparent", border:"none", color:"#4a4a68", fontSize:20, cursor:"pointer", padding:4, lineHeight:1 }}>✕</button>
+            </div>
+            {/* 필드 목록 */}
+            {([ ["기본", [selectedChar.gender, selectedChar.age, selectedChar.height, selectedChar.weight, selectedChar.build].filter(Boolean).join(" · ")],
+                 ["얼굴", selectedChar.face],
+                 ["복장", selectedChar.outfit],
+                 ["성격", selectedChar.personality],
+                 ["동기", selectedChar.motivation],
+                 ["말투", selectedChar.speech],
+                 ["서사 역할", selectedChar.story_role],
+                 ["기타", selectedChar.other],
+               ] as Array<[string, string]>).filter(([, v]) => v).map(([label, val]) => (
+              <div key={label}>
+                <div style={{ fontSize:10, fontWeight:800, color:`${c}88`, letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:3 }}>{label}</div>
+                <div style={{ fontSize:13, color:"#d4dce8", lineHeight:1.75 }}>{val}</div>
+              </div>
+            ))}
+            {/* 인물 관계 */}
+            {Array.isArray(selectedChar.relationships) && (selectedChar.relationships as unknown as Array<Record<string,string>>).length > 0 && (
+              <div>
+                <div style={{ fontSize:10, fontWeight:800, color:"#34d39988", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:6 }}>인물 관계</div>
+                {(selectedChar.relationships as unknown as Array<Record<string,string>>).map((r, i) => (
+                  <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
+                    <span style={{ color:"#f1f5f9", fontWeight:600 }}>{r.character}</span>
+                    {r.type && <span style={{ color:c, fontSize:11, background:`${c}15`, padding:"1px 7px", borderRadius:20, marginLeft:6 }}>{r.type}</span>}
+                    {r.description && <span style={{ color:"#64748b" }}> — {r.description}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 갈등 관계 */}
+            {Array.isArray(selectedChar.conflicts) && (selectedChar.conflicts as unknown as Array<Record<string,string>>).length > 0 && (
+              <div>
+                <div style={{ fontSize:10, fontWeight:800, color:"#f8717188", letterSpacing:"0.5px", textTransform:"uppercase" as const, marginBottom:6 }}>갈등 관계</div>
+                {(selectedChar.conflicts as unknown as Array<Record<string,string>>).map((r, i) => (
+                  <div key={i} style={{ fontSize:12, color:"#94a3b8", marginBottom:4 }}>
+                    <span style={{ color:"#f1f5f9", fontWeight:600 }}>{r.character}</span>
+                    {r.type && <span style={{ color:"#f87171", fontSize:11, background:"rgba(248,113,113,0.12)", padding:"1px 7px", borderRadius:20, marginLeft:6 }}>{r.type}</span>}
+                    {r.description && <span style={{ color:"#64748b" }}> — {r.description}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setSelectedChar(null)}
+              style={{ alignSelf:"flex-end" as const, padding:"8px 22px", borderRadius:8, background:"#1e1e2a", border:"1px solid #2a2a3d", color:"#94a3b8", fontSize:13, fontWeight:700, cursor:"pointer" }}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderMsgText(text: string) {
   const lines = text.split("\n");
   let imgCount = 0;
@@ -6079,6 +6223,26 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 nextStageName={nextStageName}
                 onReanalyze={() => handleReanalyze(resolvedIdx)}
               />
+            );
+          })()}
+
+          {/* ── 캐릭터 갤러리: Stage 3 완료 후 영구 표시, 이미지 생성되면 자동 업데이트 ── */}
+          {(() => {
+            const s3 = stageResults.find((r: StageResult) => r.stageId === 3);
+            if (!s3) return null;
+            const chars = Array.isArray(s3.data.characters) ? s3.data.characters as Record<string,string>[] : [];
+            // 시놉시스 업데이트 감지: synopsisAssets의 캐릭터 목록이 Stage 3 결과와 다르면 안내
+            const syncedChars = editableAssets.characters;
+            const newInSynopsis = syncedChars.filter(n => !chars.some(c => c.name === n));
+            return (
+              <div>
+                {newInSynopsis.length > 0 && (
+                  <div style={{ fontSize:11, color:"#fbbf24", background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.2)", borderRadius:8, padding:"7px 12px", marginBottom:8 }}>
+                    ⚡ 시놉시스에 새 캐릭터가 추가됐습니다: {newInSynopsis.join(", ")} — 캐릭터 설정을 다시 실행하면 반영됩니다.
+                  </div>
+                )}
+                <CharacterGallery chars={chars} imageItems={imageItems} stageColor={STAGES[2].color} />
+              </div>
             );
           })()}
 
