@@ -1764,17 +1764,16 @@ function renderNarrativeSummary(text: string, c: string) {
      .replace(/\*\*([^*]+)\*\*/g, "$1")
      .trim();
 
-  // ── 전략 1: ## 마크다운 헤더 (최우선 — 최신 AI 출력 형식) ────────────────────────────
-  // AI가 # / ## 형식으로 섹션을 구분하는 경우 (가장 일반적인 최신 포맷)
-  if (/^#{1,3}\s/m.test(normalized)) {
+  // ── 전략 1: ## / ### 마크다운 헤더 (H2 이상만 섹션으로 처리) ─────────────────────────
+  // # (H1)은 문서 제목이므로 섹션 구분자로 사용하지 않음
+  if (/^#{2,3}\s/m.test(normalized)) {
     const lines = normalized.split("\n");
     const sections: Array<{ title: string; body: string }> = [];
     let cur: { title: string; bodyLines: string[] } | null = null;
     for (const line of lines) {
-      if (/^#{1,3}\s/.test(line.trimStart())) {
+      if (/^#{2,3}\s/.test(line.trimStart())) {
         if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-        const rawTitle = line.trimStart().replace(/^#{1,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim();
-        // 이모지로 시작하는 타이틀 처리 (예: "📖 드라마·웹툰..." → 이모지 보존)
+        const rawTitle = line.trimStart().replace(/^#{2,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim();
         cur = { title: rawTitle, bodyLines: [] };
       } else if (cur) {
         cur.bodyLines.push(line);
