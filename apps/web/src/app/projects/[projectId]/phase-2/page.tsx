@@ -4573,6 +4573,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         const parsedTranscript = JSON.parse(savedConv) as string[];
         const parsedMsgs = JSON.parse(savedMsgs) as Msg[];
         if (parsedTranscript.length > 0 || parsedMsgs.length > 0) {
+          setDebatePhase("idle"); // 이전 StageReportInChat 즉시 숨김
           setNewStageChoice({ stageIdx: idx, transcript: parsedTranscript, msgs: parsedMsgs });
           return;
         }
@@ -5454,6 +5455,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const nextIdx = stageIdx + 1;
     setMsgs([]);
     convRef.current = [];
+    setDebatePhase("idle"); // StageReportInChat 숨김 — newStageChoice 모달과 동시 표시 방지
     if (nextIdx >= STAGES.length) {
       setCurrentStageIdx(nextIdx);
       setDebatePhase("done");
@@ -6411,12 +6413,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                       .map((m: Msg) => `[${AGENTS[m.agent as AgentId]?.label ?? "사용자"}]: ${m.text}`);
                     resumeDataRef.current = { transcript: trans, msgs: histMsgs };
                   }
+                  setCurrentStageIdx(resolvedIdx); // 확정 버튼이 올바른 stageIdx 사용하도록 동기화
                   runningRef.current = false;
                   abortRef.current = false;
                   void runDebate(resolvedIdx);
                 }}
                 nextStageName={nextStageName}
-                onReanalyze={() => handleReanalyze(resolvedIdx)}
+                onReanalyze={async () => { await handleReanalyze(resolvedIdx); handleNextStage(resolvedIdx); }}
               />
             );
           })()}
