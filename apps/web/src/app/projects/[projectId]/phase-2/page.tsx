@@ -3070,6 +3070,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
+  const chatBodyRef = useRef<HTMLDivElement>(null); // 채팅 스크롤 컨테이너
   const viewScrollRef = useRef<HTMLDivElement>(null); // 뷰 모드 스크롤 컨테이너
   const runningRef = useRef(false);
   const abortRef = useRef(false);
@@ -3196,18 +3197,32 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   }, [projectId]);
 
   useEffect(() => { msgsRef.current = msgs; }, [msgs]);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+
+  // 새 메시지 추가 시 채팅 하단으로 스크롤
+  const scrollChatToBottom = (instant = false) => {
+    const el = chatBodyRef.current;
+    if (!el) return;
+    if (instant) { el.scrollTop = el.scrollHeight; return; }
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+  useEffect(() => { scrollChatToBottom(); }, [msgs]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (debatePhase === "confirmed") {
-      setTimeout(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, 100);
+      setTimeout(() => scrollChatToBottom(), 100);
     }
-  }, [debatePhase]);
-  // 페이지 초기 로드 완료 후 최신 메시지로 즉시 이동 (긴 채팅 기록 위에서 스크롤하는 문제 방지)
+  }, [debatePhase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 페이지 초기 로드 완료 후 최신 메시지로 즉시 이동
+  // requestAnimationFrame 2회: 1번째 = React 커밋 이후, 2번째 = 브라우저 페인트 이후
   useEffect(() => {
     if (!appReady) return;
-    const t = setTimeout(() => { bottomRef.current?.scrollIntoView({ behavior: "instant" }); }, 200);
-    return () => clearTimeout(t);
-  }, [appReady]);
+    let raf1: number, raf2: number;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => scrollChatToBottom(true));
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+  }, [appReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 뷰 모드 진입 시 채팅 기록 하단으로 스크롤
   useEffect(() => {
     if (!viewScrollRef.current) return;
@@ -6551,7 +6566,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           </div>
         )}
 
-        <div className={s.chatBody}>
+        <div ref={chatBodyRef} className={s.chatBody}>
           {/* ── 이전 완료 단계 대화 기록 (단계 구분선 포함) ── */}
           {STAGES.slice(0, currentStageIdx).map((st, si) => {
             const histMsgs = stageHistoryMsgs[si] ?? [];
