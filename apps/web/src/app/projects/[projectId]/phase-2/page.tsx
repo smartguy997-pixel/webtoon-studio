@@ -1737,12 +1737,45 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
-  // ── 전략 1: ■ 문자로 직접 split (가장 확실한 방법) ─────────────────────────────
-  // ■ (U+25A0)가 텍스트에 있으면 해당 문자로 직접 분할. 라인 탐지 불필요.
+  // ── 디버그: 실제 문자 코드포인트 확인 (개발 모드) ──────────────────────────────────
+  if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+    const firstLineChars = normalized.split("\n")[0] ?? "";
+    console.log("[renderNarrativeSummary] first line:", JSON.stringify(firstLineChars.slice(0, 30)));
+    console.log("[renderNarrativeSummary] codepoints:", [...firstLineChars.slice(0, 5)].map(ch => `U+${(ch.codePointAt(0)??0).toString(16).toUpperCase().padStart(4,"0")} ${ch}`).join(", "));
+    console.log("[renderNarrativeSummary] includes ■:", normalized.includes("■"));
+  }
+
+  // ── 섹션 마커 감지 헬퍼 ────────────────────────────────────────────────────────
+  // 줄의 첫 문자가 특수 기호(비ASCII, 비한국어, 비CJK)이면 섹션 헤더로 처리
+  const isSectionMarkerChar = (ch: string): boolean => {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (cp <= 0x7E) return false;          // ASCII 제외
+    if (cp >= 0xAC00 && cp <= 0xD7A3) return false;  // 한글 제외
+    if (cp >= 0x4E00 && cp <= 0x9FFF) return false;  // CJK 제외
+    if (cp >= 0x3040 && cp <= 0x30FF) return false;  // 일본어 가나 제외
+    if (cp >= 0xFF00 && cp <= 0xFFEF) return false;  // 전각 ASCII 제외
+    return true; // 그 외 특수 기호 (■◆●★▶ 등 모두 포함)
+  };
+
+  const isSectionHeader = (line: string): boolean => {
+    const t = line.trimStart();
+    if (!t) return false;
+    if (/^#{1,3}\s/.test(t)) return true;
+    return isSectionMarkerChar(t[0]);
+  };
+
+  // 섹션 마커 제거
+  const stripMarker = (t: string) =>
+    t.trimStart()
+     .replace(/^#{1,3}\s*/, "")
+     .replace(/^[^\w\s가-힣\u4E00-\u9FFF]+\s*/, "")  // 비단어·비한국·비CJK 앞부분 제거
+     .replace(/\*\*([^*]+)\*\*/g, "$1")
+     .trim();
+
+  // ── 전략 1: ■ (U+25A0) 직접 split ──────────────────────────────────────────────
   if (normalized.includes("■")) {
     const parts = normalized.split("■");
     const sections: Array<{ title: string; body: string }> = [];
-    // parts[0]은 첫 번째 ■ 이전 텍스트 (프리앰블, 무시하거나 별도 처리)
     for (let i = 1; i < parts.length; i++) {
       const part = parts[i];
       const nl = part.indexOf("\n");
@@ -1753,7 +1786,27 @@ function renderNarrativeSummary(text: string, c: string) {
     if (sections.length > 0) return renderSectionCards(sections);
   }
 
-  // ── 전략 2: ## 마크다운 헤더 ────────────────────────────────────────────────────
+  // ── 전략 2: 임의 섹션 마커 문자 (줄 단위 탐지) ────────────────────────────────────
+  {
+    const lines = normalized.split("\n");
+    if (lines.some(isSectionHeader)) {
+      const sections: Array<{ title: string; body: string }> = [];
+      let cur: { title: string; bodyLines: string[] } | null = null;
+      for (const line of lines) {
+        if (isSectionHeader(line)) {
+          if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+          cur = { title: stripMarker(line), bodyLines: [] };
+        } else if (cur) {
+          cur.bodyLines.push(line);
+        }
+      }
+      if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+      const valid = sections.filter(s => s.title || s.body);
+      if (valid.length > 0) return renderSectionCards(valid);
+    }
+  }
+
+  // ── 전략 3: ## 마크다운 헤더 ────────────────────────────────────────────────────
   if (/^#{1,3}\s/m.test(normalized)) {
     const lines = normalized.split("\n");
     const sections: Array<{ title: string; body: string }> = [];
@@ -1771,7 +1824,7 @@ function renderNarrativeSummary(text: string, c: string) {
     if (valid.length > 0) return renderSectionCards(valid);
   }
 
-  // ── 전략 3: 단락 카드 폴백 ──────────────────────────────────────────────────────
+  // ── 전략 4: 단락 카드 폴백 ──────────────────────────────────────────────────────
   const paras = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
   return (
     <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
