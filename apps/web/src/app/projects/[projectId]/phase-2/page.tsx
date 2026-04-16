@@ -1660,6 +1660,126 @@ function StageResultCard({ result, debateMsgs }: { key?: StageId; result: StageR
 // ─── 스테이지 완료 보고서 (채팅 인라인) ───────────────────────────────────────
 // Phase 1의 FinalReportSection과 동일한 패턴: 채팅 바디 안에 직접 렌더
 
+// ─── 버전 히스토리 모달 ──────────────────────────────────────────────────────────
+function VersionHistoryModal({
+  stageObj,
+  allVersions,
+  onClose,
+  onViewHistory,
+  onNextStage,
+  nextStageName,
+}: {
+  stageObj: typeof STAGES[number];
+  allVersions: StageResult[];
+  onClose: () => void;
+  onViewHistory: () => void; // ?view=N 이동
+  onNextStage?: () => void;
+  nextStageName: string | null;
+}) {
+  const [selected, setSelected] = useState<StageResult>(allVersions[allVersions.length - 1]);
+  const c = stageObj.color;
+  const cleanSummary = (selected.summary || "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/[#>_`]/g, "")
+    .trim();
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.88)", zIndex:10000,
+               display:"flex", alignItems:"flex-end", justifyContent:"center", padding:"0 0 0" }}
+    >
+      <div
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        style={{ width:"100%", maxWidth:560, maxHeight:"88vh", display:"flex", flexDirection:"column" as const,
+                 background:"#12121e", border:`1px solid ${c}35`, borderRadius:"16px 16px 0 0", overflow:"hidden" }}
+      >
+        {/* 헤더 */}
+        <div style={{ padding:"14px 18px", borderBottom:"1px solid #1e1e2a", display:"flex",
+                      alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:4, height:18, borderRadius:2, background:c, flexShrink:0 }} />
+            <span style={{ fontSize:15, fontWeight:800, color:"#f1f5f9" }}>{stageObj.name}</span>
+            <span style={{ fontSize:11, color:"#4a4a6a", marginLeft:2 }}>
+              {allVersions.length > 1 ? `${allVersions.length}개 버전` : "v1"}
+            </span>
+          </div>
+          <button onClick={onClose}
+            style={{ background:"transparent", border:"none", color:"#4a4a68", fontSize:20, cursor:"pointer", padding:4, lineHeight:1 }}>
+            ✕
+          </button>
+        </div>
+
+        {/* 버전 카드 (2개 이상일 때만) */}
+        {allVersions.length > 1 && (
+          <div style={{ padding:"10px 18px", borderBottom:"1px solid #1e1e2a", display:"flex",
+                        gap:8, flexShrink:0, overflowX:"auto" as const }}>
+            {allVersions.map((v) => {
+              const vNum = v.version ?? 1;
+              const isSelected = vNum === (selected.version ?? 1);
+              const preview = (v.summary || "")
+                .replace(/\*\*([^*]+)\*\*/g, "$1").replace(/[#>_`]/g, "").trim().slice(0, 45);
+              return (
+                <button key={vNum} onClick={() => setSelected(v)} style={{
+                  padding:"8px 14px", borderRadius:10, fontSize:12, fontWeight:700, cursor:"pointer",
+                  background: isSelected ? `${c}20` : "rgba(255,255,255,0.03)",
+                  border: isSelected ? `1px solid ${c}55` : "1px solid #252535",
+                  color: isSelected ? c : "#4a4a6a",
+                  textAlign:"left" as const, flexShrink:0, minWidth:80, maxWidth:160,
+                  transition:"all 0.15s",
+                }}>
+                  <div style={{ fontSize:13, marginBottom:3 }}>v{vNum}</div>
+                  {preview && (
+                    <div style={{ fontSize:10, color: isSelected ? `${c}90` : "#3a3a52",
+                                  fontWeight:400, lineHeight:1.4,
+                                  overflow:"hidden", display:"-webkit-box",
+                                  WebkitLineClamp:2, WebkitBoxOrient:"vertical" as const }}>
+                      {preview}…
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 결과 요약 내용 (스크롤 가능) */}
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 18px" }}>
+          {cleanSummary ? (
+            <div style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, whiteSpace:"pre-wrap" as const }}>
+              {cleanSummary}
+            </div>
+          ) : (
+            <div style={{ fontSize:13, color:"#3a3a52", textAlign:"center" as const, padding:"20px 0" }}>
+              요약이 없습니다.
+            </div>
+          )}
+        </div>
+
+        {/* 액션 버튼 */}
+        <div style={{ padding:"12px 18px", borderTop:"1px solid #1e1e2a",
+                      display:"flex", flexDirection:"column" as const, gap:8, flexShrink:0,
+                      background:"#0e0e1a" }}>
+          {nextStageName && onNextStage && (
+            <button onClick={() => { onNextStage(); onClose(); }}
+              style={{ width:"100%", padding:"12px 0", borderRadius:10, fontSize:14, fontWeight:800,
+                       cursor:"pointer", background:`linear-gradient(135deg, ${c}dd, ${c})`,
+                       border:"none", color:"#0a0a14", boxShadow:`0 4px 16px ${c}40` }}>
+              {nextStageName} 시작 →
+            </button>
+          )}
+          <button onClick={onViewHistory}
+            style={{ width:"100%", padding:"10px 0", borderRadius:10, fontSize:13, fontWeight:700,
+                     cursor:"pointer", background:"rgba(255,255,255,0.04)",
+                     border:"1px solid #2a2a3d", color:"#94a3b8" }}>
+            💬 채팅 기록 전체 보기 →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StageReportInChat({
   result,
   stage,
@@ -2896,6 +3016,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [stageHistoryMsgs, setStageHistoryMsgs] = useState<Record<number, Msg[]>>({}); // 단계별 토론 기록
   const [agendaExpanded, setAgendaExpanded] = useState(false); // 아젠다 체크리스트 펼침 여부
+  const [versionHistoryModal, setVersionHistoryModal] = useState<{ stageIdx: number } | null>(null); // 버전 히스토리 모달
 
   // ── 시놉시스 4단계 워크플로우 State ──
   type SynopsisStep = "idle" | "learning" | "persona" | "logline" | "completing" | "completing_wait";
@@ -2951,6 +3072,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
   // ── Refs ──
   const bottomRef = useRef<HTMLDivElement>(null);
+  const viewScrollRef = useRef<HTMLDivElement>(null); // 뷰 모드 스크롤 컨테이너
   const runningRef = useRef(false);
   const abortRef = useRef(false);
   const pendingUserMsgRef = useRef<string | null>(null);
@@ -3082,6 +3204,20 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       setTimeout(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, 100);
     }
   }, [debatePhase]);
+  // 페이지 초기 로드 완료 후 최신 메시지로 즉시 이동 (긴 채팅 기록 위에서 스크롤하는 문제 방지)
+  useEffect(() => {
+    if (!appReady) return;
+    const t = setTimeout(() => { bottomRef.current?.scrollIntoView({ behavior: "instant" }); }, 200);
+    return () => clearTimeout(t);
+  }, [appReady]);
+  // 뷰 모드 진입 시 채팅 기록 하단으로 스크롤
+  useEffect(() => {
+    if (!viewScrollRef.current) return;
+    const t = setTimeout(() => {
+      if (viewScrollRef.current) viewScrollRef.current.scrollTop = viewScrollRef.current.scrollHeight;
+    }, 150);
+    return () => clearTimeout(t);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!projectId || msgs.length === 0) return;
@@ -5863,7 +5999,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
               </a>
             </div>
             {/* 채팅 기록 + 보고서 */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 0 60px" }}>
+            <div ref={viewScrollRef} style={{ flex: 1, overflowY: "auto", padding: "0 0 60px" }}>
               {histMsgs.length > 0
                 ? histMsgs.map((m: Msg) => <MsgBubble key={m.id} msg={m} />)
                 : <div style={{ padding: "40px 20px", textAlign: "center", color: "#3a3a52", fontSize: 13 }}>토론 기록이 없습니다.</div>
@@ -6124,10 +6260,25 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             {STAGES.map((st, idx) => {
               const isDone = stageResults.some((r: StageResult) => r.stageId === st.id);
               const isActive = idx === currentStageIdx && debatePhase !== "done" && stylePhase === "idle";
+              const versionCount = isDone
+                ? (stageResultHistory[idx] ?? []).length + 1
+                : 0;
               return (
-                <div key={st.id} className={`${s.stepItem} ${isDone ? s.stepDone : ""} ${isActive ? s.stepActive : ""}`}>
+                <div
+                  key={st.id}
+                  className={`${s.stepItem} ${isDone ? s.stepDone : ""} ${isActive ? s.stepActive : ""}`}
+                  onClick={isDone ? () => setVersionHistoryModal({ stageIdx: idx }) : undefined}
+                  style={{ cursor: isDone ? "pointer" : "default", userSelect:"none" as const }}
+                >
                   <div className={s.stepDot} style={isDone || isActive ? { background:st.color } : {}} />
                   <span className={s.stepLabel} style={isDone || isActive ? { color:st.color } : {}}>{st.name}</span>
+                  {isDone && versionCount > 1 && (
+                    <span style={{ fontSize:9, fontWeight:800, color:st.color, background:`${st.color}22`,
+                                   border:`1px solid ${st.color}40`, padding:"1px 5px",
+                                   borderRadius:99, marginLeft:2, lineHeight:1.4 }}>
+                      v{versionCount}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -7288,6 +7439,35 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           </>)}
         </div>
       </div>
+
+      {/* ── 버전 히스토리 모달 ─────────────────────────────────────────────── */}
+      {versionHistoryModal && (() => {
+        const { stageIdx } = versionHistoryModal;
+        const stageObj = STAGES[stageIdx];
+        const latestResult = stageResults.find((r: StageResult) => r.stageId === stageObj.id);
+        if (!latestResult) return null;
+        const allVersions = [
+          ...(stageResultHistory[stageIdx] ?? []),
+          latestResult,
+        ].sort((a: StageResult, b: StageResult) => (a.version ?? 1) - (b.version ?? 1));
+        const nextStageName = stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null;
+        return (
+          <VersionHistoryModal
+            stageObj={stageObj}
+            allVersions={allVersions}
+            onClose={() => setVersionHistoryModal(null)}
+            onViewHistory={() => {
+              setVersionHistoryModal(null);
+              window.location.href = `/projects/${projectId}/phase-2?view=${stageObj.id}`;
+            }}
+            onNextStage={stageIdx + 1 <= currentStageIdx ? undefined : () => {
+              setVersionHistoryModal(null);
+              handleNextStage(stageIdx);
+            }}
+            nextStageName={nextStageName}
+          />
+        );
+      })()}
 
       {/* ── 에셋 모달 오버레이 ─────────────────────────────────────────────── */}
       {assetModal && (() => {
