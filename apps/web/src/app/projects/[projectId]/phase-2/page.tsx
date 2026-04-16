@@ -355,6 +355,7 @@ interface StageResult {
   stageId: StageId;
   data: Record<string, unknown>;
   summary: string;
+  version?: number;  // 1-indexed, undefined = v1 (legacy)
 }
 
 interface ImageItem {
@@ -1609,6 +1610,8 @@ function StageReportInChat({
   nextStageName,
   onReanalyze,
   onNewDebate,
+  allVersions,
+  onSelectVersion,
 }: {
   result: StageResult;
   stage: typeof STAGES[number];
@@ -1617,21 +1620,24 @@ function StageReportInChat({
   nextStageName: string | null;
   onReanalyze?: () => Promise<void>;
   onNewDebate?: () => void;   // 뷰 모드 전용: 기존 내용 지우고 새로 토론
+  allVersions?: StageResult[];        // 이전 버전 포함 전체 버전 배열 (정렬됨)
+  onSelectVersion?: (v: StageResult) => void; // 버전 전환 시 호출
 }) {
   const [reanalyzing, setReanalyzing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [stg1CharModal, setStg1CharModal] = useState<Record<string,unknown> | null>(null);
   const [stg1LocModal,  setStg1LocModal]  = useState<Record<string,unknown> | null>(null);
+  const [selectedResult, setSelectedResult] = useState<StageResult>(result);
   const isViewMode = !!onNewDebate; // onNewDebate가 있으면 뷰 모드
   const c = stage.color;
-  const { data } = result;
+  const { data } = selectedResult;
 
   // 다음 단계 버튼 레이블 — nextStageName이 없으면 stageId로 유추
   const nextBtnLabel = nextStageName
     ? `${nextStageName} 시작 →`
-    : result.stageId === 1 ? "시놉시스 시작 →"
-    : result.stageId === 2 ? "에셋 리스트 검토 →"
-    : result.stageId <= 4 ? "이미지 생성 →"
+    : selectedResult.stageId === 1 ? "시놉시스 시작 →"
+    : selectedResult.stageId === 2 ? "에셋 리스트 검토 →"
+    : selectedResult.stageId <= 4 ? "이미지 생성 →"
     : "스타일 정의 →";
 
   const str = (v: unknown): string => (v ? String(v) : "");
@@ -2352,7 +2358,7 @@ function StageReportInChat({
     }
   })();
 
-  const cleanSummary = (result.summary || "")
+  const cleanSummary = (selectedResult.summary || "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/[#>_`]/g, "")
     .trim();
@@ -2388,6 +2394,41 @@ function StageReportInChat({
           {previewText || "결과를 보려면 눌러주세요."}
         </div>
       </div>
+
+      {/* ── 버전 탭 ── */}
+      {allVersions && allVersions.length > 1 && (
+        <div style={{ display:"flex", gap:4, marginBottom:8, flexWrap:"wrap" as const }}>
+          {allVersions.map((v) => {
+            const vNum = v.version ?? 1;
+            const isActive = vNum === (selectedResult.version ?? 1);
+            return (
+              <button
+                key={vNum}
+                onClick={() => {
+                  setSelectedResult(v);
+                  onSelectVersion?.(v);
+                }}
+                style={{
+                  padding:"4px 12px",
+                  borderRadius:20,
+                  fontSize:11,
+                  fontWeight:700,
+                  cursor:"pointer",
+                  background: isActive ? `rgba(124,108,252,0.2)` : "transparent",
+                  border: isActive ? "1px solid rgba(124,108,252,0.5)" : "1px solid #2a2a3d",
+                  color: isActive ? "#a78bfa" : "#4a4a6a",
+                  transition:"all 0.15s",
+                }}
+              >
+                v{vNum}
+              </button>
+            );
+          })}
+          <span style={{ fontSize:10, color:"#3a3a52", alignSelf:"center", marginLeft:4 }}>
+            {allVersions.length}개 버전
+          </span>
+        </div>
+      )}
 
       {/* ── 액션 버튼 ── */}
       <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
@@ -2784,6 +2825,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const [debatePhase, setDebatePhase] = useState<DebatePhase>("idle");
   const [currentStageIdx, setCurrentStageIdx] = useState(0); // index into STAGES
   const [stageResults, setStageResults] = useState<StageResult[]>([]);
+  // stageResultHistory: stageIdx → 이전 버전 배열 (현재 활성 버전 제외)
+  const [stageResultHistory, setStageResultHistory] = useState<Record<number, StageResult[]>>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [coveredAgendaIds, setCoveredAgendaIds] = useState<string[]>([]); // 완료된 아젠다 항목
   const [agendaTurnCounts, setAgendaTurnCounts] = useState<Record<string, number>>({}); // 항목별 누적 턴수
@@ -2855,6 +2898,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
   const pendingUserMsgRef = useRef<string | null>(null);
   const convRef = useRef<string[]>([]); // transcript: 각 에이전트 발언 문자열 배열
   const stageResultsRef = useRef<StageResult[]>([]);
+  const stageResultHistoryRef = useRef<Record<number, StageResult[]>>({}); // stageIdx → 이전 버전들
   const msgsRef = useRef<Msg[]>([]); // msgs의 최신값 추적용
   const resumeDataRef = useRef<{ transcript: string[]; msgs: Msg[] } | null>(null);
   const p1DataRef = useRef<P1Data | null>(null); // Phase 1 분석 결과 인계용
@@ -2917,11 +2961,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
       const savedData = localStorage.getItem(`wts_phase2_${projectId}`);
       if (savedData) {
-        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]>; pendingDebateStart?: number; pendingResume?: number };
+        const parsed = JSON.parse(savedData) as { stageResults: StageResult[]; stageResultHistory?: Record<number, StageResult[]>; currentStageIdx: number; stageHistoryMsgs?: Record<number, Msg[]>; pendingDebateStart?: number; pendingResume?: number };
         if (parsed.stageResults?.length) {
           stageResultsRef.current = parsed.stageResults;
           setStageResults(parsed.stageResults);
           if (parsed.stageHistoryMsgs) setStageHistoryMsgs(parsed.stageHistoryMsgs);
+          if (parsed.stageResultHistory) {
+            stageResultHistoryRef.current = parsed.stageResultHistory;
+            setStageResultHistory(parsed.stageResultHistory);
+          }
           const idx = parsed.currentStageIdx ?? 0;
           setCurrentStageIdx(idx);
           // pendingDebateStart: 뷰 모드에서 다음 단계 버튼 눌렀을 때 자동 시작 플래그
@@ -4081,8 +4129,16 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
         localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
 
-        const result: StageResult = { stageId: stage.id, data, summary };
-        const newResults = [...stageResultsRef.current, result];
+        // 이전 버전 아카이브 + 버전 번호 계산
+        const existingNE = stageResultsRef.current.find((r: StageResult) => r.stageId === stage.id);
+        const versionNumberNE = (existingNE?.version ?? 0) + 1;
+        if (existingNE) {
+          const newHistNE = { ...stageResultHistoryRef.current, [stageIdx]: [...(stageResultHistoryRef.current[stageIdx] ?? []), existingNE] };
+          stageResultHistoryRef.current = newHistNE;
+          setStageResultHistory(newHistNE);
+        }
+        const result: StageResult = { stageId: stage.id, data, summary, version: versionNumberNE };
+        const newResults = [...stageResultsRef.current.filter((r: StageResult) => r.stageId !== stage.id), result];
         stageResultsRef.current = newResults;
         setStageResults(newResults);
 
@@ -4118,6 +4174,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const next = { ...prev, [stageIdx]: savedMsgs };
           localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
             stageResults: newResults,
+            stageResultHistory: stageResultHistoryRef.current,
             currentStageIdx: stageIdx + 1,
             stageHistoryMsgs: next,
           }));
@@ -5339,8 +5396,17 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     localStorage.removeItem(`p2_conv_${stageIdx}_${projectId}`);
     localStorage.removeItem(`p2_msgs_${stageIdx}_${projectId}`);
 
-    const result: StageResult = { stageId: stage.id, data, summary };
-    const newResults = [...stageResultsRef.current, result];
+    // 이전 버전 아카이브 + 버전 번호 계산
+    const existing = stageResultsRef.current.find((r: StageResult) => r.stageId === stage.id);
+    const versionNumber = (existing?.version ?? 0) + 1;
+    if (existing) {
+      const newHist = { ...stageResultHistoryRef.current, [stageIdx]: [...(stageResultHistoryRef.current[stageIdx] ?? []), existing] };
+      stageResultHistoryRef.current = newHist;
+      setStageResultHistory(newHist);
+    }
+    const result: StageResult = { stageId: stage.id, data, summary, version: versionNumber };
+    // replace: 같은 stageId 제거 후 최신 버전만 유지
+    const newResults = [...stageResultsRef.current.filter((r: StageResult) => r.stageId !== stage.id), result];
     stageResultsRef.current = newResults;
     setStageResults(newResults);
 
@@ -5421,6 +5487,7 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       const next = { ...prev, [stageIdx]: savedMsgs };
       localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
         stageResults: newResults,
+        stageResultHistory: stageResultHistoryRef.current,
         currentStageIdx: stageIdx + 1,
         stageHistoryMsgs: next,
       }));
@@ -5491,8 +5558,15 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     const synopsisCtx = buildBibleContext(stageResultsRef.current);
     const { data, summary } = await extractStageData(stage, genre, debateText, apiKey, synopsisCtx);
 
-    // 해당 스테이지 결과 교체
-    const result: StageResult = { stageId: stage.id, data, summary };
+    // 이전 버전 아카이브 + 교체
+    const existingRA = stageResultsRef.current.find((r: StageResult) => r.stageId === stage.id);
+    const versionNumberRA = (existingRA?.version ?? 0) + 1;
+    if (existingRA) {
+      const newHistRA = { ...stageResultHistoryRef.current, [stageIdx]: [...(stageResultHistoryRef.current[stageIdx] ?? []), existingRA] };
+      stageResultHistoryRef.current = newHistRA;
+      setStageResultHistory(newHistRA);
+    }
+    const result: StageResult = { stageId: stage.id, data, summary, version: versionNumberRA };
     const newResults = stageResultsRef.current.map((r: StageResult) =>
       r.stageId === stage.id ? result : r
     );
@@ -5742,6 +5816,34 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 onNewDebate={() => handleRestartStageFromView(stageIdx)}
                 nextStageName={stageIdx + 1 < STAGES.length ? STAGES[stageIdx + 1].name : null}
                 onReanalyze={() => handleReanalyze(stageIdx)}
+                allVersions={(() => {
+                  const allV = [
+                    ...(stageResultHistory[stageIdx] ?? []),
+                    viewResult,
+                  ].sort((a, b) => (a.version ?? 1) - (b.version ?? 1));
+                  return allV.length > 1 ? allV : undefined;
+                })()}
+                onSelectVersion={(v) => {
+                  const currentActive = stageResultsRef.current.find((r: StageResult) => r.stageId === viewResult.stageId);
+                  if (currentActive && (currentActive.version ?? 1) !== (v.version ?? 1)) {
+                    const filtered = (stageResultHistoryRef.current[stageIdx] ?? []).filter((r: StageResult) => (r.version ?? 1) !== (v.version ?? 1));
+                    const newHist = { ...stageResultHistoryRef.current, [stageIdx]: [...filtered, currentActive] };
+                    stageResultHistoryRef.current = newHist;
+                    setStageResultHistory(newHist);
+                  }
+                  const newResults = [...stageResultsRef.current.filter((r: StageResult) => r.stageId !== viewResult.stageId), v];
+                  stageResultsRef.current = newResults;
+                  setStageResults(newResults);
+                  try {
+                    const saved = localStorage.getItem(`wts_phase2_${projectId}`);
+                    const parsed = saved ? JSON.parse(saved) as Record<string, unknown> : {};
+                    localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+                      ...parsed,
+                      stageResults: newResults,
+                      stageResultHistory: stageResultHistoryRef.current,
+                    }));
+                  } catch { /* ignore */ }
+                }}
               />
             </div>
           </div>
@@ -6403,6 +6505,11 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
             const completedStageIdx = STAGES.findIndex(s => s.id === latestResult.stageId);
             const resolvedIdx = completedStageIdx >= 0 ? completedStageIdx : currentStageIdx;
             const nextStageName = resolvedIdx + 1 < STAGES.length ? STAGES[resolvedIdx + 1].name : null;
+            // 버전 관리: 이전 버전들 + 현재 버전을 버전 번호 순 정렬
+            const allVersionsForStage = [
+              ...(stageResultHistory[resolvedIdx] ?? []),
+              latestResult,
+            ].sort((a, b) => (a.version ?? 1) - (b.version ?? 1));
             return (
               <StageReportInChat
                 result={latestResult}
@@ -6424,6 +6531,29 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
                 }}
                 nextStageName={nextStageName}
                 onReanalyze={async () => { await handleReanalyze(resolvedIdx); handleNextStage(resolvedIdx); }}
+                allVersions={allVersionsForStage.length > 1 ? allVersionsForStage : undefined}
+                onSelectVersion={(v) => {
+                  // 현재 활성 버전 → history로 이동, 선택 버전 → active로 이동
+                  const currentActive = stageResultsRef.current.find((r: StageResult) => r.stageId === latestResult.stageId);
+                  if (currentActive && (currentActive.version ?? 1) !== (v.version ?? 1)) {
+                    const filtered = (stageResultHistoryRef.current[resolvedIdx] ?? []).filter((r: StageResult) => (r.version ?? 1) !== (v.version ?? 1));
+                    const newHist = { ...stageResultHistoryRef.current, [resolvedIdx]: [...filtered, currentActive] };
+                    stageResultHistoryRef.current = newHist;
+                    setStageResultHistory(newHist);
+                  }
+                  const newResults = [...stageResultsRef.current.filter((r: StageResult) => r.stageId !== latestResult.stageId), v];
+                  stageResultsRef.current = newResults;
+                  setStageResults(newResults);
+                  try {
+                    const saved = localStorage.getItem(`wts_phase2_${projectId}`);
+                    const parsed = saved ? JSON.parse(saved) as Record<string, unknown> : {};
+                    localStorage.setItem(`wts_phase2_${projectId}`, JSON.stringify({
+                      ...parsed,
+                      stageResults: newResults,
+                      stageResultHistory: stageResultHistoryRef.current,
+                    }));
+                  } catch { /* ignore */ }
+                }}
               />
             );
           })()}
