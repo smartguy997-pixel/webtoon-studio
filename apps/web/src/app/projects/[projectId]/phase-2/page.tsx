@@ -3001,6 +3001,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
           const parsedT = JSON.parse(savedConv) as string[];
           const parsedM = JSON.parse(savedMsgs) as Msg[];
           if (parsedT.length > 0 || parsedM.length > 0) {
+            setMsgs([]);          // 모달 표시 중 이전 채팅 완전히 숨김
+            convRef.current = [];
             setNewStageChoice({ stageIdx: idx, transcript: parsedT, msgs: parsedM });
             return;
           }
@@ -4573,6 +4575,8 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
         const parsedTranscript = JSON.parse(savedConv) as string[];
         const parsedMsgs = JSON.parse(savedMsgs) as Msg[];
         if (parsedTranscript.length > 0 || parsedMsgs.length > 0) {
+          setMsgs([]);             // 모달 표시 중 이전 채팅 완전히 숨김
+          convRef.current = [];
           setDebatePhase("idle"); // 이전 StageReportInChat 즉시 숨김
           setNewStageChoice({ stageIdx: idx, transcript: parsedTranscript, msgs: parsedMsgs });
           return;
