@@ -1660,6 +1660,105 @@ function StageResultCard({ result, debateMsgs }: { key?: StageId; result: StageR
 // ─── 스테이지 완료 보고서 (채팅 인라인) ───────────────────────────────────────
 // Phase 1의 FinalReportSection과 동일한 패턴: 채팅 바디 안에 직접 렌더
 
+// ─── 공용 내러티브 요약 렌더러 ────────────────────────────────────────────────────
+// StageReportInChat, VersionHistoryModal 양쪽에서 공유
+function renderNarrativeSummary(text: string, c: string) {
+  const clean = (s: string) => s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^\s*[-·•]\s*/, "").trim();
+  const SECTION_ICONS: [string, string][] = [
+    ["시대", "🌍"], ["배경", "🌍"], ["세계", "🌍"],
+    ["인물", "👤"], ["캐릭터", "👤"], ["등장인물", "👥"],
+    ["장소", "🏙"], ["공간", "🏙"],
+    ["갈등", "⚔️"], ["대립", "⚔️"], ["협력", "🤝"], ["연대", "🤝"],
+    ["규칙", "📜"], ["법칙", "📜"],
+    ["로그라인", "💡"], ["요약", "📝"],
+    ["플롯", "📖"], ["전개", "📖"], ["기승전결", "📖"], ["시놉시스", "📖"],
+    ["테마", "🎭"], ["주제", "🎭"],
+    ["스타일", "🎨"], ["화풍", "🎨"], ["역할", "🎯"],
+    ["기획", "📋"], ["의도", "📋"],
+  ];
+  const getIcon = (title: string) => {
+    for (const [kw, icon] of SECTION_ICONS) if (title.includes(kw)) return icon;
+    return "📋";
+  };
+
+  const HEADER_RE = /^(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|^(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t]/;
+  const hasAnyHeader = HEADER_RE.test(text) || /(?:^|\n)(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■/m.test(text);
+
+  const rawSections = hasAnyHeader
+    ? text.split(/\n(?=(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t])/)
+        .map(s => s.trim()).filter(Boolean)
+    : [text.trim()].filter(Boolean);
+
+  const validSections = rawSections.filter(s => HEADER_RE.test(s));
+
+  if (validSections.length === 0) {
+    return (
+      <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
+        {text.split(/\n{2,}/).filter(Boolean).map((para, i) => (
+          <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
+            <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0 }}>{clean(para)}</p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
+      {validSections.map((section, idx) => {
+        const lines = section.split('\n');
+        const titleRaw = lines[0];
+        const title = clean(titleRaw
+          .replace(/^[ \t]*[•·][ \t]*/, "")
+          .replace(/^#{1,3}[ \t]*/, "")
+          .replace(/^■[ \t]*/, ""));
+        const bodyLines = lines.slice(1).filter(l => l.trim());
+        const icon = getIcon(title);
+
+        const groups: Array<{ name?: string; lines: string[] }> = [];
+        let cur: { name?: string; lines: string[] } = { lines: [] };
+        for (const line of bodyLines) {
+          const t = line.trim();
+          if (!t) continue;
+          const boldMatch = t.match(/^\*\*([^*]+)\*\*/);
+          if (boldMatch) {
+            if (cur.lines.length || cur.name) groups.push(cur);
+            cur = { name: boldMatch[1].trim(), lines: [] };
+          } else {
+            cur.lines.push(clean(t));
+          }
+        }
+        if (cur.lines.length || cur.name) groups.push(cur);
+
+        return (
+          <div key={idx} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", border:`1px solid ${c}22` }}>
+            <div style={{ background:`linear-gradient(90deg, ${c}18, transparent)`, borderBottom:`1px solid ${c}20`, padding:"10px 16px", display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:14 }}>{icon}</span>
+              <span style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.4px", textTransform:"uppercase" as const }}>{title}</span>
+            </div>
+            <div style={{ padding:"12px 16px" }}>
+              {groups.map((g, gi) => (
+                <div key={gi} style={{ marginBottom: g.name ? 14 : 0 }}>
+                  {g.name && (
+                    <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", padding:"4px 0 6px", borderBottom:`1px solid #1e1e2a`, marginBottom:6 }}>
+                      {g.name}
+                    </div>
+                  )}
+                  {g.lines.map((item, ii) => (
+                    <div key={ii} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.75, marginBottom:3, paddingLeft: g.name ? 6 : 0 }}>
+                      {item.startsWith("•") || item.startsWith("-") ? item : `• ${item}`}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── 버전 히스토리 모달 ──────────────────────────────────────────────────────────
 function VersionHistoryModal({
   stageObj,
@@ -1745,15 +1844,10 @@ function VersionHistoryModal({
 
         {/* 결과 요약 내용 (스크롤 가능) */}
         <div style={{ flex:1, overflowY:"auto", padding:"16px 18px" }}>
-          {cleanSummary ? (
-            <div style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, whiteSpace:"pre-wrap" as const }}>
-              {cleanSummary}
-            </div>
-          ) : (
-            <div style={{ fontSize:13, color:"#3a3a52", textAlign:"center" as const, padding:"20px 0" }}>
-              요약이 없습니다.
-            </div>
-          )}
+          {cleanSummary
+            ? renderNarrativeSummary(cleanSummary, c)
+            : <div style={{ fontSize:13, color:"#3a3a52", textAlign:"center" as const, padding:"20px 0" }}>요약이 없습니다.</div>
+          }
         </div>
 
         {/* 액션 버튼 */}
@@ -1820,111 +1914,6 @@ function StageReportInChat({
 
   const str = (v: unknown): string => (v ? String(v) : "");
   const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v as unknown[] : []);
-
-  // ── 내러티브 요약 → 섹션 카드 렌더러 ──────────────────────────────────────────
-  const renderNarrativeSummary = (text: string) => {
-    const clean = (s: string) => s.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^\s*[-·•]\s*/, "").trim();
-    const SECTION_ICONS: [string, string][] = [
-      ["시대", "🌍"], ["배경", "🌍"], ["세계", "🌍"],
-      ["인물", "👤"], ["캐릭터", "👤"], ["등장인물", "👥"],
-      ["장소", "🏙"], ["공간", "🏙"],
-      ["갈등", "⚔️"], ["대립", "⚔️"], ["협력", "🤝"], ["연대", "🤝"],
-      ["규칙", "📜"], ["법칙", "📜"],
-      ["로그라인", "💡"], ["요약", "📝"],
-      ["플롯", "📖"], ["전개", "📖"], ["기승전결", "📖"], ["시놉시스", "📖"],
-      ["테마", "🎭"], ["주제", "🎭"],
-      ["스타일", "🎨"], ["화풍", "🎨"], ["역할", "🎯"],
-    ];
-    const getIcon = (title: string) => {
-      for (const [kw, icon] of SECTION_ICONS) if (title.includes(kw)) return icon;
-      return "📋";
-    };
-
-    // 섹션 헤더 감지: ■ / ## / ### / ## ■ / • ### 등 혼합 패턴 모두 처리
-    // 패턴: 선택적 bullet(•·) + 선택적 ##/### + 선택적 ■
-    const HEADER_RE = /^(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|^(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t]/;
-    const hasAnyHeader = HEADER_RE.test(text) || /(?:^|\n)(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■/m.test(text);
-
-    const rawSections = hasAnyHeader
-      ? text.split(/\n(?=(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t])/)
-          .map(s => s.trim()).filter(Boolean)
-      : [text.trim()].filter(Boolean);
-
-    // 실제로 섹션 헤더로 시작하는 항목만 유효 섹션
-    const validSections = rawSections.filter(s => HEADER_RE.test(s));
-
-    if (validSections.length === 0) {
-      // 섹션 없으면 단락 단위로 렌더
-      return (
-        <div style={{ background:"#10101c", borderRadius:12, padding:"16px 18px", border:`1px solid ${c}20` }}>
-          {text.split(/\n{2,}/).map((para, i) => (
-            <p key={i} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, marginBottom:10 }}>
-              {clean(para)}
-            </p>
-          ))}
-        </div>
-      );
-    }
-
-    // 유효 섹션이 1개여도 카드로 렌더
-    const sections = validSections;
-
-    return (
-      <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
-        {sections.map((section, idx) => {
-          const lines = section.split('\n');
-          const titleRaw = lines[0];
-          const title = clean(titleRaw
-            .replace(/^[ \t]*[•·][ \t]*/, "")  // leading bullet
-            .replace(/^#{1,3}[ \t]*/, "")        // ## / ###
-            .replace(/^■[ \t]*/, ""));            // ■
-          const bodyLines = lines.slice(1).filter(l => l.trim());
-          const icon = getIcon(title);
-
-          // 본문 내 **이름** 마커로 소항목 분리 (인물/장소 이름)
-          const groups: Array<{ name?: string; lines: string[] }> = [];
-          let cur: { name?: string; lines: string[] } = { lines: [] };
-          for (const line of bodyLines) {
-            const t = line.trim();
-            if (!t) continue;
-            const boldMatch = t.match(/^\*\*([^*]+)\*\*/);
-            if (boldMatch) {
-              if (cur.lines.length || cur.name) groups.push(cur);
-              cur = { name: boldMatch[1].trim(), lines: [] };
-            } else {
-              cur.lines.push(clean(t));
-            }
-          }
-          if (cur.lines.length || cur.name) groups.push(cur);
-
-          return (
-            <div key={idx} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", border:`1px solid ${c}20` }}>
-              <div style={{ background:`linear-gradient(90deg, ${c}15, transparent)`, borderBottom:`1px solid ${c}20`, padding:"10px 16px", display:"flex", alignItems:"center", gap:8 }}>
-                <span style={{ fontSize:14 }}>{icon}</span>
-                <span style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.4px", textTransform:"uppercase" as const }}>{title}</span>
-              </div>
-              <div style={{ padding:"12px 16px" }}>
-                {groups.map((g, gi) => (
-                  <div key={gi} style={{ marginBottom: g.name ? 14 : 0 }}>
-                    {g.name && (
-                      <div style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", padding:"4px 0 6px", borderBottom:`1px solid #1e1e2a`, marginBottom:6 }}>
-                        {g.name}
-                      </div>
-                    )}
-                    {g.lines.map((item, ii) => (
-                      <div key={ii} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.75, marginBottom:3, paddingLeft: g.name ? 6 : 0 }}>
-                        {item.startsWith("•") || item.startsWith("-") ? item : `• ${item}`}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
 
   // 필드 한 줄
   const Field = ({ label, val }: { label: string; val: unknown }) => {
@@ -2092,7 +2081,7 @@ function StageReportInChat({
             && n.length > 0;
         });
         const hasStructured = data.era || data.core_space || data.power_hierarchy || data.theme || chars.length > 0;
-        if (!hasStructured && data.raw_summary) return renderNarrativeSummary(str(data.raw_summary));
+        if (!hasStructured && data.raw_summary) return renderNarrativeSummary(str(data.raw_summary), c);
 
         // ── 내부 헬퍼 ──────────────────────────────────────────────────────
         const InfoBlock = ({ label, val }: { label: string; val: unknown }) =>
@@ -2289,7 +2278,7 @@ function StageReportInChat({
               </div>
             )}
 
-            {data.raw_summary && renderNarrativeSummary(str(data.raw_summary))}
+            {data.raw_summary && renderNarrativeSummary(str(data.raw_summary), c)}
           </>
         );
       }
@@ -2475,7 +2464,7 @@ function StageReportInChat({
                 ))}
               </>
             )}
-            {data.raw_summary && renderNarrativeSummary(str(data.raw_summary))}
+            {data.raw_summary && renderNarrativeSummary(str(data.raw_summary), c)}
           </>
         );
       }
@@ -2486,7 +2475,7 @@ function StageReportInChat({
           <>
             {chars.length > 0
               ? chars.map((ch, i) => <CharCard key={i} ch={ch} cardColor={c} />)
-              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary))
+              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary), c)
             }
           </>
         );
@@ -2498,7 +2487,7 @@ function StageReportInChat({
           <>
             {locs.length > 0
               ? locs.map((loc, i) => <LocCard key={i} loc={loc} cardColor={c} />)
-              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary))
+              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary), c)
             }
           </>
         );
@@ -2526,7 +2515,7 @@ function StageReportInChat({
                   </div>
                 </div>
               ))
-              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary))
+              : data.raw_summary && renderNarrativeSummary(str(data.raw_summary), c)
             }
           </>
         );
