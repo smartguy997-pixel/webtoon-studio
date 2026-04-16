@@ -1764,7 +1764,26 @@ function renderNarrativeSummary(text: string, c: string) {
      .replace(/\*\*([^*]+)\*\*/g, "$1")
      .trim();
 
-  // ── 전략 1: ## / ### 마크다운 헤더 (H2 이상만 섹션으로 처리) ─────────────────────────
+  // ── 전략 1: ■ (U+25A0) 직접 split — 최우선 처리 ─────────────────────────────────
+  // AI 출력 형식: ■ 섹션명\n본문. 다른 어떤 전략보다 먼저 처리하여 ## 서브헤더 등에 의한
+  // 오작동을 방지.
+  if (normalized.includes("■")) {
+    const parts = normalized.split("■");
+    const sections: Array<{ title: string; body: string }> = [];
+    // ■ 이전 텍스트가 있으면 빈 제목 카드로 추가
+    const preamble = parts[0].trim();
+    if (preamble) sections.push({ title: "", body: preamble });
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const nl = part.indexOf("\n");
+      const title = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/\*\*([^*]+)\*\*/g, "$1");
+      const body  = nl === -1 ? "" : part.slice(nl + 1).trim();
+      if (title || body) sections.push({ title, body });
+    }
+    if (sections.length > 0) return renderSectionCards(sections);
+  }
+
+  // ── 전략 2: ## / ### 마크다운 헤더 (H2 이상만 섹션으로 처리) ─────────────────────────
   // # (H1)은 문서 제목이므로 섹션 구분자로 사용하지 않음
   if (/^#{2,3}\s/m.test(normalized)) {
     const lines = normalized.split("\n");
@@ -1782,20 +1801,6 @@ function renderNarrativeSummary(text: string, c: string) {
     if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
     const valid = sections.filter(s => s.title || s.body);
     if (valid.length > 0) return renderSectionCards(valid);
-  }
-
-  // ── 전략 2: ■ (U+25A0) 직접 split (구형 데이터 대응) ──────────────────────────────
-  if (normalized.includes("■")) {
-    const parts = normalized.split("■");
-    const sections: Array<{ title: string; body: string }> = [];
-    for (let i = 1; i < parts.length; i++) {
-      const part = parts[i];
-      const nl = part.indexOf("\n");
-      const title = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/\*\*([^*]+)\*\*/g, "$1");
-      const body  = nl === -1 ? "" : part.slice(nl + 1).trim();
-      if (title || body) sections.push({ title, body });
-    }
-    if (sections.length > 0) return renderSectionCards(sections);
   }
 
   // ── 전략 3: 임의 섹션 마커 문자 (줄 단위 탐지) ────────────────────────────────────
