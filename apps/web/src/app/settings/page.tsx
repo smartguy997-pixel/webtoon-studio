@@ -507,7 +507,7 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
   }
 
   function handleAddNew() {
-    if (keys.length < 5) {
+    if (keys.length < 10) {
       setKeys([...keys, { value: "", saved: "", visible: false, status: "idle", errorMsg: "", dirty: false }]);
       setAddingNew(true);
     }
@@ -524,8 +524,8 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
             <span className={s.keyRequired}>필수</span>
           </div>
           <div className={s.keyHint}>
-            다중 API 키를 설정하여 에이전트 페어링의 비용을 절감합니다.
-            예: Key 1 (전략가+조사자), Key 2 (세계관+캐릭터), Key 3 (시나리오+대본)
+            최대 10개 API 키를 설정하면 에이전트별로 자동 분배됩니다 (라운드로빈).
+            예: Key 1→세계관, Key 2→캐릭터, Key 3→시나리오, Key 4→복선, Key 5→독자패널 ...
           </div>
         </div>
         {savedCount > 0 && (

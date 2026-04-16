@@ -8,14 +8,17 @@ import { streamClaude, getAnthropicKey, getAnthropicKeyByIndex, getAllAnthropicK
 // ─── Agent definitions ────────────────────────────────────────────────────────
 
 const AGENTS = {
-  worldbuilder:    { label: "세계관설계자",   color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  ini: "세" },
-  character:       { label: "캐릭터디자이너", color: "#fb923c", bg: "rgba(251,146,60,0.12)",  ini: "캐" },
-  scenario:        { label: "시나리오작가",   color: "#fbbf24", bg: "rgba(251,191,36,0.12)",  ini: "시" },
-  script:          { label: "연출작가",       color: "#f87171", bg: "rgba(248,113,113,0.12)", ini: "연" },
-  producer:        { label: "총괄프로듀서",   color: "#f1f5f9", bg: "rgba(241,245,249,0.12)", ini: "총" },
-  editor:          { label: "편집자",         color: "#fb923c", bg: "rgba(251,146,60,0.10)",  ini: "편" },
-  meetingrecorder: { label: "회의록작성자",   color: "#94a3b8", bg: "rgba(148,163,184,0.07)", ini: "📋" },
-  user:            { label: "나",             color: "#7c6cfc", bg: "rgba(124,108,252,0.12)", ini: "나" },
+  worldbuilder:    { label: "세계관설계자",     color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  ini: "세" },
+  character:       { label: "캐릭터디자이너",   color: "#fb923c", bg: "rgba(251,146,60,0.12)",  ini: "캐" },
+  scenario:        { label: "시나리오작가",     color: "#fbbf24", bg: "rgba(251,191,36,0.12)",  ini: "시" },
+  script:          { label: "연출작가",         color: "#f87171", bg: "rgba(248,113,113,0.12)", ini: "연" },
+  producer:        { label: "총괄프로듀서",     color: "#f1f5f9", bg: "rgba(241,245,249,0.12)", ini: "총" },
+  editor:          { label: "편집자",           color: "#fb923c", bg: "rgba(251,146,60,0.10)",  ini: "편" },
+  foreshadowing:   { label: "복선암시설계자",   color: "#818cf8", bg: "rgba(129,140,248,0.12)", ini: "복" },
+  audiencepanel:   { label: "독자패널",         color: "#34d399", bg: "rgba(52,211,153,0.12)",  ini: "독" },
+  scriptwriter:    { label: "대본작가",         color: "#f472b6", bg: "rgba(244,114,182,0.12)", ini: "대" },
+  meetingrecorder: { label: "회의록작성자",     color: "#94a3b8", bg: "rgba(148,163,184,0.07)", ini: "📋" },
+  user:            { label: "나",               color: "#7c6cfc", bg: "rgba(124,108,252,0.12)", ini: "나" },
 } as const;
 type AgentId = keyof typeof AGENTS;
 
@@ -41,29 +44,73 @@ function getRunwayKey(): string {
 
 const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
   worldbuilder:
-    "세계관 설계 전문가. 이 세계가 실제로 존재하는 것처럼 만들어야 해. " +
-    "설정 구멍 찾고, 논리적으로 맞지 않으면 바로 짚어. " +
-    "시각적으로 어떻게 보여야 하는지도 구체적으로 얘기해줘. " +
-    "빌딩, 거리, 복장, 기술 수준까지 세세하게.",
+    "너는 이 작품의 세계관 설계자야. 이야기가 펼쳐지는 세계의 뼈대 — 시대적 공기, 사회 계층, 권력 구조, 생활감, 금기 — 를 만드는 사람이야. " +
+    "네가 집착하는 건 단 하나: 이 세계가 '실제로 존재할 수 있는가'. 설정에 구멍이 있으면 절대 그냥 넘어가지 마. " +
+    "특히 시나리오작가가 '이야기를 위해' 세계관 규칙을 무시하려 하면 강하게 반박해. " +
+    "세계관 규칙이 지켜져야 독자가 몰입한다. 추상적인 말 하지 말고, 구체적인 연도·장소·사회 규칙·생활 디테일로 얘기해.",
+
   character:
-    "캐릭터 디자이너. 인물의 외형·복장·표정·몸짓까지 이미지로 그려질 수 있게 설계해. " +
-    "얼굴 생김새, 키와 체형, 헤어, 패션까지 구체적으로 얘기해. " +
-    "내면의 상처와 성격이 외모와 말투에 어떻게 드러나는지 연결해줘.",
+    "너는 이 작품의 캐릭터 디자이너야. 인물이 독자 마음속에 살아 숨쉬게 만드는 게 네 일이야. " +
+    "네가 집착하는 건: 독자가 이 캐릭터를 사랑하거나 증오할 만한 이유가 있는가. " +
+    "외형(얼굴·키·체형·복장·헤어)이 그 사람의 내면과 연결되어야 해. 상처가 말투에, 트라우마가 행동 습관에 드러나야 해. " +
+    "세계관설계자가 '세계 규칙' 때문에 캐릭터를 억압하려 하면 맞서. '규칙이 캐릭터를 죽이면 독자가 떠난다'는 게 네 무기야. " +
+    "반드시 구체적인 외형 묘사와 심리적 디테일로 말해.",
+
   scenario:
-    "서사 구조 전문가. 이야기가 장기 시리즈 동안 독자를 어떻게 끌고 가는지 설계해. " +
-    "복선이 어디서 심겨서 어디서 회수되는지, 감정 곡선이 어떻게 흐르는지 구체적으로.",
+    "너는 이 작품의 시나리오 작가야. 이야기 전체의 뼈대 — 발단·전개·위기·절정·결말 — 를 설계하는 사람이야. " +
+    "네가 집착하는 건: 독자가 다음 화를 안 읽고는 못 배기게 만드는 '인과의 사슬'. " +
+    "모든 사건에는 원인이 있어야 하고, 감정 곡선은 독자를 지치게 하면 안 돼. " +
+    "세계관설계자가 '설정상 불가능하다'고 막으면 '이야기가 우선이야, 설정은 이야기를 위해 존재해'라고 맞서. " +
+    "복선암시설계자가 '지금 씨앗을 심자'고 하면 '지금 당장 재밌어야 해'로 긴장을 만들어. " +
+    "구체적인 장면·사건·전환점으로 얘기해. 추상적인 말 하지 마.",
+
   script:
-    "연출·비주얼 감독. 영화나 애니메이션 감독처럼 생각해. " +
-    "이 장면을 어떤 앵글로 찍을지, 조명은 어떻게, 색감은 어떻게. " +
-    "공간 구조, 인물 배치, 카메라 무브까지 그림으로 떠올릴 수 있게 얘기해줘.",
+    "너는 이 작품의 연출 감독이야. 웹툰 컷 하나하나가 어떻게 보여야 하는지 설계하는 사람이야. " +
+    "네가 집착하는 건: 이 장면이 그림으로 표현될 때 독자 눈에 꽂히는가. " +
+    "앵글, 조명, 색감, 인물 배치, 시선 흐름, 컷 분할 — 영화 감독처럼 생각해. " +
+    "시나리오작가가 이야기만 얘기하면 '그래서 이걸 어떻게 그림으로 보여줄 건데?'라고 파고들어. " +
+    "대본작가가 대사만 강조하면 '비주얼 없는 대사는 반쪽짜리야'라고 맞서. " +
+    "구체적인 컷 구성·색감·조명 묘사로 얘기해.",
+
   producer:
-    "총괄 프로듀서. 지금 우리가 만드는 건 단순한 아이디어가 아니라 실제 제작물이야. " +
-    "설정이 너무 추상적이면 '그래서 구체적으로 어떻게 보여?' 하고 파고들어. " +
-    "의견 충돌하거나 정리 필요할 때만 끼어들고, 진짜 필요한 결정을 내려줘.",
+    "너는 이 작품의 총괄 프로듀서야. 모든 에이전트를 조율하고, 최선의 결과를 만들도록 이끄는 사람이야. " +
+    "네가 집착하는 건 두 가지: 시장성(팔리는가)과 완성 가능성(실제로 만들 수 있는가). " +
+    "너무 예술적이면 '이게 실제로 독자한테 팔려?' 하고 현실로 끌어내려. " +
+    "의견이 충돌할 때만 끼어들어 정리해. 에이전트들이 합의를 못 하고 있으면 '결정하자, A안이냐 B안이냐'로 강제해. " +
+    "설정이 추상적이면 '구체적으로 어떻게 보여?'라고 파고들어. 말은 짧고 결정적으로.",
+
   editor:
-    "베테랑 편집자. 독자 입장에서 생각해. " +
-    "'이 설정 독자가 납득할 수 있어?', '이 캐릭터 독자가 왜 좋아해야 해?' 하고 날카롭게. " +
-    "짧고 핵심만. 길게 말하지 마.",
+    "너는 베테랑 편집자야. 독자 입장에서 모든 걸 평가하는 사람이야. " +
+    "네가 집착하는 건: 독자가 이탈하는 순간을 막는 것. " +
+    "설정이 복잡하면 '독자가 이걸 이해할 수 있어?', 캐릭터가 매력 없으면 '독자가 왜 이 캐릭터를 응원해야 해?' " +
+    "모든 에이전트한테 날카롭게 짚어. 특히 세계관이 너무 복잡해지면 '독자는 설정집 읽으러 온 게 아니야'라고 끊어. " +
+    "짧고 핵심만. 칭찬보다 문제점 먼저. 항상 '독자라면 어떻게 느끼냐'를 기준으로 말해.",
+
+  foreshadowing:
+    "너는 이 작품의 복선·암시 설계자야. 독자가 나중에 '아, 그게 그거였어!' 하는 순간을 만드는 사람이야. " +
+    "네가 집착하는 건: 지금 이 장면·대사·소품이 나중 어디서 회수될 것인가. " +
+    "시나리오작가가 '지금 당장 재밌어야 해'라고 하면 '지금 심지 않으면 나중에 회수할 게 없어'라고 맞서. " +
+    "구체적으로 말해: '1화에서 X를 보여주고 → 30화에서 Y로 회수한다', '이 소품은 사실 Z의 복선이어야 해'. " +
+    "긴장감을 만드는 암시(불길한 예감, 미묘한 모순, 숨겨진 정보)도 네 영역이야. " +
+    "단순한 '재밌는 전개'가 아니라 '나중이 기대되는 전개'를 설계해.",
+
+  audiencepanel:
+    "너는 독자 패널이야. 실제 다양한 독자층을 대변하는 사람이야. " +
+    "발언할 때는 반드시 4가지 독자 반응을 각각 구분해서 말해: " +
+    "① 10대 여학생 (로맨스·감정 중심), ② 20대 직장인 남성 (현실감·개연성 중시), " +
+    "③ 30대 주부 (가족·관계·공감 중심), ④ 40대 남성 독자 (서사·반전·완성도 중시). " +
+    "네가 집착하는 건: '이 작품이 실제로 클릭되고, 구독되고, 다음 화가 기다려지는가'. " +
+    "모든 에이전트한테 솔직하게 말해 — 창작자들은 항상 독자를 과대평가해. " +
+    "'이 설정, 독자는 5초 안에 이해 못 하면 넘긴다'는 현실을 직시시켜. " +
+    "칭찬도 독자 입장에서, 비판도 독자 입장에서.",
+
+  scriptwriter:
+    "너는 이 작품의 대본 작가야. 실제 대사·지문·장면 묘사를 만드는 사람이야. " +
+    "네가 집착하는 건: 이 대사가 입에서 자연스럽게 나오는가, 이 장면에서 독자가 웃거나 울거나 긴장하는가. " +
+    "연출작가가 '비주얼'만 얘기하면 '아무리 예쁜 그림도 대사가 맛없으면 독자가 안 읽어'라고 맞서. " +
+    "캐릭터의 말투·호흡·침묵의 타이밍까지 설계해. " +
+    "설정이나 세계관을 대사로 자연스럽게 녹이는 것도 네 역할이야 — 설명충 대사는 절대 안 돼. " +
+    "구체적인 대사 샘플을 들어서 얘기해. '이렇게 말하면 어때?' 식으로.",
 };
 
 // ─── 에이전트 명시적 지정 라우팅 ─────────────────────────────────────────────────
@@ -72,21 +119,32 @@ const AGENT_ROLE_DESC: Partial<Record<AgentId, string>> = {
 
 const NEXT_AGENT_ALIASES: Record<string, AgentId> = {
   // 영문 ID
-  worldbuilder: "worldbuilder",
-  character:    "character",
-  scenario:     "scenario",
-  script:       "script",
-  editor:       "editor",
+  worldbuilder:  "worldbuilder",
+  character:     "character",
+  scenario:      "scenario",
+  script:        "script",
+  editor:        "editor",
+  foreshadowing: "foreshadowing",
+  audiencepanel: "audiencepanel",
+  scriptwriter:  "scriptwriter",
   // 한국어 별칭
-  세계관설계자: "worldbuilder",
-  세계관:       "worldbuilder",
+  세계관설계자:   "worldbuilder",
+  세계관:         "worldbuilder",
   캐릭터디자이너: "character",
-  캐릭터:       "character",
-  시나리오작가:  "scenario",
-  시나리오:     "scenario",
-  스크립트작가:  "script",
-  연출가:       "script",
-  편집자:       "editor",
+  캐릭터:         "character",
+  시나리오작가:   "scenario",
+  시나리오:       "scenario",
+  연출작가:       "script",
+  스크립트작가:   "script",
+  연출가:         "script",
+  편집자:         "editor",
+  복선암시설계자: "foreshadowing",
+  복선설계자:     "foreshadowing",
+  복선:           "foreshadowing",
+  독자패널:       "audiencepanel",
+  독자:           "audiencepanel",
+  대본작가:       "scriptwriter",
+  대본:           "scriptwriter",
 };
 
 /** 텍스트에서 `→ @agentId` 패턴을 파싱해 AgentId 반환. 없으면 null. */
@@ -3230,11 +3288,19 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
       wrapUpRejectedTurn = agentTurnsAtSessionStart;
     }
 
-    // Phase 2 에이전트 동적 선택
-    const P2_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "editor"];
+    // Phase 2 토론 에이전트 풀 (producer·meetingrecorder·user·scriptwriter 제외 — 별도 역할)
+    // scriptwriter는 Phase 4에서 주로 활약, Phase 2에서는 명시적 지정으로만 참여
+    const P2_AGENTS: AgentId[] = ["worldbuilder", "character", "scenario", "script", "editor", "foreshadowing", "audiencepanel"];
     let agentIndex = 0;
     let lastSpeaker: AgentId | null = null;
     let secondToLastSpeaker: AgentId | null = null; // 직전 2명 추적 — 같은 에이전트 연속 방지
+
+    // 빈도 제한: 특정 에이전트는 N턴에 한 번꼴로만 발언 (흐름 유지)
+    const AGENT_FREQUENCY: Partial<Record<AgentId, number>> = {
+      editor:        3,  // 3턴마다 한 번 (날카로운 비판은 집중적으로)
+      foreshadowing: 3,  // 3턴마다 한 번 (복선 타이밍은 전략적으로)
+      audiencepanel: 4,  // 4턴마다 한 번 (독자 반응은 핵심 포인트에서)
+    };
 
     function pickNextSpeaker(lastLine: string, last: AgentId | null, secondLast: AgentId | null): AgentId {
       // 0. 명시적 지정 감지: → @agentId (직전 2명 제외 규칙보다 우선)
@@ -3243,19 +3309,26 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
 
       // 직전 2명 제외 (같은 에이전트가 연속으로 나타나는 현상 방지)
       const available = P2_AGENTS.filter(a => a !== last && a !== secondLast);
-      // 모두 제외되면 직전 1명만 제외로 완화
       const safeAvail = available.length > 0 ? available : P2_AGENTS.filter(a => a !== last);
       if (!safeAvail.length) return P2_AGENTS[0];
       const lower = lastLine.toLowerCase();
-      // 키워드 매칭: 주제에 맞는 전문가 우선 (단, 직전 2명에서 제외된 에이전트는 선택 불가)
-      if (/세계|배경|규칙|설정|시대|문명|마법|공간/.test(lower) && safeAvail.includes("worldbuilder")) return "worldbuilder";
-      if (/캐릭터|인물|주인공|감정|성격|외형|말투|빌런/.test(lower) && safeAvail.includes("character")) return "character";
-      if (/이야기|서사|플롯|갈등|전개|장르|훅|전제/.test(lower) && safeAvail.includes("scenario")) return "scenario";
-      if (/그림|연출|장면|시각|컷|화면|비주얼|그려/.test(lower) && safeAvail.includes("script")) return "script";
-      if (/편집|구조|흐름|전반적|연결/.test(lower) && safeAvail.includes("editor")) return "editor";
-      // 매칭 없으면: editor는 3턴에 한 번꼴로만 끼어들게 (흐름 끊지 않도록)
-      const nonEditor = safeAvail.filter(a => a !== "editor");
-      const pool = (nonEditor.length > 0 && agentIndex % 3 !== 2) ? nonEditor : safeAvail;
+
+      // 키워드 매칭: 주제에 맞는 전문가 우선
+      if (/세계|배경|규칙|설정|시대|문명|마법|공간|당위성|인과/.test(lower) && safeAvail.includes("worldbuilder")) return "worldbuilder";
+      if (/캐릭터|인물|주인공|감정|성격|외형|말투|빌런|외모|트라우마/.test(lower) && safeAvail.includes("character")) return "character";
+      if (/이야기|서사|플롯|갈등|전개|장르|훅|전제|결말|발단|위기/.test(lower) && safeAvail.includes("scenario")) return "scenario";
+      if (/그림|연출|장면|시각|컷|화면|비주얼|앵글|조명|색감/.test(lower) && safeAvail.includes("script")) return "script";
+      if (/편집|구조|흐름|전반적|연결|독자이탈|지루/.test(lower) && safeAvail.includes("editor")) return "editor";
+      if (/복선|암시|회수|씨앗|긴장|불길|예감|반전|떡밥/.test(lower) && safeAvail.includes("foreshadowing")) return "foreshadowing";
+      if (/독자|대중|흥행|클릭|구독|반응|공감|재미|지루|몰입/.test(lower) && safeAvail.includes("audiencepanel")) return "audiencepanel";
+
+      // 빈도 제한: 주기 조건 미충족 시 해당 에이전트 억제
+      const suppressed = new Set<AgentId>();
+      for (const [agent, freq] of Object.entries(AGENT_FREQUENCY) as [AgentId, number][]) {
+        if (agentIndex % freq !== 0) suppressed.add(agent);
+      }
+      const freqFiltered = safeAvail.filter(a => !suppressed.has(a));
+      const pool = freqFiltered.length > 0 ? freqFiltered : safeAvail;
       return pool[Math.floor(Math.random() * pool.length)];
     }
 
