@@ -3286,7 +3286,13 @@ export default function Phase2Page({ params }: { params: { projectId: string } }
     if (!appReady) return;
     let raf1: number, raf2: number;
     raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => scrollChatToBottom(true));
+      raf2 = requestAnimationFrame(() => {
+        scrollChatToBottom(true);
+        // 뷰 모드(?view=N)로 직접 로드 시 viewScrollRef도 하단으로 이동
+        if (viewScrollRef.current) {
+          viewScrollRef.current.scrollTop = viewScrollRef.current.scrollHeight;
+        }
+      });
     });
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [appReady]); // eslint-disable-line react-hooks/exhaustive-deps
