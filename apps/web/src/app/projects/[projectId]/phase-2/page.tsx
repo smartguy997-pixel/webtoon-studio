@@ -1737,6 +1737,14 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
+  // 임시 디버그 — 다음 커밋에서 제거
+  if (typeof window !== "undefined") {
+    const firstLineEnd = normalized.indexOf("\n");
+    const firstLine = firstLineEnd >= 0 ? normalized.slice(0, firstLineEnd) : normalized.slice(0, 60);
+    const chars = Array.from(firstLine).map(ch => `U+${ch.codePointAt(0)?.toString(16).toUpperCase().padStart(4,"0")} ${JSON.stringify(ch)}`).join(", ");
+    console.log("[renderNarrativeSummary] len:", normalized.length, "includes■:", normalized.includes("■"), "firstLine chars:", chars);
+  }
+
   // ── 섹션 마커 감지 헬퍼 ────────────────────────────────────────────────────────
   // 줄의 첫 문자가 특수 기호(비ASCII, 비한국어, 비CJK)이면 섹션 헤더로 처리
   const isSectionMarkerChar = (ch: string): boolean => {
