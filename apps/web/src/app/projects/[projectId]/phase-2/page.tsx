@@ -1681,20 +1681,26 @@ function renderNarrativeSummary(text: string, c: string) {
     return "📋";
   };
 
+  // \r\n 정규화
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  // 섹션 헤더: 줄 맨 앞 ■ 또는 ## 계열
   const HEADER_RE = /^(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|^(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t]/;
-  const hasAnyHeader = HEADER_RE.test(text) || /(?:^|\n)(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■/m.test(text);
+  // ■ 이 줄 첫 글자로 나오는 경우를 별도로 감지 (Unicode 호환)
+  const SQUARE_RE = /(?:^|\n)[ \t]*(?:#{1,3}[ \t]*)?■/;
+  const hasAnyHeader = HEADER_RE.test(normalized) || SQUARE_RE.test(normalized);
 
   const rawSections = hasAnyHeader
-    ? text.split(/\n(?=(?:[ \t]*[•·][ \t]*)?(?:#{1,3}[ \t]*)?■|(?:[ \t]*[•·][ \t]*)?#{1,3}[ \t])/)
+    ? normalized.split(/\n(?=[ \t]*(?:#{1,3}[ \t]*)?■|[ \t]*#{1,3}[ \t])/)
         .map(s => s.trim()).filter(Boolean)
-    : [text.trim()].filter(Boolean);
+    : [normalized.trim()].filter(Boolean);
 
-  const validSections = rawSections.filter(s => HEADER_RE.test(s));
+  const validSections = rawSections.filter(s => HEADER_RE.test(s) || /^[ \t]*(?:#{1,3}[ \t]*)?■/.test(s));
 
   if (validSections.length === 0) {
     return (
       <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
-        {text.split(/\n{2,}/).filter(Boolean).map((para, i) => (
+        {normalized.split(/\n{2,}/).filter(Boolean).map((para, i) => (
           <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
             <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0 }}>{clean(para)}</p>
           </div>
@@ -1777,9 +1783,12 @@ function VersionHistoryModal({
 }) {
   const [selected, setSelected] = useState<StageResult>(allVersions[allVersions.length - 1]);
   const c = stageObj.color;
+  // 본문 렌더: raw_summary 우선, 없으면 summary — 헤더 마커(##, ■) 보존
+  const rawContent = (selected.data?.raw_summary ? String(selected.data.raw_summary) : selected.summary) || "";
+  // 미리보기 전용: 마크다운 제거한 짧은 텍스트
   const cleanSummary = (selected.summary || "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/[#>_`]/g, "")
+    .replace(/[#>_`■]/g, "")
     .trim();
 
   return (
@@ -1844,8 +1853,8 @@ function VersionHistoryModal({
 
         {/* 결과 요약 내용 (스크롤 가능) */}
         <div style={{ flex:1, overflowY:"auto", padding:"16px 18px" }}>
-          {cleanSummary
-            ? renderNarrativeSummary(cleanSummary, c)
+          {rawContent
+            ? renderNarrativeSummary(rawContent, c)
             : <div style={{ fontSize:13, color:"#3a3a52", textAlign:"center" as const, padding:"20px 0" }}>요약이 없습니다.</div>
           }
         </div>
