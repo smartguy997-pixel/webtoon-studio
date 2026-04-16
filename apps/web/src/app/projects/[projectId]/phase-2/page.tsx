@@ -1772,7 +1772,28 @@ function renderNarrativeSummary(text: string, c: string) {
      .replace(/\*\*([^*]+)\*\*/g, "$1")
      .trim();
 
-  // ── 전략 1: ■ (U+25A0) 직접 split ──────────────────────────────────────────────
+  // ── 전략 1: ## 마크다운 헤더 (최우선 — 최신 AI 출력 형식) ────────────────────────────
+  // AI가 # / ## 형식으로 섹션을 구분하는 경우 (가장 일반적인 최신 포맷)
+  if (/^#{1,3}\s/m.test(normalized)) {
+    const lines = normalized.split("\n");
+    const sections: Array<{ title: string; body: string }> = [];
+    let cur: { title: string; bodyLines: string[] } | null = null;
+    for (const line of lines) {
+      if (/^#{1,3}\s/.test(line.trimStart())) {
+        if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+        const rawTitle = line.trimStart().replace(/^#{1,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim();
+        // 이모지로 시작하는 타이틀 처리 (예: "📖 드라마·웹툰..." → 이모지 보존)
+        cur = { title: rawTitle, bodyLines: [] };
+      } else if (cur) {
+        cur.bodyLines.push(line);
+      }
+    }
+    if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+    const valid = sections.filter(s => s.title || s.body);
+    if (valid.length > 0) return renderSectionCards(valid);
+  }
+
+  // ── 전략 2: ■ (U+25A0) 직접 split (구형 데이터 대응) ──────────────────────────────
   if (normalized.includes("■")) {
     const parts = normalized.split("■");
     const sections: Array<{ title: string; body: string }> = [];
@@ -1786,7 +1807,7 @@ function renderNarrativeSummary(text: string, c: string) {
     if (sections.length > 0) return renderSectionCards(sections);
   }
 
-  // ── 전략 2: 임의 섹션 마커 문자 (줄 단위 탐지) ────────────────────────────────────
+  // ── 전략 3: 임의 섹션 마커 문자 (줄 단위 탐지) ────────────────────────────────────
   {
     const lines = normalized.split("\n");
     if (lines.some(isSectionHeader)) {
@@ -1804,24 +1825,6 @@ function renderNarrativeSummary(text: string, c: string) {
       const valid = sections.filter(s => s.title || s.body);
       if (valid.length > 0) return renderSectionCards(valid);
     }
-  }
-
-  // ── 전략 3: ## 마크다운 헤더 ────────────────────────────────────────────────────
-  if (/^#{1,3}\s/m.test(normalized)) {
-    const lines = normalized.split("\n");
-    const sections: Array<{ title: string; body: string }> = [];
-    let cur: { title: string; bodyLines: string[] } | null = null;
-    for (const line of lines) {
-      if (/^#{1,3}\s/.test(line.trimStart())) {
-        if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-        cur = { title: line.trimStart().replace(/^#{1,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim(), bodyLines: [] };
-      } else if (cur) {
-        cur.bodyLines.push(line);
-      }
-    }
-    if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-    const valid = sections.filter(s => s.title || s.body);
-    if (valid.length > 0) return renderSectionCards(valid);
   }
 
   // ── 전략 4: 단락 카드 폴백 ──────────────────────────────────────────────────────
