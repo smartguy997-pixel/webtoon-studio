@@ -1737,14 +1737,6 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
-  // ── 디버그: 실제 문자 코드포인트 확인 (개발 모드) ──────────────────────────────────
-  if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
-    const firstLineChars = normalized.split("\n")[0] ?? "";
-    console.log("[renderNarrativeSummary] first line:", JSON.stringify(firstLineChars.slice(0, 30)));
-    console.log("[renderNarrativeSummary] codepoints:", [...firstLineChars.slice(0, 5)].map(ch => `U+${(ch.codePointAt(0)??0).toString(16).toUpperCase().padStart(4,"0")} ${ch}`).join(", "));
-    console.log("[renderNarrativeSummary] includes ■:", normalized.includes("■"));
-  }
-
   // ── 섹션 마커 감지 헬퍼 ────────────────────────────────────────────────────────
   // 줄의 첫 문자가 특수 기호(비ASCII, 비한국어, 비CJK)이면 섹션 헤더로 처리
   const isSectionMarkerChar = (ch: string): boolean => {
