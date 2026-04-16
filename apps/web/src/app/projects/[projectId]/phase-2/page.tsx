@@ -1692,9 +1692,12 @@ function renderNarrativeSummary(text: string, c: string) {
             const isHorizRule = /^---+$/.test(t);
             const isBullet    = /^[-•*]\s/.test(t);
             const isSubHdr    = /^\*\*([^*]+)\*\*\s*$/.test(t) || /^\*\*([^*]+)\*\*[:：]/.test(t);
-            const content     = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^[-•*]\s*/, "").trim();
+            const isMdHdr     = /^#{1,3}\s/.test(t);  // # / ## / ### 마크다운 헤더
+            const content     = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^[-•*]\s*/, "").replace(/^#{1,3}\s*/, "").trim();
             if (isHorizRule) {
               nodes.push(<hr key={`hr-${li}`} style={{ border:"none", borderTop:`1px solid ${color}18`, margin:"8px 0" }} />);
+            } else if (isMdHdr) {
+              nodes.push(<div key={`mh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", borderBottom:`1px solid #1e1e2a`, paddingBottom:4, marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>{content}</div>);
             } else if (isSubHdr) {
               nodes.push(<div key={`sh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", borderBottom:`1px solid #1e1e2a`, paddingBottom:4, marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>{content}</div>);
             } else if (isBullet || content.length <= 60) {
@@ -1737,14 +1740,6 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
-  // 임시 디버그 — 다음 커밋에서 제거
-  if (typeof window !== "undefined") {
-    const firstLineEnd = normalized.indexOf("\n");
-    const firstLine = firstLineEnd >= 0 ? normalized.slice(0, firstLineEnd) : normalized.slice(0, 60);
-    const chars = Array.from(firstLine).map(ch => `U+${ch.codePointAt(0)?.toString(16).toUpperCase().padStart(4,"0")} ${JSON.stringify(ch)}`).join(", ");
-    console.log("[renderNarrativeSummary] len:", normalized.length, "includes■:", normalized.includes("■"), "firstLine chars:", chars);
-  }
-
   // ── 섹션 마커 감지 헬퍼 ────────────────────────────────────────────────────────
   // 줄의 첫 문자가 특수 기호(비ASCII, 비한국어, 비CJK)이면 섹션 헤더로 처리
   const isSectionMarkerChar = (ch: string): boolean => {
@@ -1775,7 +1770,9 @@ function renderNarrativeSummary(text: string, c: string) {
   // ── 전략 1: ■ (U+25A0) 직접 split — 최우선 처리 ─────────────────────────────────
   // AI 출력 형식: ■ 섹션명\n본문. 다른 어떤 전략보다 먼저 처리하여 ## 서브헤더 등에 의한
   // 오작동을 방지.
-  if (normalized.includes("■")) {
+  // ※ 줄 맨 앞에 "■ " 형태로 나타나는 경우만 섹션 구분자로 인식.
+  //    본문 중간에 ■이 장식/리스트 기호로 쓰인 경우에는 Strategy 2(##)로 넘긴다.
+  if (/^\s*■\s/m.test(normalized)) {
     const parts = normalized.split("■");
     const sections: Array<{ title: string; body: string }> = [];
     // ■ 이전 텍스트가 있으면 빈 제목 카드로 추가
