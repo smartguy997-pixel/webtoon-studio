@@ -1541,11 +1541,7 @@ function StageResultCard({ result, debateMsgs }: { key?: StageId; result: StageR
           {row("시각", p.visual)}{row("상태", p.condition)}{row("기능", p.function)}{row("역할", p.story_role)}{row("상징", p.symbolic_meaning)}
         </div>
       ))}
-      {data.raw_summary && (
-        <div style={{ fontSize:13, color:"#d4d4e8", lineHeight:1.85, whiteSpace:"pre-wrap" as const, background:"#12121c", borderRadius:8, padding:"12px 14px" }}>
-          {String(data.raw_summary)}
-        </div>
-      )}
+      {data.raw_summary && renderNarrativeSummary(String(data.raw_summary), c)}
     </div>
   );
 
@@ -1664,10 +1660,10 @@ function StageResultCard({ result, debateMsgs }: { key?: StageId; result: StageR
 // StageReportInChat, VersionHistoryModal 양쪽에서 공유
 function renderNarrativeSummary(text: string, c: string) {
   const SECTION_ICONS: [string, string][] = [
-    ["시대", "🌍"], ["배경", "🌍"], ["세계", "🌍"], ["공기", "🌍"],
+    ["시대", "🌍"], ["배경", "🌍"], ["세계", "🌍"], ["공기", "🌍"], ["드라마", "🎬"], ["제작", "🎬"], ["바이블", "📖"],
     ["인물", "👤"], ["캐릭터", "👤"], ["등장인물", "👥"], ["관계", "🔗"], ["역학", "🔗"],
     ["장소", "🏙"], ["공간", "🏙"],
-    ["갈등", "⚔️"], ["대립", "⚔️"], ["압박", "⚔️"], ["협력", "🤝"], ["연대", "🤝"],
+    ["갈등", "⚔️"], ["대립", "⚔️"], ["압박", "⚔️"], ["협력", "🤝"], ["연대", "🤝"], ["사회", "⚔️"],
     ["규칙", "📜"], ["법칙", "📜"], ["만약에", "✨"], ["what if", "✨"],
     ["로그라인", "💡"], ["의도", "💡"], ["기획", "💡"],
     ["요약", "📝"], ["정리", "📝"],
@@ -1681,76 +1677,47 @@ function renderNarrativeSummary(text: string, c: string) {
     return "📋";
   };
 
-  // 헤더 라인 판단: ## 형식 OR 블록문자(■ 계열 유니코드 U+25A0~U+25FF, U+2B00~U+2BFF)
-  const isHeaderLine = (line: string): boolean => {
-    const t = line.trimStart();
-    if (/^#{1,3}\s/.test(t)) return true;
-    const cp = t.codePointAt(0) ?? 0;
-    // U+25A0~U+25FF: Geometric Shapes (■◼◾▪ 등)
-    if (cp >= 0x25A0 && cp <= 0x25FF) return true;
-    // U+2B00~U+2BFF: Miscellaneous Symbols and Arrows
-    if (cp >= 0x2B00 && cp <= 0x2BFF) return true;
-    // 명시적 비교 (혹시 다른 인코딩으로 저장된 경우 대비)
-    if (t.startsWith("■") || t.startsWith("◼") || t.startsWith("▪") || t.startsWith("◾") || t.startsWith("●")) return true;
-    return false;
+  // ── 본문 라인 렌더러 (공유) ────────────────────────────────────────────────────
+  const renderBodyLines = (bodyText: string, color: string) => {
+    const paragraphs = bodyText.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+    if (paragraphs.length === 0) return null;
+    return (
+      <>
+        {paragraphs.map((para, pi) => {
+          const paraLines = para.split("\n");
+          const nodes: JSX.Element[] = [];
+          paraLines.forEach((rawLine, li) => {
+            const t = rawLine.trim();
+            if (!t) return;
+            const isHorizRule = /^---+$/.test(t);
+            const isBullet    = /^[-•*]\s/.test(t);
+            const isSubHdr    = /^\*\*([^*]+)\*\*\s*$/.test(t) || /^\*\*([^*]+)\*\*[:：]/.test(t);
+            const content     = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^[-•*]\s*/, "").trim();
+            if (isHorizRule) {
+              nodes.push(<hr key={`hr-${li}`} style={{ border:"none", borderTop:`1px solid ${color}18`, margin:"8px 0" }} />);
+            } else if (isSubHdr) {
+              nodes.push(<div key={`sh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", borderBottom:`1px solid #1e1e2a`, paddingBottom:4, marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>{content}</div>);
+            } else if (isBullet || content.length <= 60) {
+              nodes.push(<div key={`b-${li}`} style={{ display:"flex", gap:6, fontSize:13, color:"#c8d0e0", lineHeight:1.75, marginBottom:3 }}><span style={{ color:`${color}90`, fontSize:10, flexShrink:0, paddingTop:4 }}>▸</span><span>{content}</span></div>);
+            } else {
+              nodes.push(<p key={`p-${li}`} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:`0 0 ${li < paraLines.length - 1 ? 6 : 0}px` }}>{content}</p>);
+            }
+          });
+          return <div key={pi} style={{ marginBottom: pi < paragraphs.length - 1 ? 12 : 0 }}>{nodes}</div>;
+        })}
+      </>
+    );
   };
 
-  // 타이틀 정리
-  const stripTitle = (s: string) => s.trimStart()
-    .replace(/^#{1,3}\s*/, "")
-    .replace(/^[\u25A0-\u25FF\u2B00-\u2BFF■◼▪◾●]\s*/, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1").trim();
-
-  // ── 줄 단위 분석 ─────────────────────────────────────────────────────────────
-  const allLines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  const hasAnyHeader = allLines.some(isHeaderLine);
-
-  // ── 헤더 없으면 단락 카드 폴백 ────────────────────────────────────────────────
-  if (!hasAnyHeader) {
-    const paras = text.replace(/\r\n/g, "\n").split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-    return (
-      <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
-        {paras.map((para, i) => (
-          <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
-            <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0 }}>
-              {para.replace(/\*\*([^*]+)\*\*/g, "$1")}
-            </p>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // ── 섹션 그룹 구성 ────────────────────────────────────────────────────────────
-  const sections: Array<{ title: string; bodyLines: string[] }> = [];
-  let cur: { title: string; bodyLines: string[] } | null = null;
-  for (const line of allLines) {
-    if (isHeaderLine(line)) {
-      if (cur) sections.push(cur);
-      cur = { title: stripTitle(line), bodyLines: [] };
-    } else if (cur) {
-      cur.bodyLines.push(line);
-    } else if (line.trim()) {
-      cur = { title: "", bodyLines: [line] };
-    }
-  }
-  if (cur) sections.push(cur);
-
-  const validSections = sections.filter(s => s.title || s.bodyLines.some(l => l.trim()));
-
-  // ── 섹션 카드 렌더 ────────────────────────────────────────────────────────────
-  return (
+  // ── 섹션 카드 렌더러 (공유) ────────────────────────────────────────────────────
+  const renderSectionCards = (sections: Array<{ title: string; body: string }>) => (
     <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
-      {validSections.map((section, idx) => {
+      {sections.map((section, idx) => {
         const icon = getIcon(section.title);
-        const bodyText = section.bodyLines.join("\n");
-        const paragraphs = bodyText.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-
         return (
-          <div key={idx} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", border:`1px solid ${c}22` }}>
-            {/* 섹션 헤더 */}
+          <div key={idx} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", border:`1px solid ${c}30` }}>
             {section.title && (
-              <div style={{ background:`linear-gradient(90deg, ${c}1a, transparent)`, borderBottom:`1px solid ${c}22`,
+              <div style={{ background:`linear-gradient(90deg, ${c}28, transparent)`, borderBottom:`1px solid ${c}25`,
                             padding:"11px 16px", display:"flex", alignItems:"center", gap:8 }}>
                 <span style={{ fontSize:15 }}>{icon}</span>
                 <span style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.5px", textTransform:"uppercase" as const }}>
@@ -1758,64 +1725,63 @@ function renderNarrativeSummary(text: string, c: string) {
                 </span>
               </div>
             )}
-
-            {/* 섹션 본문 */}
             <div style={{ padding:"14px 16px" }}>
-              {paragraphs.map((para, pi) => {
-                const paraLines = para.split("\n");
-                const nodes: JSX.Element[] = [];
-
-                paraLines.forEach((rawLine, li) => {
-                  const t = rawLine.trim();
-                  if (!t) return;
-
-                  const isHorizRule  = /^---+$/.test(t);
-                  const isBullet     = /^[-•*]\s/.test(t);
-                  const isSubHeader  = /^\*\*([^*]+)\*\*\s*$/.test(t) || /^\*\*([^*]+)\*\*[:：]/.test(t);
-                  const content      = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^[-•*]\s*/, "").trim();
-                  const isLong       = content.length > 60;
-
-                  if (isHorizRule) {
-                    nodes.push(<hr key={`hr-${li}`} style={{ border:"none", borderTop:`1px solid ${c}18`, margin:"8px 0" }} />);
-                    return;
-                  }
-                  if (isSubHeader) {
-                    nodes.push(
-                      <div key={`sh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0",
-                                           borderBottom:`1px solid #1e1e2a`, paddingBottom:4,
-                                           marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>
-                        {content}
-                      </div>
-                    );
-                    return;
-                  }
-                  if (isBullet || !isLong) {
-                    nodes.push(
-                      <div key={`b-${li}`} style={{ display:"flex", gap:6, fontSize:13, color:"#c8d0e0", lineHeight:1.75, marginBottom:3 }}>
-                        <span style={{ color:`${c}90`, fontSize:10, flexShrink:0, paddingTop:4 }}>▸</span>
-                        <span>{content}</span>
-                      </div>
-                    );
-                    return;
-                  }
-                  // 긴 서술 단락
-                  nodes.push(
-                    <p key={`p-${li}`} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:`0 0 ${li < paraLines.length - 1 ? 6 : 0}px` }}>
-                      {content}
-                    </p>
-                  );
-                });
-
-                return (
-                  <div key={pi} style={{ marginBottom: pi < paragraphs.length - 1 ? 12 : 0 }}>
-                    {nodes}
-                  </div>
-                );
-              })}
+              {renderBodyLines(section.body, c)}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  if (!normalized) return null;
+
+  // ── 전략 1: ■ 문자로 직접 split (가장 확실한 방법) ─────────────────────────────
+  // ■ (U+25A0)가 텍스트에 있으면 해당 문자로 직접 분할. 라인 탐지 불필요.
+  if (normalized.includes("■")) {
+    const parts = normalized.split("■");
+    const sections: Array<{ title: string; body: string }> = [];
+    // parts[0]은 첫 번째 ■ 이전 텍스트 (프리앰블, 무시하거나 별도 처리)
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const nl = part.indexOf("\n");
+      const title = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/\*\*([^*]+)\*\*/g, "$1");
+      const body  = nl === -1 ? "" : part.slice(nl + 1).trim();
+      if (title || body) sections.push({ title, body });
+    }
+    if (sections.length > 0) return renderSectionCards(sections);
+  }
+
+  // ── 전략 2: ## 마크다운 헤더 ────────────────────────────────────────────────────
+  if (/^#{1,3}\s/m.test(normalized)) {
+    const lines = normalized.split("\n");
+    const sections: Array<{ title: string; body: string }> = [];
+    let cur: { title: string; bodyLines: string[] } | null = null;
+    for (const line of lines) {
+      if (/^#{1,3}\s/.test(line.trimStart())) {
+        if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+        cur = { title: line.trimStart().replace(/^#{1,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim(), bodyLines: [] };
+      } else if (cur) {
+        cur.bodyLines.push(line);
+      }
+    }
+    if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+    const valid = sections.filter(s => s.title || s.body);
+    if (valid.length > 0) return renderSectionCards(valid);
+  }
+
+  // ── 전략 3: 단락 카드 폴백 ──────────────────────────────────────────────────────
+  const paras = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  return (
+    <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
+      {paras.map((para, i) => (
+        <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
+          <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0, whiteSpace:"pre-wrap" as const }}>
+            {para.replace(/\*\*([^*]+)\*\*/g, "$1")}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }
