@@ -1680,142 +1680,130 @@ function renderNarrativeSummary(text: string, c: string) {
     for (const [kw, icon] of SECTION_ICONS) if (lower.includes(kw.toLowerCase())) return icon;
     return "📋";
   };
-  const stripTitle = (s: string) => s
-    .replace(/^[ \t]*[•·][ \t]*/, "").replace(/^#{1,3}[ \t]*/, "")
-    .replace(/^■[ \t]*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim();
-  const stripBold = (s: string) => s.replace(/\*\*([^*]+)\*\*/g, "$1").trim();
 
-  // \r\n 정규화
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // 헤더 라인 판단: ## 형식 OR 블록문자(■ 계열 유니코드 U+25A0~U+25FF, U+2B00~U+2BFF)
+  const isHeaderLine = (line: string): boolean => {
+    const t = line.trimStart();
+    if (/^#{1,3}\s/.test(t)) return true;
+    const cp = t.codePointAt(0) ?? 0;
+    // U+25A0~U+25FF: Geometric Shapes (■◼◾▪ 등)
+    if (cp >= 0x25A0 && cp <= 0x25FF) return true;
+    // U+2B00~U+2BFF: Miscellaneous Symbols and Arrows
+    if (cp >= 0x2B00 && cp <= 0x2BFF) return true;
+    // 명시적 비교 (혹시 다른 인코딩으로 저장된 경우 대비)
+    if (t.startsWith("■") || t.startsWith("◼") || t.startsWith("▪") || t.startsWith("◾") || t.startsWith("●")) return true;
+    return false;
+  };
 
-  // 섹션 헤더 감지 (■ or ##)
-  const HEADER_LINE_RE = /^[ \t]*(?:#{1,3}[ \t]*)?■|^[ \t]*#{1,3}[ \t]/;
-  const hasHeader = HEADER_LINE_RE.test(normalized) || /(?:^|\n)[ \t]*(?:#{1,3}[ \t]*)?■/.test(normalized);
+  // 타이틀 정리
+  const stripTitle = (s: string) => s.trimStart()
+    .replace(/^#{1,3}\s*/, "")
+    .replace(/^[\u25A0-\u25FF\u2B00-\u2BFF■◼▪◾●]\s*/, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1").trim();
 
-  // ── 섹션 없으면 단락 카드로 폴백 ──────────────────────────────────────────────
-  if (!hasHeader) {
-    const paras = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  // ── 줄 단위 분석 ─────────────────────────────────────────────────────────────
+  const allLines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const hasAnyHeader = allLines.some(isHeaderLine);
+
+  // ── 헤더 없으면 단락 카드 폴백 ────────────────────────────────────────────────
+  if (!hasAnyHeader) {
+    const paras = text.replace(/\r\n/g, "\n").split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
     return (
       <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
         {paras.map((para, i) => (
           <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
-            <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0 }}>{stripBold(para)}</p>
+            <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0 }}>
+              {para.replace(/\*\*([^*]+)\*\*/g, "$1")}
+            </p>
           </div>
         ))}
       </div>
     );
   }
 
-  // ── 섹션 분할 ────────────────────────────────────────────────────────────────
-  const rawSections = normalized
-    .split(/\n(?=[ \t]*(?:#{1,3}[ \t]*)?■|[ \t]*#{1,3}[ \t])/)
-    .map(s => s.trim()).filter(Boolean);
-  const sections = rawSections.filter(s => HEADER_LINE_RE.test(s));
-  if (sections.length === 0) {
-    return (
-      <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
-        {normalized.split(/\n{2,}/).filter(Boolean).map((para, i) => (
-          <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
-            <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0 }}>{stripBold(para)}</p>
-          </div>
-        ))}
-      </div>
-    );
+  // ── 섹션 그룹 구성 ────────────────────────────────────────────────────────────
+  const sections: Array<{ title: string; bodyLines: string[] }> = [];
+  let cur: { title: string; bodyLines: string[] } | null = null;
+  for (const line of allLines) {
+    if (isHeaderLine(line)) {
+      if (cur) sections.push(cur);
+      cur = { title: stripTitle(line), bodyLines: [] };
+    } else if (cur) {
+      cur.bodyLines.push(line);
+    } else if (line.trim()) {
+      cur = { title: "", bodyLines: [line] };
+    }
   }
+  if (cur) sections.push(cur);
 
-  // ── 섹션 카드 렌더 ───────────────────────────────────────────────────────────
+  const validSections = sections.filter(s => s.title || s.bodyLines.some(l => l.trim()));
+
+  // ── 섹션 카드 렌더 ────────────────────────────────────────────────────────────
   return (
     <div style={{ display:"flex", flexDirection:"column" as const, gap:10 }}>
-      {sections.map((section, idx) => {
-        const lines = section.split("\n");
-        const title = stripTitle(lines[0]);
-        const icon  = getIcon(title);
-        // body: 빈 줄 → \n\n 단락 구분자로 활용
-        const bodyText = lines.slice(1).join("\n");
-        // 단락 그룹으로 나누기
+      {validSections.map((section, idx) => {
+        const icon = getIcon(section.title);
+        const bodyText = section.bodyLines.join("\n");
         const paragraphs = bodyText.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
 
         return (
           <div key={idx} style={{ background:"#10101c", borderRadius:12, overflow:"hidden", border:`1px solid ${c}22` }}>
             {/* 섹션 헤더 */}
-            <div style={{ background:`linear-gradient(90deg, ${c}1a, transparent)`, borderBottom:`1px solid ${c}22`,
-                          padding:"11px 16px", display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:15 }}>{icon}</span>
-              <span style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.5px", textTransform:"uppercase" as const }}>
-                {title}
-              </span>
-            </div>
+            {section.title && (
+              <div style={{ background:`linear-gradient(90deg, ${c}1a, transparent)`, borderBottom:`1px solid ${c}22`,
+                            padding:"11px 16px", display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:15 }}>{icon}</span>
+                <span style={{ fontSize:12, fontWeight:800, color:c, letterSpacing:"0.5px", textTransform:"uppercase" as const }}>
+                  {section.title}
+                </span>
+              </div>
+            )}
 
             {/* 섹션 본문 */}
             <div style={{ padding:"14px 16px" }}>
               {paragraphs.map((para, pi) => {
-                // 단락 내 각 줄 분석
                 const paraLines = para.split("\n");
                 const nodes: JSX.Element[] = [];
-                let prevWasBlock = false;
 
                 paraLines.forEach((rawLine, li) => {
                   const t = rawLine.trim();
                   if (!t) return;
 
-                  const isHorizRule = /^---+$/.test(t);
-                  const isBullet    = /^[-•*]\s/.test(t);
-                  const isSubHeader = /^\*\*([^*]+)\*\*\s*$/.test(t) || /^\*\*([^*]+)\*\*[:：]/.test(t);
-                  const content     = stripBold(t.replace(/^[-•*]\s*/, ""));
-                  const isLong      = content.length > 60;
+                  const isHorizRule  = /^---+$/.test(t);
+                  const isBullet     = /^[-•*]\s/.test(t);
+                  const isSubHeader  = /^\*\*([^*]+)\*\*\s*$/.test(t) || /^\*\*([^*]+)\*\*[:：]/.test(t);
+                  const content      = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^[-•*]\s*/, "").trim();
+                  const isLong       = content.length > 60;
 
                   if (isHorizRule) {
-                    nodes.push(
-                      <hr key={li} style={{ border:"none", borderTop:`1px solid ${c}18`, margin:"8px 0" }} />
-                    );
-                    prevWasBlock = false;
+                    nodes.push(<hr key={`hr-${li}`} style={{ border:"none", borderTop:`1px solid ${c}18`, margin:"8px 0" }} />);
                     return;
                   }
-
                   if (isSubHeader) {
                     nodes.push(
-                      <div key={li} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0",
-                                             borderBottom:`1px solid #1e1e2a`, paddingBottom:4,
-                                             marginBottom:6, marginTop: prevWasBlock ? 10 : 0 }}>
+                      <div key={`sh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0",
+                                           borderBottom:`1px solid #1e1e2a`, paddingBottom:4,
+                                           marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>
                         {content}
                       </div>
                     );
-                    prevWasBlock = true;
                     return;
                   }
-
-                  if (isBullet) {
+                  if (isBullet || !isLong) {
                     nodes.push(
-                      <div key={li} style={{ display:"flex", gap:6, fontSize:13, color:"#c8d0e0",
-                                             lineHeight:1.75, marginBottom:3 }}>
+                      <div key={`b-${li}`} style={{ display:"flex", gap:6, fontSize:13, color:"#c8d0e0", lineHeight:1.75, marginBottom:3 }}>
                         <span style={{ color:`${c}90`, fontSize:10, flexShrink:0, paddingTop:4 }}>▸</span>
                         <span>{content}</span>
                       </div>
                     );
-                    prevWasBlock = false;
                     return;
                   }
-
-                  // 서술 단락 or 짧은 항목
-                  if (isLong) {
-                    nodes.push(
-                      <p key={li} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85,
-                                           margin:`0 0 ${li < paraLines.length - 1 ? 6 : 0}px` }}>
-                        {content}
-                      </p>
-                    );
-                    prevWasBlock = true;
-                  } else {
-                    // 짧은 줄: 레이블처럼 표시
-                    nodes.push(
-                      <div key={li} style={{ display:"flex", gap:6, fontSize:13, color:"#c8d0e0",
-                                             lineHeight:1.7, marginBottom:3 }}>
-                        <span style={{ color:`${c}60`, fontSize:10, flexShrink:0, paddingTop:4 }}>▸</span>
-                        <span>{content}</span>
-                      </div>
-                    );
-                    prevWasBlock = false;
-                  }
+                  // 긴 서술 단락
+                  nodes.push(
+                    <p key={`p-${li}`} style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:`0 0 ${li < paraLines.length - 1 ? 6 : 0}px` }}>
+                      {content}
+                    </p>
+                  );
                 });
 
                 return (
