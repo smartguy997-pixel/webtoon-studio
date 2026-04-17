@@ -89,8 +89,8 @@ const AGENDA_P1 = [
 type AgendaId = typeof AGENDA_P1[number]["id"];
 
 // 아젠다 설정
-const MIN_TURNS_PER_TOPIC = 7;  // 주제별 최소 발언 횟수 (이 이상 다뤄야 완료 처리)
-const WRAP_UP_AFTER = 55;       // 7주제 × 7턴 + 여유 → 최소 55턴 후 마무리 제안 허용
+const MIN_TURNS_PER_TOPIC = 20;  // 주제별 최소 발언 횟수 (이 이상 다뤄야 완료 처리)
+const WRAP_UP_AFTER = 140;       // 7주제 × 20턴 → 최소 140턴 후 마무리 제안 허용
 
 // API 키 할당 (에이전트 인덱스 → 키 인덱스) - API를 돌아가며 사용
 function getApiKeyIndexForAgent(agentIndex: number): number {
@@ -240,112 +240,6 @@ ${concept}
 
 ${DEBATE_RULES}`;
 }
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_RESULT: Phase1Result = {
-  feasibility_score: 0.84,
-  feasibility_breakdown: { market: 88, originality: 82, producibility: 78, commercial: 87 },
-  verdict: "go",
-  summary: "헌터물 포화 시장에서 '관계 서사+도덕적 딜레마' 차별화로 네이버 10~20대 공략 가능. Phase 2 적극 권장.",
-  genre_analysis: { genre: "헌터 판타지", trend: "관계 서사 하이브리드 부상", audience: "10~20대 남성", key_success: "성장+감정 균형" },
-  market_analysis: { platform: "네이버웹툰", market_size: "2조 원+", growth: "연 12%", competition_level: "높음", opportunity: "단순 성장물 공백 공략" },
-  similar_works: [
-    { title: "나 혼자만 레벨업", platform: "카카오페이지", similarity: "스탯+성장 판타지", lesson: "압도적 스펙터클 필수, 관계 서사 보완 필요" },
-    { title: "전지적 독자시점", platform: "네이버웹툰", similarity: "메타 서사+몰입", lesson: "신규 독자 진입 장벽 최소화" },
-  ],
-  strengths: ["관계 서사+도덕 딜레마 차별화", "글로벌 IP 확장성", "세로 스크롤 최적 연출"],
-  weaknesses: ["헌터물 클리셰 리스크", "빌런 동기 논리 보완 필요"],
-  improvements: ["Phase 2에서 능력 체계 명확화", "빌런 배경 서사 구체화"],
-  usp: [
-    {
-      icon: "⚡",
-      title: "1화 즉각 훅",
-      desc: "세계관 설명 없이 위기 한복판으로\n독자를 던지는 인미디어스 레스 오프닝",
-      prediction: "1→3화 이탈률 22% 이하 예상 (네이버 장르 평균 35% 대비 -13%p)",
-    },
-    {
-      icon: "🧩",
-      title: "다층적 도덕 갈등",
-      desc: "선악 이분법을 깨는 빌런의 논리적 동기가\n독자 토론을 자연 발생시키는 구조",
-      prediction: "네이버 베스트댓글·커뮤니티 화제성 상위 10% 진입 가능",
-    },
-    {
-      icon: "🌐",
-      title: "글로벌 IP 확장성",
-      desc: "K-판타지 문법 + 보편적 성장 서사 결합으로\n일본·북미 현지화 장벽 최소화",
-      prediction: "웹툰 완결 후 소설·애니 IP 전환 시 해외 매출 40%+ 예상",
-    },
-    {
-      icon: "🎭",
-      title: "캐릭터 관계망",
-      desc: "주인공·라이벌·멘토 삼각 구도에\n예측 불가 배신 서사로 독자 감정 장악",
-      prediction: "시즌1 완결 후 팬아트·2차 창작 활성화, 재방문율 60%+ 예상",
-    },
-    {
-      icon: "📱",
-      title: "모바일 최적 연출",
-      desc: "세로 스크롤 정지 포인트 컷 전략으로\n매화 '다음 화 보기' 클릭률 극대화",
-      prediction: "회차 완독률 72% 이상 예상 (플랫폼 평균 58% 대비 +14%p)",
-    },
-  ],
-  competitors: [
-    {
-      title: "나 혼자만 레벨업",
-      platform: "카카오페이지",
-      period: "2018~2021",
-      readers: "누적 1억 4300만 뷰, 글로벌 14개국 서비스",
-      strengths: "압도적 주인공 성장 판타지, 시각적 스펙터클, 영상화 성공",
-      weaknesses: "여성 캐릭터 단순화, 관계 서사 부재, 스토리 단선적 구조",
-      differentiation: "관계 중심 도덕 서사 + 입체적 빌런으로 감정 깊이 차별화",
-      genre_color: "#60a5fa",
-    },
-    {
-      title: "전지적 독자시점",
-      platform: "네이버웹툰",
-      period: "2020~2023",
-      readers: "주간 최고 420만 뷰, 카카오 소설 원작 기반",
-      strengths: "메타픽션 구조, 촘촘한 복선 회수, 독자 감정 극한 몰입",
-      weaknesses: "원작 소설 선행 지식 필요, 신규 독자 진입 장벽 높음",
-      differentiation: "오리지널 IP로 접근성 강화, 1화부터 독자 독립 완주 구조",
-      genre_color: "#a78bfa",
-    },
-    {
-      title: "싸움독학",
-      platform: "네이버웹툰",
-      period: "2019~2023",
-      readers: "주간 최고 280만 뷰, 남성 10~20대 압도적 점유",
-      strengths: "성장 서사의 교과서, 현실감 있는 싸움 묘사, 높은 재방문율",
-      weaknesses: "판타지 요소 부재로 세계관 확장 한계, 글로벌 IP 전환 어려움",
-      differentiation: "판타지 세계관 결합으로 확장성 확보, 영상화·게임화 IP 가치 상향",
-      genre_color: "#34d399",
-    },
-  ],
-  adoption_strategy: [
-    { from_work: "전지적 독자시점", good_point: "독자가 함께 수수께끼를 푸는 메타픽션 구조", how_to_apply: "1화부터 '독자만 아는 단서'를 심어 능동 참여 유도. 댓글·커뮤니티 화제성 자동 생성" },
-    { from_work: "나 혼자만 레벨업", good_point: "스탯·시스템 수치화로 성장을 시각적으로 체감", how_to_apply: "능력 성장을 수치 패널로 표현해 독자 성취감 극대화. 다만 관계 서사와 균형 필수" },
-    { from_work: "싸움독학", good_point: "현실감 있는 약자 주인공 + 단계적 성장", how_to_apply: "1화 주인공을 약자로 설정하되 명확한 성장 로드맵 제시. 첫 3화 안에 '이유 있는 의지' 장면 삽입" },
-  ],
-  worldbuilding_notes: [
-    { issue: "능력 체계의 규칙이 불명확", suggestion: "Phase 2에서 능력 발동 조건·제한·부작용 3가지를 먼저 확정. 규칙 없는 능력은 독자 몰입 파괴", priority: "high" },
-    { issue: "빌런 동기의 논리적 기반 부재", suggestion: "빌런이 '왜 악인가'를 설명할 수 있는 사건 하나를 세계관 역사에 심어야 함. 독자가 빌런에 공감할 수 있는 지점 필수", priority: "high" },
-    { issue: "주인공 성장 트리거가 모호", suggestion: "성장이 언제, 왜 일어나는지 명확한 조건 필요. 유사작 나혼자만레벨업의 '던전 시스템'처럼 구체적 메커니즘 설계", priority: "medium" },
-  ],
-  positioning: {
-    ours: { x: 68, y: 74, label: "우리 작품" },
-    competitors: [
-      { x: 88, y: 24, label: "나혼자만레벨업" },
-      { x: 52, y: 80, label: "전지적독자시점" },
-      { x: 76, y: 18, label: "싸움독학" },
-    ],
-  },
-  radar: {
-    ours: [82, 88, 74, 80, 87],
-    avg:  [63, 62, 71, 66, 72],
-    categories: ["신선도", "감정몰입", "세계관", "캐릭터", "상업성"],
-  },
-  final_report: "━━ PHASE 1 최종 기획 분석 보고서 ━━\n\n▶ 시장 분석 요약\n2025년 K-웹툰 시장은 헌터·게이트·스탯 계열 판타지의 황금기가 종료되고, '관계 서사+도덕적 딜레마'를 결합한 차세대 하이브리드 판타지의 공백이 형성 중입니다. 네이버웹툰 기준 10~20대 남성 타깃 장르에서 단순 성장물의 신작 성공률은 15% 이하로 추락했으나, 감정·관계 중심 서사를 가미한 작품은 여전히 안정적 독자층을 확보합니다.\n\n▶ 경쟁 환경\n나 혼자만 레벨업(카카오, 1.4억 뷰)·전지적 독자시점(네이버, 420만 주간뷰)·싸움독학(네이버, 280만 주간뷰)이 장르 기준점을 형성합니다. 이들의 공통 약점인 '단선적 성장 서사'와 '신규 독자 진입 장벽'을 본 기획안은 구조적으로 해결하고 있습니다.\n\n▶ 독창성 평가\n핵심 설정은 Lv1(허용 가능) 클리셰 수준이며, 빌런의 도덕적 동기와 다층적 관계망이 기존 경쟁작과의 명확한 차별점입니다. 심층조사자가 지적한 설정 논리 보완은 Phase 2에서 세계관설계자와 함께 해결 가능합니다.\n\n▶ 제작 가능성\n100화 장기 연재 서사 확장성 양호. 시즌1(50화) 완결 구조로 플랫폼 계약 협상력 확보 가능. 캐릭터 IP 잠재력 높아 소설·굿즈·애니 전환 기대. 네이버웹툰 독점 계약 또는 카카오페이지 동시 연재 전략 권장.\n\n■ 최종 권고: GO\n실현가능성 종합 84점. 시장 공백 정확히 공략하는 포지셔닝으로 Phase 2 세계관 구축 즉시 진행 권장. 전제 조건: 심층조사자 지적 사항(설정 내부 모순 2건) Phase 2 착수 전 해소.",
-};
 
 // ─── Parse helpers ────────────────────────────────────────────────────────────
 
@@ -1401,7 +1295,6 @@ export default function Phase1Page() {
   const [concept, setConcept] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [result, setResult] = useState<Phase1Result | null>(null);
-  const [isMock, setIsMock] = useState(false);
   const [showGatingModal, setShowGatingModal] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -1593,46 +1486,11 @@ export default function Phase1Page() {
     const apiKey = getAnthropicKey();
     const platLabel = PLATFORMS.find((p) => p.value === plat)?.label ?? plat;
 
-    // ── Helper: simulate typing for mock mode ──
-    const typeMsg = async (msgId: string, text: string) => {
-      const CHUNK = 6;
-      for (let i = CHUNK; i <= text.length + CHUNK; i += CHUNK) {
-        updateMsg(msgId, text.slice(0, i), true);
-        await new Promise((r) => setTimeout(r, 18));
-      }
-      updateMsg(msgId, text, false);
-    };
-
     if (!apiKey) {
-      // ── MOCK MODE ──
-      setIsMock(true);
-      setDebatePhase("running");
-      setTurnCount(0);
-
-      const MOCK_LINES: Array<{ agent: AgentId; text: string }> = [
-        { agent: "strategist",   text: `이미 비슷한 거 세 개 있는데, 이 기획은 뭐가 다르죠?` },
-        { agent: "researcher",   text: `잠깐, 주인공이 갑자기 강해지는 건데... 이유가 있어요?` },
-        { agent: "character",    text: `그게 제일 중요한 거 아니에요? 독자가 왜 이 캐릭터를 좋아해야 해요?` },
-        { agent: "strategist",   text: `포지셔닝 봐요. 감성 서사 + 도덕 딜레마 조합, 이 영역이 비어 있어요.` },
-        { agent: "researcher",   text: `(잠시 생각하다가) 그건... 맞는 말인데, 설정 모순은요?` },
-        { agent: "worldbuilder", text: `능력 체계가 정해지면 자연스럽게 해결되는 문제예요.` },
-        { agent: "scenario",     text: `1화에 봉인 암시 컷 하나 넣으면 되잖아요. 이탈률 잡을 수 있어요.` },
-        { agent: "script",       text: `그 장면, 클로즈업 아니면 임팩트 없어요. 표정으로만 가야 해요.` },
-        { agent: "producer",     text: `좋아요, 정리할게요. 이 기획, 진행합시다.` },
-      ];
-
-      for (let i = 0; i < MOCK_LINES.length; i++) {
-        const m = MOCK_LINES[i];
-        setTurnCount(i + 1);
-        const id = addMsg(m.agent, i + 1, "", true);
-        await typeMsg(id, m.text);
-        await sleep(400);
-      }
-
-      setResult(MOCK_RESULT);
-      saveResult(MOCK_RESULT, g, c, ep, plat);
-      setDebatePhase("done");
+      // API 키 없음 → 실행 불가
       runningRef.current = false;
+      setDebatePhase("idle");
+      alert("Anthropic API 키를 먼저 설정해 주세요.\n설정 페이지에서 API 키를 추가하면 실제 AI 에이전트가 동작합니다.");
       return;
     }
 
@@ -1665,7 +1523,7 @@ export default function Phase1Page() {
     let wrapUpProposedAt = 0;       // 제안 시각 (ms)
     let wrapUpCooldown = 0;         // 사용자 거부 후 N턴 동안 마무리 제안 금지
     // MIN_TURNS_PER_TOPIC, WRAP_UP_AFTER — 모듈 상수 사용
-    const WRAP_UP_AUTO_MS = 30_000; // 30초 무응답 → 자동 종료
+    const WRAP_UP_AUTO_MS = 90_000; // 90초 무응답 → 자동 종료
     // ── 아젠다 추적 (순서 없음 — 키워드 감지 기반) ──
     const coveredAgenda = new Set<AgendaId>(); // MIN_TURNS_PER_TOPIC 이상 다뤄진 주제
     const agendaTurns: Partial<Record<AgendaId, number>> = {}; // 주제별 발언 횟수
@@ -2059,9 +1917,9 @@ export default function Phase1Page() {
       const agentTurnsSoFar = transcript.filter(l => !l.startsWith("[사용자]") && l.trim()).length;
       if (wrapUpCooldown > 0) wrapUpCooldown--;
       // 최근 4줄이 비슷한 결론 방향이면 수렴으로 간주 (같은 키워드 반복)
-      const convergenceCheck = transcript.slice(-4).join(" ");
-      const converging = agentTurnsSoFar >= 15 &&
-        (convergenceCheck.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 2;
+      const convergenceCheck = transcript.slice(-6).join(" ");
+      const converging = agentTurnsSoFar >= 50 &&
+        (convergenceCheck.match(/정리|결론|충분|이 정도|마무리|보고서/g) ?? []).length >= 3;
 
       const allAgendaDone = coveredAgenda.size >= AGENDA_P1.length;
       if (!wrapUpProposed && wrapUpCooldown === 0 && allAgendaDone && (agentTurnsSoFar >= WRAP_UP_AFTER || converging)) {
@@ -2239,8 +2097,12 @@ export default function Phase1Page() {
     if (!parsed) {
       console.error("[Phase1] 보고서 생성 실패. 원본 응답:", reportText.slice(0, 500));
     }
-    setResult(parsed ?? MOCK_RESULT);
-    saveResult(parsed ?? MOCK_RESULT, g, c, ep, plat);
+    if (parsed) {
+      setResult(parsed);
+      saveResult(parsed, g, c, ep, plat);
+    } else {
+      setStatusMsg("보고서 JSON 파싱 실패. 다시 시도해 주세요.");
+    }
 
     setDebatePhase("done");
     runningRef.current = false;
@@ -2416,7 +2278,6 @@ export default function Phase1Page() {
             }}>
               {genre}
             </span>
-            {isMock && <span className={styles.mockBadge}>Mock 데이터</span>}
             {savedAt && (
               <span style={{ fontSize: 11, color: "#475569" }}>
                 저장됨 {new Date(savedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
