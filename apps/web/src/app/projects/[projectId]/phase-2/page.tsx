@@ -1737,14 +1737,15 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
-  // ── 전략 1: ■ 문자로 직접 split (가장 확실한 방법) ─────────────────────────────
-  // ■ (U+25A0)가 텍스트에 있으면 해당 문자로 직접 분할. 라인 탐지 불필요.
-  if (normalized.includes("■")) {
-    const parts = normalized.split("■");
+  // ── 전략 1: ■ 줄 시작 기준 split ────────────────────────────────────────────────
+  // ■이 줄 맨 앞에 있을 때만 섹션 구분자로 처리. 인라인 ■은 무시.
+  if (/(?:^|\n)■/.test(normalized)) {
+    const withNL = normalized.startsWith("■") ? "\n" + normalized : normalized;
+    const rawParts = withNL.split(/\n■/);
     const sections: Array<{ title: string; body: string }> = [];
-    // parts[0]은 첫 번째 ■ 이전 텍스트 (프리앰블, 무시하거나 별도 처리)
-    for (let i = 1; i < parts.length; i++) {
-      const part = parts[i];
+    // rawParts[0]은 첫 번째 ■ 이전 텍스트 (프리앰블, 건너뜀)
+    for (let i = 1; i < rawParts.length; i++) {
+      const part = rawParts[i];
       const nl = part.indexOf("\n");
       const title = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/\*\*([^*]+)\*\*/g, "$1");
       const body  = nl === -1 ? "" : part.slice(nl + 1).trim();
