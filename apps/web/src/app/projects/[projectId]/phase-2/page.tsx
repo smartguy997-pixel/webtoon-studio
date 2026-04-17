@@ -1751,12 +1751,6 @@ function renderNarrativeSummary(text: string, c: string) {
   // 이렇게 하면 이후 모든 파싱 경로에서 ■이 그대로 노출되는 일이 없다.
   const src = normalized.replace(/^([■◆●★▶◉▪▸])+\s*/gm, "## ");
 
-  // 진단 로그 (확인 후 제거)
-  if (typeof window !== "undefined") {
-    console.log("[NHS] in:", JSON.stringify(text.slice(0, 120)));
-    console.log("[NHS] src[:120]:", JSON.stringify(src.slice(0, 120)));
-  }
-
   // ── 섹션 헤더 감지 & 마커 제거 ──────────────────────────────────────────────────
   // 줄 맨 앞에 ■ / # / ## / 기타 특수 기호가 있으면 섹션 헤더로 처리
   const isHdrLine = (line: string): boolean => {
