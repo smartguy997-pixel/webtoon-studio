@@ -2,6 +2,49 @@
 
 import { useState, useEffect, useCallback } from "react";
 import s from "./page.module.css";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+
+// ── Firestore 키 백업 ─────────────────────────────────────
+const FS_COL = "settings";
+const FS_DOC = "api_keys";
+
+async function fsLoadKeys(): Promise<Record<string, string> | null> {
+  if (!db) return null;
+  try {
+    const snap = await getDoc(doc(db, FS_COL, FS_DOC));
+    if (!snap.exists()) return null;
+    const data = snap.data() as Record<string, unknown>;
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (typeof v === "string" && k !== "_updatedAt") result[k] = v;
+    }
+    return result;
+  } catch { return null; }
+}
+
+async function fsSaveKey(fieldKey: string, value: string) {
+  if (!db) return;
+  try {
+    await setDoc(
+      doc(db, FS_COL, FS_DOC),
+      { [fieldKey]: value, _updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
+  } catch { /* offline or permission issue — silent fail */ }
+}
+
+async function fsDeleteKey(fieldKey: string) {
+  if (!db) return;
+  try {
+    const { deleteField } = await import("firebase/firestore");
+    await setDoc(
+      doc(db, FS_COL, FS_DOC),
+      { [fieldKey]: deleteField(), _updatedAt: new Date().toISOString() },
+      { merge: true },
+    );
+  } catch { /* silent */ }
+}
 
 // ── Config ────────────────────────────────────────────────
 interface KeyConfig {
@@ -79,9 +122,21 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem(cfg.storageKey) ?? "";
-    setState((p: KeyState) => ({ ...p, saved, value: saved, status: saved ? "ok" : "idle" }));
-  }, [cfg.storageKey]);
+    async function load() {
+      let saved = localStorage.getItem(cfg.storageKey) ?? "";
+      if (!saved) {
+        // Firestore에서 복원 시도
+        const fsData = await fsLoadKeys();
+        const fsVal = fsData?.[cfg.id] ?? "";
+        if (fsVal) {
+          localStorage.setItem(cfg.storageKey, fsVal);
+          saved = fsVal;
+        }
+      }
+      setState((p: KeyState) => ({ ...p, saved, value: saved, status: saved ? "ok" : "idle" }));
+    }
+    void load();
+  }, [cfg.storageKey, cfg.id]);
 
   const formatError = state.value ? validateFormat(cfg, state.value) : null;
 
@@ -145,6 +200,7 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
 
     if (ok) {
       localStorage.setItem(cfg.storageKey, val);
+      void fsSaveKey(cfg.id, val); // Firestore 백업
       setState((p: KeyState) => ({ ...p, saved: val, status: "ok", errorMsg: "", dirty: false }));
       onSaved();
     } else {
@@ -154,6 +210,7 @@ function KeyCard({ cfg, onSaved }: { key?: string; cfg: KeyConfig; onSaved: () =
 
   function handleClear() {
     localStorage.removeItem(cfg.storageKey);
+    void fsDeleteKey(cfg.id); // Firestore에서도 삭제
     setState({ value: "", saved: "", visible: false, status: "idle", errorMsg: "", dirty: false });
   }
 
@@ -270,8 +327,16 @@ function RunwayCard({ onSaved }: { onSaved: () => void }) {
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    const s = localStorage.getItem(RUNWAY_STORAGE_KEY) ?? "";
-    setSaved(s); setValue(s); if (s) setStatus("ok");
+    async function load() {
+      let v = localStorage.getItem(RUNWAY_STORAGE_KEY) ?? "";
+      if (!v) {
+        const fsData = await fsLoadKeys();
+        const fsVal = fsData?.["runway"] ?? "";
+        if (fsVal) { localStorage.setItem(RUNWAY_STORAGE_KEY, fsVal); v = fsVal; }
+      }
+      setSaved(v); setValue(v); if (v) setStatus("ok");
+    }
+    void load();
   }, []);
 
   const isSaved = !!saved && status === "ok" && !dirty;
@@ -292,14 +357,9 @@ function RunwayCard({ onSaved }: { onSaved: () => void }) {
       const data = await r.json() as { ok: boolean; error?: string };
       if (data.ok) {
         localStorage.setItem(RUNWAY_STORAGE_KEY, val);
+        void fsSaveKey("runway", val); // Firestore 백업
         setSaved(val); setStatus("ok"); setErrorMsg(""); setDirty(false);
         onSaved();
-        // 마스킹된 키를 Firestore에도 저장 (키 자체가 아닌 마스킹 표시만)
-        void fetch(`${API_BASE}/api/settings/runway`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ maskedKey: mask(val), savedAt: new Date().toISOString() }),
-        });
       } else {
         setStatus("error"); setErrorMsg(data.error ?? "연결 실패");
       }
@@ -310,6 +370,7 @@ function RunwayCard({ onSaved }: { onSaved: () => void }) {
 
   function handleClear() {
     localStorage.removeItem(RUNWAY_STORAGE_KEY);
+    void fsDeleteKey("runway");
     setSaved(""); setValue(""); setStatus("idle"); setErrorMsg(""); setDirty(false);
   }
 
@@ -400,23 +461,36 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
   const [addingNew, setAddingNew] = useState(false);
 
   useEffect(() => {
-    // Load all existing Anthropic keys (wts_anthropic_key_1, wts_anthropic_key_2, etc.)
-    const loadedKeys: AnthropicKeyState[] = [];
-    for (let i = 1; i <= 10; i++) {
-      const storageKey = `wts_anthropic_key_${i}`;
-      const saved = localStorage.getItem(storageKey) ?? "";
-      if (saved) {
-        loadedKeys.push({
-          value: saved,
-          saved,
-          visible: false,
-          status: "ok",
-          errorMsg: "",
-          dirty: false,
-        });
+    async function load() {
+      // 1) localStorage에서 먼저 로드
+      const loadedKeys: AnthropicKeyState[] = [];
+      for (let i = 1; i <= 10; i++) {
+        const saved = localStorage.getItem(`wts_anthropic_key_${i}`) ?? "";
+        if (saved) {
+          loadedKeys.push({ value: saved, saved, visible: false, status: "ok", errorMsg: "", dirty: false });
+        }
       }
+
+      // 2) Firestore에서 복원 (localStorage가 비어있거나 Firestore에 더 많은 키)
+      const fsData = await fsLoadKeys();
+      if (fsData) {
+        for (let i = 1; i <= 10; i++) {
+          const fsKey = `anthropic_${i}`;
+          const fsVal = fsData[fsKey];
+          if (!fsVal) continue;
+          const lsKey = `wts_anthropic_key_${i}`;
+          if (!localStorage.getItem(lsKey)) {
+            localStorage.setItem(lsKey, fsVal); // Firestore → localStorage 복원
+          }
+          if (!loadedKeys[i - 1]) {
+            loadedKeys.push({ value: fsVal, saved: fsVal, visible: false, status: "ok", errorMsg: "", dirty: false });
+          }
+        }
+      }
+
+      setKeys(loadedKeys);
     }
-    setKeys(loadedKeys);
+    void load();
   }, []);
 
   async function testKey(val: string): Promise<{ ok: boolean; error?: string }> {
@@ -483,6 +557,7 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
     if (result.ok) {
       const storageKey = `wts_anthropic_key_${index + 1}`;
       localStorage.setItem(storageKey, val);
+      void fsSaveKey(`anthropic_${index + 1}`, val); // Firestore 백업
       newKeys[index] = { value: val, saved: val, visible: false, status: "ok", errorMsg: "", dirty: false };
       setKeys(newKeys);
       onSaved();
@@ -501,6 +576,7 @@ function AnthropicMultiKeyCard({ onSaved }: { onSaved: () => void }) {
   function handleClear(index: number) {
     const storageKey = `wts_anthropic_key_${index + 1}`;
     localStorage.removeItem(storageKey);
+    void fsDeleteKey(`anthropic_${index + 1}`); // Firestore에서도 삭제
     const newKeys = keys.filter((_, i) => i !== index);
     setKeys(newKeys);
     onSaved();
@@ -781,13 +857,12 @@ export default function SettingsPage() {
     <div className={s.page}>
       <h1 className={s.pageTitle}>설정</h1>
       <p className={s.pageDesc}>
-        API 키는 브라우저 localStorage에만 저장되며 서버로 전송되지 않습니다.
-        <br />각 서비스 콘솔에서 키를 발급받아 입력해주세요.
+        API 키는 브라우저 localStorage에 저장되며, Firebase가 설정된 경우 Firestore에도 자동 백업됩니다.
+        <br />브라우저 캐시를 삭제해도 Firestore 백업이 있으면 설정 페이지 접속 시 자동 복원됩니다.
       </p>
 
       <div className={s.infoBox}>
         <strong>Anthropic API Keys</strong>가 설정되면 실제 AI 에이전트가 동작합니다.
-        키가 없으면 Phase 페이지에서 <strong>mock 데이터</strong>로 미리보기 할 수 있습니다.
         <br />
         <span style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, display: "block" }}>
           💡 다중 API 키를 설정하면 에이전트 페어링의 비용을 절감할 수 있습니다. 예를 들어 3개의 키로 6개의 에이전트를 커버할 수 있습니다.
