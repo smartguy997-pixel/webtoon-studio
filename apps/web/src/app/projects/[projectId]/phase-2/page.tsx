@@ -1737,42 +1737,41 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
-  // ── 전략 1: ■ 줄 시작 기준 split ────────────────────────────────────────────────
-  // ■이 줄 맨 앞에 있을 때만 섹션 구분자로 처리. 인라인 ■은 무시.
-  if (/(?:^|\n)■/.test(normalized)) {
-    const withNL = normalized.startsWith("■") ? "\n" + normalized : normalized;
-    const rawParts = withNL.split(/\n■/);
+  // 섹션 헤더 감지: 유니코드 코드포인트로 판별 (리터럴 문자 매칭 의존 없음)
+  // U+25A0-U+25FF = Geometric Shapes (■◆●◉▪▸ 등 포함)
+  // U+2600-U+27BF = Misc Symbols / Dingbats
+  const isSectionStart = (s: string): boolean => {
+    const t = s.trimStart();
+    if (!t) return false;
+    if (/^#{1,3}\s/.test(t)) return true;
+    const cp = t.codePointAt(0) ?? 0;
+    return (cp >= 0x25A0 && cp <= 0x27BF);
+  };
+  const stripMarker = (s: string): string =>
+    s.trimStart()
+      .replace(/^[\u25A0-\u27BF]+\s*/, "")
+      .replace(/^#{1,3}\s*/, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .trim();
+
+  // ── 전략 1: 단락 기준 섹션 감지 (가장 강건) ────────────────────────────────────────
+  // 이중 개행으로 단락을 나눈 뒤, 단락 첫 줄이 섹션 마커면 카드 제목으로 처리.
+  // 정규식 문자 매칭 대신 코드포인트 비교라 인코딩 차이 없음.
+  const allParas = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  if (allParas.some(p => isSectionStart(p))) {
     const sections: Array<{ title: string; body: string }> = [];
-    for (let i = 1; i < rawParts.length; i++) {
-      const part = rawParts[i];
-      const nl = part.indexOf("\n");
-      const title = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/\*\*([^*]+)\*\*/g, "$1");
-      const body  = nl === -1 ? "" : part.slice(nl + 1).trim();
-      if (title || body) sections.push({ title, body });
+    for (const para of allParas) {
+      if (!isSectionStart(para)) continue;
+      const nl = para.indexOf("\n");
+      const headerLine = nl === -1 ? para : para.slice(0, nl);
+      const body = nl === -1 ? "" : para.slice(nl + 1).trim();
+      sections.push({ title: stripMarker(headerLine), body });
     }
     if (sections.length > 0) return renderSectionCards(sections);
   }
 
-  // ── 전략 2: ## 마크다운 헤더 ────────────────────────────────────────────────────
-  if (/^#{1,3}\s/m.test(normalized)) {
-    const lines = normalized.split("\n");
-    const sections: Array<{ title: string; body: string }> = [];
-    let cur: { title: string; bodyLines: string[] } | null = null;
-    for (const line of lines) {
-      if (/^#{1,3}\s/.test(line.trimStart())) {
-        if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-        cur = { title: line.trimStart().replace(/^#{1,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim(), bodyLines: [] };
-      } else if (cur) {
-        cur.bodyLines.push(line);
-      }
-    }
-    if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-    const valid = sections.filter(s => s.title || s.body);
-    if (valid.length > 0) return renderSectionCards(valid);
-  }
-
-  // ── 전략 3: 단락 카드 폴백 ──────────────────────────────────────────────────────
-  const paras = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  // ── 전략 2: 단락 카드 폴백 ──────────────────────────────────────────────────────
+  const paras = allParas;
   return (
     <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
       {paras.map((para, i) => (
