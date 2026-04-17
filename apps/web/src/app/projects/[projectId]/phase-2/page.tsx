@@ -1747,6 +1747,10 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
+  // ■ / ◆ / ● 등 섹션 기호로 시작하는 줄을 ## 마크다운 헤더로 정규화
+  // 이렇게 하면 이후 모든 파싱 경로에서 ■이 그대로 노출되는 일이 없다.
+  const src = normalized.replace(/^([■◆●★▶◉▪▸])+\s*/gm, "## ");
+
   // ── 섹션 헤더 감지 & 마커 제거 ──────────────────────────────────────────────────
   // 줄 맨 앞에 ■ / # / ## / 기타 특수 기호가 있으면 섹션 헤더로 처리
   const isHdrLine = (line: string): boolean => {
@@ -1768,7 +1772,7 @@ function renderNarrativeSummary(text: string, c: string) {
 
   // ── 통합 섹션 파싱: 헤더 줄이 2개 이상이어야 섹션 구조로 처리 ────────────────────────
   // (1개이면 제목 하나 + 전체 body → 그냥 단락 폴백이 낫다)
-  const allLines = normalized.split("\n");
+  const allLines = src.split("\n");
   const hdrCount = allLines.filter(isHdrLine).length;
 
   if (hdrCount >= 1) {
@@ -1781,7 +1785,6 @@ function renderNarrativeSummary(text: string, c: string) {
         if (cur) {
           sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
         } else if (preambleLines.some(l => l.trim())) {
-          // 첫 헤더 이전에 내용이 있으면 빈 제목 카드로 추가
           sections.push({ title: "", body: preambleLines.join("\n").trim() });
         }
         cur = { title: cleanHdr(line), bodyLines: [] };
@@ -1798,13 +1801,13 @@ function renderNarrativeSummary(text: string, c: string) {
   }
 
   // ── 단락 카드 폴백 ────────────────────────────────────────────────────────────
-  const paras = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  const paras = src.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
   return (
     <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
       {paras.map((para, i) => (
         <div key={i} style={{ background:"#10101c", borderRadius:10, padding:"12px 16px", border:`1px solid ${c}18` }}>
           <p style={{ fontSize:13, color:"#c8d0e0", lineHeight:1.85, margin:0, whiteSpace:"pre-wrap" as const }}>
-            {para.replace(/^[■◆●★▶◉▪▸]+\s*/gm, "").replace(/\*\*([^*]+)\*\*/g, "$1")}
+            {para.replace(/\*\*([^*]+)\*\*/g, "$1")}
           </p>
         </div>
       ))}
