@@ -1692,19 +1692,9 @@ function renderNarrativeSummary(text: string, c: string) {
             const isHorizRule = /^---+$/.test(t);
             const isBullet    = /^[-•*]\s/.test(t);
             const isSubHdr    = /^\*\*([^*]+)\*\*\s*$/.test(t) || /^\*\*([^*]+)\*\*[:：]/.test(t);
-            const isMdHdr     = /^#{1,3}\s/.test(t);  // # / ## / ### 마크다운 헤더
-            const isSectionMk = /^[■◆●★▶◉▪▸]\s/.test(t); // ■ 등 섹션 기호가 줄 앞에 — sub-header 처리
-            const content     = t
-              .replace(/\*\*([^*]+)\*\*/g, "$1")
-              .replace(/^[-•*]\s*/, "")
-              .replace(/^#{1,3}\s*/, "")
-              .replace(/^[■◆●★▶◉▪▸]+\s*/, "")  // ■ 등 기호 제거
-              .trim();
+            const content     = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^[-•*]\s*/, "").trim();
             if (isHorizRule) {
               nodes.push(<hr key={`hr-${li}`} style={{ border:"none", borderTop:`1px solid ${color}18`, margin:"8px 0" }} />);
-            } else if (isMdHdr || isSectionMk) {
-              // # heading 또는 ■ 기호로 시작하는 줄 → sub-header 스타일
-              nodes.push(<div key={`mh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", borderBottom:`1px solid #1e1e2a`, paddingBottom:4, marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>{content}</div>);
             } else if (isSubHdr) {
               nodes.push(<div key={`sh-${li}`} style={{ fontSize:13, fontWeight:700, color:"#e2e8f0", borderBottom:`1px solid #1e1e2a`, paddingBottom:4, marginBottom:6, marginTop: li > 0 ? 10 : 0 }}>{content}</div>);
             } else if (isBullet || content.length <= 60) {
@@ -1747,61 +1737,42 @@ function renderNarrativeSummary(text: string, c: string) {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
 
-  // ■ / ◆ / ● 등 섹션 기호로 시작하는 줄을 ## 마크다운 헤더로 정규화
-  // 이렇게 하면 이후 모든 파싱 경로에서 ■이 그대로 노출되는 일이 없다.
-  const src = normalized.replace(/^([■◆●★▶◉▪▸])+\s*/gm, "## ");
+  // ── 전략 1: ■ 줄 시작 기준 split ────────────────────────────────────────────────
+  // ■이 줄 맨 앞에 있을 때만 섹션 구분자로 처리. 인라인 ■은 무시.
+  if (/(?:^|\n)■/.test(normalized)) {
+    const withNL = normalized.startsWith("■") ? "\n" + normalized : normalized;
+    const rawParts = withNL.split(/\n■/);
+    const sections: Array<{ title: string; body: string }> = [];
+    for (let i = 1; i < rawParts.length; i++) {
+      const part = rawParts[i];
+      const nl = part.indexOf("\n");
+      const title = (nl === -1 ? part : part.slice(0, nl)).trim().replace(/\*\*([^*]+)\*\*/g, "$1");
+      const body  = nl === -1 ? "" : part.slice(nl + 1).trim();
+      if (title || body) sections.push({ title, body });
+    }
+    if (sections.length > 0) return renderSectionCards(sections);
+  }
 
-  // ── 섹션 헤더 감지 & 마커 제거 ──────────────────────────────────────────────────
-  // 줄 맨 앞에 ■ / # / ## / 기타 특수 기호가 있으면 섹션 헤더로 처리
-  const isHdrLine = (line: string): boolean => {
-    const t = line.trimStart();
-    if (!t) return false;
-    // 마크다운 헤더 (# / ## / ###)
-    if (/^#{1,3}\s/.test(t)) return true;
-    // ■ 또는 기타 섹션 기호 (◆●★▶◉▪▸) 뒤에 텍스트가 있는 줄
-    if (/^[■◆●★▶◉▪▸]/.test(t) && t.replace(/^[■◆●★▶◉▪▸\s]+/, "").length > 0) return true;
-    return false;
-  };
-
-  const cleanHdr = (line: string): string =>
-    line.trimStart()
-      .replace(/^#{1,3}\s*/, "")          // # / ## / ###
-      .replace(/^[■◆●★▶◉▪▸]+\s*/, "")  // ■ 등 기호
-      .replace(/\*\*([^*]+)\*\*/g, "$1") // **bold**
-      .trim();
-
-  // ── 통합 섹션 파싱: 헤더 줄이 2개 이상이어야 섹션 구조로 처리 ────────────────────────
-  // (1개이면 제목 하나 + 전체 body → 그냥 단락 폴백이 낫다)
-  const allLines = src.split("\n");
-  const hdrCount = allLines.filter(isHdrLine).length;
-
-  if (hdrCount >= 1) {
+  // ── 전략 2: ## 마크다운 헤더 ────────────────────────────────────────────────────
+  if (/^#{1,3}\s/m.test(normalized)) {
+    const lines = normalized.split("\n");
     const sections: Array<{ title: string; body: string }> = [];
     let cur: { title: string; bodyLines: string[] } | null = null;
-    const preambleLines: string[] = [];
-
-    for (const line of allLines) {
-      if (isHdrLine(line)) {
-        if (cur) {
-          sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-        } else if (preambleLines.some(l => l.trim())) {
-          sections.push({ title: "", body: preambleLines.join("\n").trim() });
-        }
-        cur = { title: cleanHdr(line), bodyLines: [] };
+    for (const line of lines) {
+      if (/^#{1,3}\s/.test(line.trimStart())) {
+        if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
+        cur = { title: line.trimStart().replace(/^#{1,3}\s*/, "").replace(/\*\*([^*]+)\*\*/g, "$1").trim(), bodyLines: [] };
       } else if (cur) {
         cur.bodyLines.push(line);
-      } else {
-        preambleLines.push(line);
       }
     }
     if (cur) sections.push({ title: cur.title, body: cur.bodyLines.join("\n").trim() });
-
     const valid = sections.filter(s => s.title || s.body);
     if (valid.length > 0) return renderSectionCards(valid);
   }
 
-  // ── 단락 카드 폴백 ────────────────────────────────────────────────────────────
-  const paras = src.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  // ── 전략 3: 단락 카드 폴백 ──────────────────────────────────────────────────────
+  const paras = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
   return (
     <div style={{ display:"flex", flexDirection:"column" as const, gap:8 }}>
       {paras.map((para, i) => (
